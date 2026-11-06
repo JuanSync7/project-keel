@@ -3693,23 +3693,26 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 83 | KEEL-ANSWERS-2 | The CMP-14.S3 review's NEXTs: the generated README frontmatter does not quote the project name, the two version-clause grammars have no agreement test, the answer `" >=3 .10"` has no case, and `tests/integration/test_copier_answer_validation.py` lacks its header summary. Ranked NEXT | planned |
 | 84 | KEEL-EXITDROP-2 | The exit gate does not see a status bound to an attribute, a subscript or an augmented-assignment target (`ns.status = main()`, `d['s'] = main()`, `s += main()`) and then not handed to `finish`; CMP-14.S4 names them in its "cannot see" list. Found by the CMP-14.S4 review. Ranked NOTE | planned |
 | 85 | KEEL-MARKATTACH-2 | The e2e coverage scan parses every Python file below a directory pytest skips, to explain why its markers count for nothing, so one file there that does not parse or is not UTF-8 stops the gate; `scripts/traceability.py` `scan_tests` never reads those files. Found by the CMP-14.S2 review; not reproduced. Ranked NOTE | planned |
-| 86 | KEEL-TESTSEL-1 | `make test` (and so `make verify`) exits 0 and records a whole-suite pass when the caller's `PYTEST_ADDOPTS` narrows the run (for example `-k test_passes`); `scripts/selection_guard.py` checks only the command line. Reproduced 2026-11-06 | held: the maintainer decides; the vault page "Narrowed test run passes the gate" holds the options and a recommendation |
-| 87 | KEEL-ROLLBACK-1 | `scripts/apply_refactor.py` restores each planned file from its saved copy, and a failed rollback leaves applied, ungated content in place, while `agents/tools/apply_refactor.tool.md` says it "rolls back every file" and "leaves the tree exactly as it" was | held: the maintainer decides; the vault page "Refactor rollback as a transaction" holds the options and a recommendation |
-| 88 | KEEL-PRIVATTR-1 | check_D reads only `import` and `from ... import` statements, so `import pkg` then `pkg._sub.run()` reaches a private submodule and passes; the rule text names only the import forms | held: the maintainer decides; the vault page "Private module through attribute access" holds the options and a recommendation |
+| 86 | KEEL-TESTSEL-1 | `make test` (and so `make verify`) exits 0 and records a whole-suite pass when the caller's `PYTEST_ADDOPTS` narrows the run (for example `-k test_passes`); `scripts/selection_guard.py` checks only the command line. Reproduced 2026-11-06. Ruling: a full gate (`make test`, `make verify`, the gate runner) refuses narrowing by `-k`, `-m`, a node id or `--deselect`, on the command line or in `PYTEST_ADDOPTS`. The tier targets and a direct pytest stay free to narrow. Neither writes gate evidence | planned |
+| 87 | KEEL-ROLLBACK-1 | `scripts/apply_refactor.py` restores each planned file from its saved copy, and a failed rollback leaves applied, ungated content in place, while `agents/tools/apply_refactor.tool.md` says it "rolls back every file" and "leaves the tree exactly as it" was. Ruling: narrow the tool card to what the per-file restore does. Give a failed rollback a named error. The journalled transaction is row 89 | planned |
+| 88 | KEEL-PRIVATTR-1 | check_D reads only `import` and `from ... import` statements, so `import pkg` then `pkg._sub.run()` reaches a private submodule and passes; the rule text names only the import forms. Ruling: widen AGENT.md's "Respect the `__init__.py` boundary" rule and check_D to an attribute chain `pkg._sub` reached after `import pkg`. Resolve the name by its binding | planned |
+| 89 | KEEL-ROLLBACK-2 | `scripts/apply_refactor.py` applies a change set file by file. A crash between files leaves a half-applied tree. A journalled transaction makes the change set all or nothing: write the journal, apply, gate, then commit or replay the journal back. This takes its own campaign after row 87 lands | planned |
+| 90 | KEEL-HOOKVENV-1 | The project Stop hook in `.claude/settings.json` runs `.venv/bin/python scripts/hooks/on_stop_doc_review.py -` relative to the session's directory. It exits 127 in a tree with no `.venv`, including every fresh git worktree. A neutral launcher in `scripts/` finds the worktree's own `.venv` first, then the main checkout's through `git rev-parse --git-common-dir`. It refuses with a named exit when neither exists. Each harness's hook config calls the launcher as a thin adapter (CONVENTIONS §7) | planned |
+| 91 | KEEL-VERIFYTIME-1 | A full `make verify` takes about 2 h 30 min on a 32-core host. The junit record of one run puts 82 of the suite's 207 summed minutes in six nested runs of a generated project's suite. `tests/integration/test_copier_generation.py` `_test_gate` runs that suite in one process. Its docstring says it runs "exactly as its shipped make test recipe". That recipe passes the configured workers. The docstring says "in ~4s". Each call takes about 15 minutes. The levers run in this order: (L1) run the nested suite as the shipped recipe does, with its workers; (L2) run the full nested gate once on one defaults project and move the record-idempotence half to a keel unit test; (L4) share test_copier_audit's old-tag renders across its tests; then measure why four workers give about 1.4 times one. Each lever lands only with a before-and-after junit measurement. This is not a build-system change | planned |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's.
 
 | Position | Queue id | Gap | Status |
 |----------|----------|-----|--------|
-| 44 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1; found by the CMP-7 opening pass; after CMP-7, at the position the maintainer picks | planned |
-| 45 | KEEL-GENRE-1 | 26 tracked `kind: doc` files ending `.md` (27 with the `.jinja` twin of `docs/guides/README.md`) carry no facet saying what form of document each is; the study calls the facet `form` and the inventory `genre`, and its name is open; found by the CMP-7 opening pass | planned |
+| 44 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1; found by the CMP-7 opening pass; after CMP-7, at the position the maintainer picks | planned: after the CMP-15.S2 and CMP-16.S1 lanes land. Both lanes have landed, so this row is eligible |
+| 45 | KEEL-GENRE-1 | 26 tracked `kind: doc` files ending `.md` (27 with the `.jinja` twin of `docs/guides/README.md`) carry no facet saying what form of document each is; the study calls the facet `form` and the inventory `genre`, and its name is open; found by the CMP-7 opening pass | planned: the facet is `form`, with the closed values guide, reference, index, explanation, runbook. Row 60 KEEL-BATCH-1 uses the same field |
 | 46 | KEEL-CHLOG-1 | An unknown `CHANGELOG.md` heading and a "wip" commit subject pass, and no `commit-msg` hook exists; the study's slice 3, after KEEL-FRAG-1, which changes how the changelog is written; found by the CMP-7 opening pass | planned |
 | 47 | KEEL-VOCAB-1 | No reject list runs over prose: `change_comments.phrases` reads code comments only; the study's slice 6, overlapping KEEL-DOC-2 (lane L8); found by the CMP-7 opening pass | planned |
 | 48 | KEEL-ROADMAP-1 | `docs/reference/features.md` has no status column, so a planned feature cannot be listed and an `implemented` row with no test cannot fail; the study's slice 7; found by the CMP-7 opening pass | planned |
 | 49 | KEEL-STATUS-1 | A document's status can move backward between commits, and no check reads the previous version from git; the transition half of the study's PLC-02, which CMP-7.S2 leaves out; found by the CMP-7 opening pass | planned |
 | 50 | KEEL-COVSCHEMA-1 | The coverage report has no schema keel and pyverdex share; the study's slice 13; found by the CMP-7 opening pass | planned |
 | 51 | KEEL-EVALREC-1 | An eval run leaves no record with its spend basis; the study's slice 15; found by the CMP-7 opening pass | planned |
-| 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned |
+| 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned: keel-only documents move to one folder, `docs/internals/`. Copier leaves out the whole folder. A gate fails a shipped file naming a path inside it. This uses no declared list or copier extension |
 
 ### Build lanes ahead of the merge line
 
@@ -4268,6 +4271,43 @@ On 2026-11-03 the maintainer ruled on how CMP-8.S1 holds R-CODE-7:
     `external`. Ruff's `S110` and `S112` would judge a subset of the first
     check with a second excuse grammar and no tier, so a generated project
     would be red on update with no grace, against ruling 3.
+
+## Rulings recorded after CMP-17
+
+The maintainer answered the parked decisions on 2026-11-06.
+
+- **Main was pushed once after a clean scan for confidential names.** This
+  action is done.
+- **2a — row 86, KEEL-TESTSEL-1.** A full gate refuses narrowing on the
+  command line or in `PYTEST_ADDOPTS`. Tier targets and a direct pytest stay
+  free to narrow. Neither writes gate evidence.
+- **3a — row 87, KEEL-ROLLBACK-1.** The tool card narrows to the per-file
+  restore. A failed rollback gets a named error.
+- **3b — row 89, KEEL-ROLLBACK-2.** The change set becomes a journalled
+  transaction in its own campaign after row 87 lands.
+- **4a — row 88, KEEL-PRIVATTR-1.** The `__init__.py` rule text and check_D
+  widen to an attribute chain `pkg._sub` reached after `import pkg`. The check
+  resolves the name by its binding.
+- **5b — row 90, KEEL-HOOKVENV-1.** A neutral launcher finds the worktree's
+  interpreter before the main checkout's. It refuses with a named exit when
+  neither exists. Each harness's hook config is a thin adapter (CONVENTIONS §7).
+- **6a — row 45, KEEL-GENRE-1.** The facet is `form`, with the closed values
+  guide, reference, index, explanation, runbook. Row 60 KEEL-BATCH-1 uses the
+  same field.
+- **7a — row 44, KEEL-CHECKID-1.** Its position is after the CMP-15.S2 and
+  CMP-16.S1 lanes land. Both lanes have landed, so it is eligible.
+- **8a — row 52, KEEL-CABINET-1.** Keel-only documents move to `docs/internals/`.
+  Copier leaves out the whole folder. A gate fails a shipped file naming a
+  path inside it. This uses no declared list or copier extension. The folder
+  takes that name from the maintainer's other repositories and the
+  autonomous-mode skill's default run folder.
+- **9b then 9a — the Codex adapter.** Its result flags a read outside the
+  allowed roots now. It enforces an allowlist later. The adapter is outside
+  keel, so it creates no row here.
+- **Row 91, KEEL-VERIFYTIME-1.** The maintainer asked how much the integration
+  tests' generated projects can be reduced and shared. Row 91 answers with
+  levers L1, L2 and L4, followed by a measurement of worker scaling. Each lever
+  needs a before-and-after junit measurement before it lands.
 
 ## Open items
 
