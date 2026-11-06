@@ -3419,7 +3419,7 @@ On the base, `str` converts four raw practices members: `_mechanism_reason`'s `r
 
 Regressions append `@` to all eight practice section positions; the base raises at `int(section)`.
 A practice whose `enforced_by` is `doc:<an existing ADR> §x` reaches the same `int(section)`.
-`§0_3` and `§٣` resolve cleanly as section 3 on the base; S2 makes each one finding.
+A section sign followed by `0_3` or by `٣` resolves cleanly as section 3 on the base; S2 makes each one finding.
 Python and shell `rerun_proof: doc:<existing doc> §x` each raise on the base and become one check_V FAILURE finding.
 Deep refs raise at the base's first `str`; deep `id` raises at collection.
 Regressions isolate all four sites.
