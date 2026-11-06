@@ -187,7 +187,9 @@ def test_the_fence_grammar_has_the_same_syntax_tree():
 
 
 def test_the_fence_grammar_has_the_same_output():
-    """Pin the wrapper too, on tracked Markdown and every regression string."""
+    """Pin the wrapper too, on tracked Markdown (every walked Markdown file
+    when git is not installed or no repository holds the tree) and every
+    regression string."""
     sys.path.insert(0, str(_ROOT / "scripts"))
     import check_structure as cs
     import git_tree
@@ -198,9 +200,16 @@ def test_the_fence_grammar_has_the_same_output():
             if name.endswith((".md", ".md.jinja")):
                 path = Path(directory) / name
                 paths.append(path.relative_to(_ROOT).as_posix())
+    try:
+        kept = git_tree.tracked(str(_ROOT), paths)
+    except git_tree.NoGitError:
+        # A generated project runs this suite before its first `git init`
+        # (tests/integration/test_copier_generation.py); with no repository
+        # the tree is every file the structure walk reaches, as
+        # tests/integration/test_committed_secrets_gate.py reads it.
+        kept = paths
     tree_texts = [
-        (rel, (_ROOT / rel).read_text(encoding="utf-8"))
-        for rel in sorted(git_tree.tracked(str(_ROOT), paths))
+        (rel, (_ROOT / rel).read_text(encoding="utf-8")) for rel in sorted(kept)
     ]
     assert tree_texts, "a pin over zero tree documents"
     regression = _ROOT / "tests/unit/scripts/test_check_structure_fences.py"
