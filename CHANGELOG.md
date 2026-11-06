@@ -10,6 +10,12 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
+  The Python 3.6-safe `scripts/project_python.py` launcher uses the current
+  tree's venv, then the main checkout's, preserving arguments, stdin and the
+  script's exit status.
+  Missing venvs name both paths and the build remedy; bare or unusual
+  fallback layouts refuse without guessing.
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying
   a configured value names its source and key as WrongValue. Rendering uses

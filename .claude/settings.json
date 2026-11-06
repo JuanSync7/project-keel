@@ -1,5 +1,5 @@
 {
-  "$comment": "Team-shared Claude Code settings. Personal overrides go in settings.local.json (gitignored). The `hooks` block is the vendor-specific EVENT TRIGGER (CONVENTIONS \u00a77) over a vendor-neutral doer: when a turn ends, the doc reviewer's dry-run runs and prints its one-line report -- deterministic, no model, exit 0 always. Uses the project venv because the doer's agent package needs Python >= 3.10 (the host python3 may be 3.6).",
+  "$comment": "Team-shared Claude Code settings. Personal overrides go in settings.local.json (gitignored). The `hooks` block is the vendor-specific EVENT TRIGGER (CONVENTIONS \u00a77) over a vendor-neutral doer: when a turn ends, the doc reviewer's dry-run runs and prints its one-line report -- deterministic, no model. The neutral Python launcher (scripts/project_python.py) runs on host python3 >= 3.6 and uses this worktree's project venv or the main checkout's so fresh worktrees need no private venv; the agent package needs Python >= 3.10 (the host python3 may be 3.6).",
   "hooks": {
     "Stop": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".venv/bin/python scripts/hooks/on_stop_doc_review.py -",
+            "command": "python3 scripts/project_python.py scripts/hooks/on_stop_doc_review.py -",
             "timeout": 120
           }
         ]
