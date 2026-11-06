@@ -53,12 +53,10 @@ def test_readable_reports_keep_their_verdict_even_with_nonzero_status(
         (list, '{"a":1}'),
         (list, '"x"'),
         (list, "[1]"),
-        (list, '[{}, null]'),
+        (list, "[{}, null]"),
     ],
 )
-def test_unreadable_reports_name_the_tool_status_root_stderr_and_remedy(
-    container, out
-):
+def test_unreadable_reports_name_the_tool_status_root_stderr_and_remedy(container, out):
     from scripts import tool_reports
 
     tool = "scripts/jobs/review_docs.py"
@@ -117,9 +115,7 @@ def test_both_import_orders_share_one_module_and_error(monkeypatch, first):
         assert package.tool_reports is bare
         assert bare.__all__ == ["read_report", "ToolReportUnreadable"]
         with pytest.raises(dotted.ToolReportUnreadable):
-            bare.read_report(
-                "scripts/tool.py", 0, "", "", "/checkout", container=dict
-            )
+            bare.read_report("scripts/tool.py", 0, "", "", "/checkout", container=dict)
         with pytest.raises(bare.ToolReportUnreadable):
             dotted.read_report(
                 "scripts/tool.py", 0, "", "", "/checkout", container=list

@@ -333,9 +333,7 @@ def test_the_cli_reports_a_failed_rule_retrieval_through_the_exit_helper(
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
     _project(tmp_path)
     expected = (
-        cli.exit_codes.ExitCode.USAGE
-        if answer[0]
-        else cli.exit_codes.ExitCode.FAILURE
+        cli.exit_codes.ExitCode.USAGE if answer[0] else cli.exit_codes.ExitCode.FAILURE
     )
     assert cli.main(["--root", str(tmp_path)]) == expected
     err = capsys.readouterr().err.strip().splitlines()[-1]
@@ -577,9 +575,7 @@ def test_nonzero_gate_and_apply_reports_keep_their_verdicts(
 
     def run(args, stdin=None, *, root):
         rc, out, err = runner(args, stdin, root=root)
-        if any(
-            a.endswith(("run_make_target.py", "apply_refactor.py")) for a in args
-        ):
+        if any(a.endswith(("run_make_target.py", "apply_refactor.py")) for a in args):
             return 1, out, "gate or apply diagnostic"
         return rc, out, err
 
