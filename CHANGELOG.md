@@ -692,6 +692,19 @@ version rather than a bare commit:
   short-lived background job as its first statement, before make exits or
   releases the job, so a slow interpreter start cannot turn a generated
   project's own suite red (KEEL-REAPRACE-2).
+- **An entry block cannot hide a dropped result behind `finish`.**
+  `tests/integration/test_exit_gate.py` judges discarded module-function
+  results even beside a `finish` call, including, in a module that binds the
+  helper, assignment of the result of a status-returning function to a name
+  `finish` is never handed (plain, annotated, unpacked or chained). The gate
+  reads names without their order or scope, so a result copied to a second
+  name before `finish` is a drop; the entry line is `finish(main())`.
+  Binding an ordinary value counts as use.
+  `scripts/exit_code_table.py` retains a status-returning function's codes
+  without treating its discarded result as handed to `finish`. The drop
+  finding keeps its baseline text and does not repeat the hands-nothing finding
+  for `main`.
+  Backlog: KEEL-EXITDROP-1 (class fix).
 - **`make check` refuses a manifest the config loader refuses.**
   `scripts/check_structure.py` parsed config/project.json and
   config/practices.json with `json.loads`, so a key written twice passed with

@@ -2,7 +2,7 @@
 title: exit_code_table — generate the exit-code table from the enum and the gate's scripts
 kind: script
 layer: n/a
-summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It reads config/project.json `doc_drift` through scripts/config_loader.py and refuses, exit CONFIG, a manifest or block it cannot use, after the loader's line for each key at fault. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. Every message names the configured guide path and gate target, and an error's text that may quote one, through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. `--shell` writes the shell helper scripts/exit_codes.sh instead, whole and from the same enum (`render_shell`): one `EXIT_<NAME>=<value>` per member and the functions `exit_fail` and `exit_passthrough`, the shell `report` and `passthrough`; with `--check` it writes nothing and exits 1 when the helper is stale or absent, it refuses, exit 2, a helper reached through a symlink and an enum without the SUCCESS and USAGE members the helper names, whatever config/project.json `shell.enabled` says, because that switches the shell tools only. Needs the project interpreter.
+summary: Writes the region between the `<!-- exit-codes:begin -->` and `<!-- exit-codes:end -->` lines of the guide config/project.json `doc_drift.limits_guide` names. The region holds two tables. The first has one row per member of ExitCode, read from the syntax tree of scripts/exit_codes.py and never by importing it: value, name, meaning, what to do. The second has one row per script a recipe reachable from make `doc_drift.gate_target` runs, naming the values that script's entry function can return and `passes through` when it returns a wrapped tool's status. `read_script` is the one reader of what a script can exit with, and it reads a closed grammar from the syntax tree: SUCCESS itself, `report(<member>, ...)`, `passthrough(...)`, a conditional between those, a name every binding of which is a plain assignment of those, or a call to a function of the same module whose every return is one of those, plus the member of every `fail(<member>, ...)` call in the module; the reader retains the codes of a status-returning function whose result the entry block drops, including, in a module that binds the helper, assignment to a name `finish` is never handed directly (a result copied to a second name before `finish` is a drop, so the entry line is `finish(main())`), even beside a `finish` call, and tests/integration/test_exit_gate.py rejects the drop; a status-returning function is `main`, another entry function, or one whose value-carrying returns all follow that status grammar; binding any other function's result counts as use; any other return, a name also bound another way (a parameter, an unpacking, a loop, `+=`, `:=`, `as`, `global`), a `report` of a member with nothing to report, and a function that can reach its end without returning, is a finding, never a guess. `passthrough` marks a wrapped tool's status, so one handed the script's own status is a finding too: the entry function's result (the function `finish` is handed, or `main`), directly or through a plain-assigned name, an int literal, a member, a `report`, or a call to a function of the module whose every return is one of those, including such a status under a sign (`-1`), in an arithmetic or `and`/`or` whose every operand is one, or handed to a builtin the module does not rebind (`int(main())`); and so is an entry line that hands `finish` a `passthrough(...)`. A helper that converts another process's status (one of its returns reads it) passes. An enum member written with an annotation is refused, not skipped. `--check` writes nothing and exits 1 naming each difference when the region is stale. It reads config/project.json `doc_drift` through scripts/config_loader.py and refuses, exit CONFIG, a manifest or block it cannot use, after the loader's line for each key at fault. It refuses, exit 2, a guide or marker that is missing, repeated or out of order, a guide reached through a symlink (scripts/git_tree.py `through_symlink`) and a script whose exits it cannot read. Every message names the configured guide path and gate target, and an error's text that may quote one, through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`. It replaces the file whole through a temporary file beside it and never touches `updated:`. It does not hold exits to the helper (tests/integration/test_exit_gate.py does) and it does not write the per-script prose below the region, which is hand-written. `--shell` writes the shell helper scripts/exit_codes.sh instead, whole and from the same enum (`render_shell`): one `EXIT_<NAME>=<value>` per member and the functions `exit_fail` and `exit_passthrough`, the shell `report` and `passthrough`; with `--check` it writes nothing and exits 1 when the helper is stale or absent, it refuses, exit 2, a helper reached through a symlink and an enum without the SUCCESS and USAGE members the helper names, whatever config/project.json `shell.enabled` says, because that switches the shell tools only. Needs the project interpreter.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-exit-codes
@@ -536,6 +536,54 @@ class _Reader:
             name in where[0] or name in where[1] for where in (scope, self.module_scope)
         )
 
+    def status_returning(self, func, seen=frozenset()):
+        """True for an entry function or a function whose value-carrying
+        returns all follow the reader's status grammar."""
+        if func.name in self.entries and func is self.functions.get(func.name):
+            return True
+        if id(func) in seen:
+            return False
+        values = [
+            n.value
+            for n in own_nodes(func)
+            if isinstance(n, ast.Return)
+            and n.value is not None
+            and not _is_none(n.value)
+        ]
+        scope = self._scope(func)
+        return bool(values) and all(
+            self._status_value(value, scope, seen | {id(func)}) for value in values
+        )
+
+    def _status_value(self, node, scope, seen):
+        """True for a member, report, passthrough or status-returning call,
+        including conditionals and names the reader can follow."""
+        if self._member(node) is not None:
+            return True
+        if isinstance(node, ast.IfExp):
+            return self._status_value(node.body, scope, seen) and self._status_value(
+                node.orelse, scope, seen
+            )
+        if isinstance(node, ast.Name):
+            where = scope
+            if node.id not in scope[0] and node.id not in scope[1]:
+                where = self.module_scope
+            values = where[0].get(node.id)
+            if not values or node.id in where[1] or node.id in self.shared:
+                return False
+            return all(
+                id(value) not in seen
+                and self._status_value(value, scope, seen | {id(value)})
+                for value in values
+            )
+        if not isinstance(node, ast.Call):
+            return False
+        if helper_symbol(node.func, self.bindings) in (_REPORT, _PASSTHROUGH):
+            return True
+        target = node.func.id if isinstance(node.func, ast.Name) else None
+        func = scope[2].get(target) or self.functions.get(target)
+        return func is not None and self.status_returning(func, seen)
+
     def handed_passthrough(self, node, seen=frozenset()):
         """True when the expression `finish` is handed is a `passthrough` call,
         directly or through a name a plain assignment binds to one. *seen*
@@ -641,8 +689,8 @@ def finish_calls(tree, bindings):
 
 def read_tree(tree, relpath, quiet_names):
     """The Reading of a parsed script: what its entry block hands `finish`,
-    or its `main` when the block hands nothing. *quiet_names* are the members
-    that may be returned without `report`."""
+    plus the status returns it drops, or its `main` when the block hands nothing.
+    *quiet_names* are the members that may be returned without `report`."""
     reader = _Reader(tree, relpath, quiet_names)
     # `fail` ends the process from anywhere in the module, not only from the
     # entry function, so every call of it is a code this script can exit with.
@@ -652,6 +700,7 @@ def read_tree(tree, relpath, quiet_names):
         ):
             reader.reported_call(node, _FAIL)
     handed = finish_calls(tree, reader.bindings)
+    dropped = dropped_results(tree)
     reader.entries.update(_called_functions(handed, reader))
     for call in handed:
         if len(call.args) != 1 or call.keywords:
@@ -660,6 +709,11 @@ def read_tree(tree, relpath, quiet_names):
         if reader.handed_passthrough(call.args[0]):
             reader._finding(call, _PASSTHROUGH_HANDED)
         reader.value(call.args[0], reader.module_scope)
+    # A literal handed to finish must not hide the codes an entry call drops;
+    # the exit gate rejects the drop independently of the table's reading.
+    for _node, name in dropped:
+        if reader.status_returning(reader.functions[name]):
+            reader.function(reader.functions[name])
     if not handed:
         if _DEFAULT_ENTRY in reader.functions:
             reader.function(reader.functions[_DEFAULT_ENTRY])
@@ -707,11 +761,19 @@ def code_findings(tree, relpath, quiet_names):
 
 
 def dropped_results(tree):
-    """Each expression statement in an entry block of *tree* that calls a
-    function of the module and drops what it returns, as (statement, function
-    name). A function counts when some `return` of its own carries a value. A
-    value that is used (`print(f())`) is not dropped, and a value dropped by
-    another callable (`asyncio.run(main())`) is not seen."""
+    """Each call of a module function whose result an entry block of *tree*
+    drops, as (statement, function name): an expression statement, or, for
+    a status-returning function in a module that binds the helper, assignment
+    to a name `finish` is never handed (including annotated, unpacked or
+    chained targets, unless a `finish` argument reads any bound name). Names
+    are read without their order or scope, so a result copied to a second name
+    before `finish` is a drop: the entry line is `finish(main())`.
+    A status-returning function is `main`,
+    another entry function, or one whose value-carrying returns all follow
+    the reader's status grammar. Binding an ordinary result counts as use.
+    A function counts when some `return` of its own carries a value.
+    A value used directly (`print(f())` or a condition) is not dropped, and a
+    value dropped by another callable (`asyncio.run(main())`) is not seen."""
     returning = {
         node.name
         for node in tree.body
@@ -721,15 +783,51 @@ def dropped_results(tree):
             for n in own_nodes(node)
         )
     }
-    return [
-        (node, node.value.func.id)
-        for block in entry_blocks(tree)
-        for node in ast.walk(block)
-        if isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Name)
-        and node.value.func.id in returning
-    ]
+    reader = _Reader(tree, "", frozenset())
+    bindings = reader.bindings
+    reader.entries.update(_called_functions(finish_calls(tree, bindings), reader))
+    statuses = {
+        name for name in returning if reader.status_returning(reader.functions[name])
+    }
+    out = []
+    for block in entry_blocks(tree):
+        nodes = list(ast.walk(block))
+        used = {
+            name.id
+            for call in nodes
+            if isinstance(call, ast.Call)
+            and helper_symbol(call.func, bindings) == _FINISH
+            for arg in [*call.args, *(kw.value for kw in call.keywords)]
+            for name in ast.walk(arg)
+            if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Load)
+        }
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                # A module that never binds the helper has no status to lose.
+                if not (bindings[0] or bindings[1]):
+                    continue
+                targets = (
+                    node.targets if isinstance(node, ast.Assign) else [node.target]
+                )
+                names = {
+                    name.id
+                    for target in targets
+                    for name in ast.walk(target)
+                    if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Store)
+                }
+                if not names or names & used:
+                    continue
+            elif not isinstance(node, ast.Expr):
+                continue
+            value = node.value
+            if (
+                isinstance(value, ast.Call)
+                and isinstance(value.func, ast.Name)
+                and value.func.id in returning
+                and (isinstance(node, ast.Expr) or value.func.id in statuses)
+            ):
+                out.append((node, value.func.id))
+    return out
 
 
 def _quiet_names(members):

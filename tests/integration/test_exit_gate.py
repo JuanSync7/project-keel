@@ -2,7 +2,7 @@
 title: Integration — a process ends only through the exit helper, and the exit-code table is the enum
 kind: tests
 layer: n/a
-summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns, a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. A command name with no expansion has its quotes and backslashes removed and a `$'...'` decoded as bash decodes it, so `"exit"`, `\\exit`, `$'exit'`, `command exit` and `builtin exit` are `exit`; a command named by an expansion (`$x 3`, `"$cmd" 3`) and an `eval` are findings where the command could end the script (not inside `$(...)`, backquotes, a process substitution or `( ... )`, nor before a single `|` or `&`), because the gate cannot judge them; and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding, and a CRLF line end is the file's one finding, naming the carriage return. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname or brace expansion in a command name, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. The first's held-status findings are the exception: they go as `exit-held-status`, which scripts/expiring_tier_data.py `WARN_ONLY` lists, and warn and never fail, in the template too, because the rule still flags ordinary scripts. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
+summary: Three tree-wide gates over every Python file tests/source_tree.py `python_files` lists, and the first over every shell script too (the walk `check_structure.walk` uses), read from the syntax tree. The first fails an exit written anywhere but scripts/exit_codes.py (`sys.exit`, `os._exit`, any `.exit(...)` attribute such as argparse's, `raise SystemExit`, a SystemExit subclass, the builtins `exit` and `quit`, each of those as an attribute of `builtins` or `__builtins__`, and an import that renames any of them), an entry block that hands `finish` nothing while its module imports the helper, or that calls a function of its module and drops the value it returns (an expression statement or assignment of the result of a status-returning function, in a module that binds the helper, to a name `finish` is never handed directly (a result copied to a second name before `finish` is a drop, so the entry line is `finish(main())`), including annotated, unpacked and chained targets; binding an ordinary value counts as use), a return scripts/exit_code_table.py `read_script` cannot follow to an ExitCode member (a returned name bound by anything but a plain assignment included), a `report` or `fail` call missing one of its three message parts or holding a blank literal one, or handed a code that is not a failure member, a `passthrough` handed the script's own status (the entry function's result, directly or through a name, an int literal, a member, or a function of the module whose every return is one of those, also under a sign, in an arithmetic or `and`/`or` of them, or through a builtin such as `int`), an entry line `finish(passthrough(...))`, and an import of the helper under a second name. The second fails an ExitCode member the generated table in the limits guide does not name and a table row no member backs (scripts/exit_code_table.py `table_findings`). The third fails a `fail` or `finish` call outside the entry block of a module another project module imports (an import from tests/ does not count, and scripts/exit_codes.py is the helper), because a shared module raises or returns and only an entry point ends the process; `passthrough` is no ending, it marks a status and returns it. config/project.json `import_layers.may_end_the_process` names a module that may, with a non-blank reason, and an entry naming no such module is a finding. A walk that finds no Python file, or no entry block, is a failure, never a pass. It cannot see a bound status overwritten before `finish` reads the name; the assignment scan is not flow-sensitive. It cannot see a dropped status assigned to an attribute or subscript target, or through augmented assignment. It does not judge whether a message part is useful, and it cannot see an exit reached through `getattr`, `os.abort`, `os.kill`, an uncaught exception, argparse's own `--help` and usage exits, a `python -c` line in a makefile, or a status dropped by another callable (`asyncio.run(main())`); and it does not check a `passthrough` over a helper that returns another process's status (scripts/run_app.py `_app_status`), which passes by design, nor one over a function some of whose returns are the script's own literals and others a tool's status. The first also reads every file scripts/shell_gate.py `classify` calls a shell script (with no repository yet, every one the structure walk reaches), less scripts/exit_codes.sh itself: a script must source that helper by a path ending in `/exit_codes.sh` and end through it, as `exit "$EXIT_<NAME>"`, `exit_fail "$EXIT_<NAME>" WHAT ON NEXT` with a member other than SUCCESS and no blank part, or `exit_passthrough "$?"` for a wrapped tool's status, or of a name assigned as `name=$?` and otherwise only read as `$name` or `${name}` outside comments and quoted here-document bodies (any other occurrence, `let`, `(( ))`, `${name:=...}`, `printf -v`, `read`, `mapfile`, `for`, a word that only names it, is a finding at its own line), never a number or a member; a bare `exit 3`, `exit $?` or `exit` is a finding at its file and line, in a subshell, `$(...)`, backquotes or a process substitution `<(...)` or `>(...)` too, inside double quotes or a `${...}` as well (a quoted `}` closes no `${...}`), and so is a status the script renames: an `exit_passthrough` or `return` of anything else (`$((...))`, a positional, a name never assigned), and a `return` of a number or of nothing. A command name with no expansion has its quotes and backslashes removed and a `$'...'` decoded as bash decodes it, so `"exit"`, `\\exit`, `$'exit'`, `command exit` and `builtin exit` are `exit`; a command named by an expansion (`$x 3`, `"$cmd" 3`) and an `eval` are findings where the command could end the script (not inside `$(...)`, backquotes, a process substitution or `( ... )`, nor before a single `|` or `&`), because the gate cannot judge them; and an ending that needs the helper on a line before the one that sources it is a finding. Comments, quoted words, here-document bodies and a `case` subject or pattern are not commands, inside `$(...)` too, while a command in a clause body is judged; a file it cannot read to its end, such as one with an open quote or nested past `_SH_MAX_DEPTH` levels, is a finding, and a CRLF line end is the file's one finding, naming the carriage return. No shell script is a finding unless config/project.json `shell.no_scripts` gives the reason or `shell.enabled` (the copier answer `shell`) is false; every other finding holds whatever `shell.enabled` says, because it switches the shell tools only. It cannot see `set -e`, `trap`, `exec`, `kill`, an `sh -c` string, a pathname or brace expansion in a command name, or a script that falls off its end after some other ending. The first and third hand their findings to scripts/expiring_tier.py as the checks `exit-helper` and `exit-shared-module`: in the template repository, which holds copier.yml, every finding is red; in a generated project a finding its `expiring_tier.baseline` records warns until `expiring_tier.expires`, and any other is red. The first's held-status findings are the exception: they go as `exit-held-status`, which scripts/expiring_tier_data.py `WARN_ONLY` lists, and warn and never fail, in the template too, because the rule still flags ordinary scripts. Catching SystemExit is not an exit and is not a finding: the exception itself, or a tuple holding it, as the type of an `except` clause or an argument of pytest's `raises`; anywhere deeper in those expressions, and in a `raises` that is not pytest's, it is one. Not a check_* letter: the letters A to Z are taken.
 """
 
 import ast
@@ -246,14 +246,15 @@ def _is_none(node):
 def entry_findings(tree, relpath, quiet_names, *, exercises_helper=False):
     """Each way *tree*'s entry block fails to end through the helper: a
     `finish` call outside the block, every return `read_tree` cannot follow to
-    a member, and an entry block that hands `finish` nothing while the module
-    binds the helper or the block drops what a function of the module returns.
+    a member, an entry block that hands `finish` nothing while the module
+    binds the helper, and any result a call of a module function drops.
     *exercises_helper* is the helper's own unit test, which calls `finish` to
     assert on it."""
     out = []
     bindings = et.helper_bindings(tree)
     blocks = et.entry_blocks(tree)
     handed = et.finish_calls(tree, bindings)
+    covered_main_drops = set()
     in_block = {id(call) for call in handed}
     for node in ast.walk(tree):
         if (
@@ -275,14 +276,17 @@ def entry_findings(tree, relpath, quiet_names, *, exercises_helper=False):
             "`main` returns is dropped -- write `finish(main())` (%s)"
             % (relpath, blocks[0].lineno, et.HELPER)
         )
-    else:
-        out.extend(
-            "%s:%d: the entry block drops what `%s` returns, so the process "
-            "exits 0 whatever it found -- write `finish(%s())` with `%s` "
-            "returning members (%s), or return nothing from it"
-            % (relpath, node.lineno, name, name, name, et.HELPER)
-            for node, name in et.dropped_results(tree)
-        )
+        # The older finding already covers main's dropped status in this block;
+        # keeping its text and emitting it once preserves project baselines.
+        covered_main_drops = {id(node) for node in ast.walk(blocks[0])}
+    out.extend(
+        "%s:%d: the entry block drops what `%s` returns, so the process "
+        "exits 0 whatever it found -- write `finish(%s())` with `%s` "
+        "returning members (%s), or return nothing from it"
+        % (relpath, node.lineno, name, name, name, et.HELPER)
+        for node, name in et.dropped_results(tree)
+        if name != "main" or id(node) not in covered_main_drops
+    )
     return sorted(out)
 
 
@@ -1816,11 +1820,242 @@ def test_a_passthrough_of_a_wrapped_status_is_no_finding(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "entry",
+    [
+        "    main(); finish(ExitCode.SUCCESS)\n",
+        "    status = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    status: ExitCode = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    status = main()\n    print(status)\n    finish(ExitCode.SUCCESS)\n",
+        "    status: ExitCode = main()\n    print(status)\n    finish(ExitCode.SUCCESS)\n",
+        "    a = b = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    a, b = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    [a, *b] = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    a = (b, c) = main()\n    finish(ExitCode.SUCCESS)\n",
+    ],
+    ids=[
+        "expression",
+        "unused-name",
+        "unused-annotated-name",
+        "bound-printed",
+        "annotated-bound-printed",
+        "chained",
+        "tuple",
+        "list-starred",
+        "mixed-chained",
+    ],
+)
+def test_an_entry_reports_a_dropped_result_even_when_it_calls_finish(entry):
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish, report\n"
+        "def main():\n"
+        "    return report(ExitCode.USAGE, 'bad', 'input', 'fix it')\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("tool.py:5: "), findings
+    assert "drops what `main` returns" in findings[0], findings
+
+
+def test_a_dropped_tool_result_is_not_a_passthrough_of_the_scripts_own_status():
+    tree = ast.parse(
+        "import subprocess\n"
+        "from exit_codes import finish, passthrough\n"
+        "def tool_status():\n"
+        "    return passthrough(subprocess.call(['x']))\n"
+        "def main():\n"
+        "    return passthrough(tool_status())\n"
+        "if __name__ == '__main__':\n"
+        "    tool_status()\n"
+        "    finish(main())\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert any(
+        "tool.py:8: the entry block drops what `tool_status` returns" in f
+        for f in findings
+    )
+    assert not any("passthrough" in f for f in findings), findings
+    reading = et.read_tree(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert reading.passes, reading
+    assert reading.findings == [], reading
+
+
+def test_a_drop_keeps_the_generated_projects_baseline_text():
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n"
+        "    main(); finish(ExitCode.SUCCESS)\n"
+    )
+    assert entry_findings(tree, "tool.py", frozenset({"SUCCESS"})) == [
+        "tool.py:5: the entry block drops what `main` returns, so the process "
+        "exits 0 whatever it found -- write `finish(main())` with `main` "
+        "returning members (scripts/exit_codes.py), or return nothing from it"
+    ]
+
+
+@pytest.mark.parametrize("entry", ["    main()\n", "    status = main()\n"])
+def test_a_main_drop_without_finish_has_only_the_hands_nothing_finding(entry):
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert len(findings) == 1, findings
+    assert "hands nothing to `finish`" in findings[0], findings
+
+
+def test_a_printed_binding_without_the_helper_is_clean():
+    tree = ast.parse(
+        "def helper():\n    return 'text'\n"
+        "if __name__ == '__main__':\n"
+        "    text = helper()\n    print(text)\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert findings == []
+
+
+def test_a_bound_main_without_the_helper_is_clean():
+    # `main` is a status-returning function in every module, but a module
+    # that never binds the helper has no exit status to lose.
+    tree = ast.parse(
+        "import json\ndef main():\n    return {'a': 1}\n"
+        "if __name__ == '__main__':\n"
+        "    data = main()\n    print(json.dumps(data))\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert findings == []
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "    rc = main()\n    status = rc\n    finish(status)\n",
+        "    rc = main()\n    held = rc\n    status = held\n    finish(status)\n",
+        "    rc = ExitCode.SUCCESS\n    status = rc\n    rc = main()\n"
+        "    finish(status)\n",
+        "    rc = main()\n    status = ExitCode.SUCCESS\n"
+        "    def unused():\n        status = rc\n    finish(status)\n",
+    ],
+    ids=["one-hop", "two-hop", "copied-before-the-call", "copied-in-a-nested-def"],
+)
+def test_a_status_moved_to_a_second_name_is_dropped(entry):
+    # The gate reads names, not the order or scope they are bound in, so it
+    # credits only the name the result was bound to: the entry line is
+    # `finish(main())`.
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish, report\n"
+        "def main():\n    return report(ExitCode.USAGE, 'bad', 'input', 'fix')\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert any("the entry block drops what `main`" in f for f in findings), findings
+
+
+def test_a_status_forwarded_to_a_name_finish_never_reads_is_dropped():
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n"
+        "    rc = main()\n    kept = rc\n    finish(ExitCode.SUCCESS)\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert len(findings) == 1
+    assert findings[0].startswith("tool.py:5: the entry block drops what `main`")
+
+
+@pytest.mark.parametrize(
+    ("setup", "entry"),
+    [
+        (
+            "import argparse\ndef build_parser():\n    return argparse.ArgumentParser()\n",
+            "    parser = build_parser()\n    args = parser.parse_args()\n"
+            "    finish(main(args))\n",
+        ),
+        (
+            "import os\ndef find_root():\n    return '/project'\n",
+            "    root = find_root()\n    os.chdir(root)\n    finish(main())\n",
+        ),
+    ],
+    ids=["parser", "root"],
+)
+def test_an_entry_uses_an_ordinary_value_before_finish(setup, entry):
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        + setup
+        + "def main(*args):\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    assert entry_findings(tree, "tool.py", frozenset({"SUCCESS"})) == []
+
+
+def test_a_bare_ordinary_result_has_only_the_drop_finding():
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        "def warm_cache():\n    return {}\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n"
+        "    warm_cache()\n    finish(main())\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert len(findings) == 1, findings
+    assert "tool.py:7: the entry block drops what `warm_cache` returns" in findings[0]
+
+
+def test_hands_nothing_does_not_cover_another_functions_drop():
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish\n"
+        "def helper():\n    return ExitCode.SUCCESS\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n"
+        "    helper(); main()\n"
+    )
+    findings = entry_findings(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert len(findings) == 2, findings
+    assert any("hands nothing to `finish`" in f for f in findings), findings
+    assert any(
+        "tool.py:7: the entry block drops what `helper` returns" in f for f in findings
+    ), findings
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "    finish(main())\n",
+        "    setup()\n    finish(main())\n",
+        "    status = main()\n    finish(status)\n",
+        "    status: ExitCode = main()\n    finish(status)\n",
+        "    a = b = main()\n    finish(a)\n",
+        "    a = b = main()\n    finish(b)\n",
+        "    if main():\n        print('used')\n    finish(ExitCode.SUCCESS)\n",
+    ],
+    ids=[
+        "forwarded",
+        "setup",
+        "bound",
+        "annotated-bound",
+        "chained-first",
+        "chained-last",
+        "condition-uses-value",
+    ],
+)
+def test_an_entry_that_uses_its_returned_values_stays_clean(entry):
+    tree = ast.parse(
+        "from exit_codes import ExitCode, finish, report\n"
+        "def setup():\n    return None\n"
+        "def main():\n"
+        "    return report(ExitCode.USAGE, 'bad', 'input', 'fix it')\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    assert entry_findings(tree, "tool.py", frozenset({"SUCCESS"})) == []
+
+
+@pytest.mark.parametrize(
     "block",
     [
         "    main()\n",
         "    print(helper())\n",
-        "    text = helper()\n    print(text)\n",
         "    import asyncio\n    asyncio.run(serve())\n",
     ],
 )

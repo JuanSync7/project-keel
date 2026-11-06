@@ -2,9 +2,10 @@
 title: Unit — exit_code_table (the generated exit-code table and the reader of what a script exits with)
 kind: tests
 layer: n/a
-summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table, CONFIG when config/project.json `doc_drift` cannot be used, with the loader's line for each key before the one refusal, and 2 when it refuses anything else, and refuses a guide reached through a symlink without writing through it.
+summary: read_members reads the enum from the helper's syntax tree in value order and refuses a missing class, a member that is not three literals, a shared value and a text that cannot be a table cell. read_script follows an entry function to the members it returns, retains codes from results the entry block discards even beside `finish` (assignment of the result of a status-returning function to a name `finish` is never handed, including annotated, unpacked and chained targets), leaves used values and no-value setup calls clean, counts a `fail` call anywhere in the module, marks a passed-through status read from a tool, refuses a `passthrough` of the entry function's result, a literal, a member or a module function returning only those, also signed, combined by arithmetic or `or`, or through a builtin such as `int`, while a child's status through the same forms reads, refuses `finish(passthrough(...))` on the entry line, and reports a bare integer, an unknown member and a function that can reach its end without returning as findings, never as codes. split_region refuses a marker that is missing, repeated or out of order. render and exit_cell are pure and sorted. load_policy names the config key it cannot read. main writes the region, leaves every byte outside it alone, keeps a CRLF guide CRLF, reaches a fixed point on the second run, exits 1 from --check on a stale table, CONFIG when config/project.json `doc_drift` cannot be used, with the loader's line for each key before the one refusal, and 2 when it refuses anything else, and refuses a guide reached through a symlink without writing through it.
 """
 
+import ast
 import contextlib
 import json
 import os
@@ -156,6 +157,195 @@ def _reading(tmp_path, body):
     root = _project(tmp_path, tool=_PRELUDE + body + _ENTRY)
     members = et.read_members(str(root))
     return et.read_script(str(root / "scripts" / "tool.py"), "scripts/tool.py", members)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "    main(); finish(ExitCode.SUCCESS)\n",
+        "    status = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    status: ExitCode = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    status = main()\n    print(status)\n    finish(ExitCode.SUCCESS)\n",
+        "    status: ExitCode = main()\n    print(status)\n    finish(ExitCode.SUCCESS)\n",
+        "    a = b = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    a, b = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    [a, *b] = main()\n    finish(ExitCode.SUCCESS)\n",
+        "    a = (b, c) = main()\n    finish(ExitCode.SUCCESS)\n",
+    ],
+    ids=[
+        "expression",
+        "unused-name",
+        "unused-annotated-name",
+        "bound-printed",
+        "annotated-bound-printed",
+        "chained",
+        "tuple",
+        "list-starred",
+        "mixed-chained",
+    ],
+)
+def test_read_tree_keeps_codes_from_a_dropped_result_beside_finish(entry):
+    tree = ast.parse(
+        _PRELUDE + "def main():\n"
+        "    return report(ExitCode.USAGE, 'bad', 'input', 'fix it')\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    reading = et.read_tree(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert reading.names == {"SUCCESS", "USAGE"}, reading
+    assert not reading.passes, reading
+    assert reading.findings == [], reading
+    assert [(node.lineno, name) for node, name in et.dropped_results(tree)] == [
+        (6, "main")
+    ]
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        "    finish(main())\n",
+        "    setup()\n    finish(main())\n",
+        "    status = main()\n    finish(status)\n",
+        "    status: ExitCode = main()\n    finish(status)\n",
+        "    a = b = main()\n    finish(a)\n",
+        "    a = b = main()\n    finish(b)\n",
+        "    print(main())\n    finish(ExitCode.SUCCESS)\n",
+        "    if main():\n        print('used')\n    finish(ExitCode.SUCCESS)\n",
+    ],
+    ids=[
+        "forwarded",
+        "setup",
+        "bound",
+        "annotated-bound",
+        "chained-first",
+        "chained-last",
+        "printed",
+        "condition",
+    ],
+)
+def test_dropped_results_leaves_used_values_and_no_value_calls_alone(entry):
+    tree = ast.parse(
+        _PRELUDE + "def setup():\n    return None\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    assert et.dropped_results(tree) == []
+    reading = et.read_tree(tree, "tool.py", frozenset({"SUCCESS"}))
+    assert reading == et.Reading(frozenset({"SUCCESS"}), passes=False, findings=[])
+
+
+@pytest.mark.parametrize(
+    ("setup", "entry", "drops"),
+    [
+        (
+            "import argparse\ndef build_parser():\n    return argparse.ArgumentParser()\n",
+            "    parser = build_parser()\n    args = parser.parse_args()\n"
+            "    finish(main(args))\n",
+            [],
+        ),
+        (
+            "import os\ndef find_root():\n    return '/project'\n",
+            "    root = find_root()\n    os.chdir(root)\n    finish(main())\n",
+            [],
+        ),
+        (
+            "def warm_cache():\n    return {}\n",
+            "    warm_cache()\n    finish(main())\n",
+            ["warm_cache"],
+        ),
+    ],
+    ids=["parser", "root", "bare-ordinary-result"],
+)
+def test_read_script_leaves_ordinary_results_out_of_exit_codes(
+    tmp_path, setup, entry, drops
+):
+    source = (
+        _PRELUDE + setup + "def main(*args):\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n" + entry
+    )
+    root = _project(tmp_path, tool=source)
+    reading = et.read_script(
+        str(root / "scripts/tool.py"), "scripts/tool.py", et.read_members(str(root))
+    )
+    assert reading == et.Reading(frozenset({"SUCCESS"}), passes=False, findings=[])
+    assert [name for _node, name in et.dropped_results(ast.parse(source))] == drops
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "value = helper()",
+        "value: str = helper()",
+        "a = value = helper()",
+        "value, other = helper()",
+        "[value, *other] = helper()",
+    ],
+)
+def test_binding_an_ordinary_result_counts_as_using_it(binding):
+    tree = ast.parse(
+        _PRELUDE + "def helper():\n    return ('text', 'other')\n"
+        "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n    "
+        + binding
+        + "\n    print(value)\n    finish(main())\n"
+    )
+    assert et.dropped_results(tree) == []
+    assert et.read_tree(tree, "tool.py", frozenset({"SUCCESS"})).findings == []
+
+
+@pytest.mark.parametrize(
+    ("body", "drops"),
+    [
+        ("    return ExitCode.SUCCESS\n", ["helper"]),
+        ("    return ExitCode.USAGE\n", ["helper"]),
+        ("    return report(ExitCode.USAGE, 'bad', 'input', 'fix')\n", ["helper"]),
+        ("    return passthrough(child())\n", ["helper"]),
+        ("    status = leaf()\n    return status\n", ["helper"]),
+        ("    return leaf() if ready else ExitCode.SUCCESS\n", ["helper"]),
+        ("    def inner():\n        return leaf()\n    return inner()\n", ["helper"]),
+        ("    if ready:\n        return leaf()\n    return {}\n", []),
+        ("    return leaf() if ready else {}\n", []),
+        ("    return 3\n", []),
+        ("    status = leaf()\n    status += 1\n    return status\n", []),
+        ("    return helper()\n", []),
+        ("    status = status\n    return status\n", []),
+    ],
+    ids=[
+        "member",
+        "failure-member",
+        "report",
+        "passthrough",
+        "assigned-call",
+        "conditional",
+        "nested-call",
+        "mixed-returns",
+        "mixed-conditional",
+        "integer",
+        "opaque-name",
+        "recursive-call",
+        "cyclic-name",
+    ],
+)
+def test_only_status_returning_helpers_can_drop_a_bound_result(body, drops):
+    tree = ast.parse(
+        _PRELUDE + "def leaf():\n    return ExitCode.SUCCESS\n"
+        "def helper():\n" + body + "def main():\n    return ExitCode.SUCCESS\n"
+        "if __name__ == '__main__':\n"
+        "    status = helper()\n    print(status)\n    finish(main())\n"
+    )
+    assert [name for _node, name in et.dropped_results(tree)] == drops
+
+
+def test_an_entry_function_is_a_status_even_when_its_return_is_invalid():
+    tree = ast.parse(
+        _PRELUDE + "def run():\n    return 3\n"
+        "if __name__ == '__main__':\n"
+        "    status = run()\n    print(status)\n    finish(run())\n"
+    )
+    assert [name for _node, name in et.dropped_results(tree)] == ["run"]
+    assert (
+        "not an exit code"
+        in et.read_tree(tree, "tool.py", frozenset({"SUCCESS"})).findings[0]
+    )
 
 
 @pytest.mark.parametrize(
