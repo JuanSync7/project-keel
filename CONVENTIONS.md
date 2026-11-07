@@ -456,7 +456,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Tool specs governed (error) | `agents/**/*.tool.md` carry valid `kind: tool` frontmatter + a resolvable `public_api` + a valid `tool_effect` |
 | Accountability (error) | `config/project.json` `accountability.default_owner` is read through `scripts/config_loader.py` on every run, and a value outside the §12 owner grammar, or `TBD` or the word `null` in any letter case, is an error naming the key; a tool/agent doc whose `owner` is `TBD`, in any letter case, inherits it, and with none set (absent or `null`, the loader's default) or a refused value each such doc is an error naming it and the key; any governed doc or `README.md` whose `owner` is outside the §12 grammar, such as a quoted or commented placeholder, is an error naming it and the grammar, whatever its `kind`; a tool/agent doc whose `owner` is a written null (`null` in any letter case, or `~`) is an error naming it; a missing or empty `owner` warns |
 | Tool/agent binding (error) | each agent `tools.md` ↔ each spec's `## Used by` agree (both ways); `tool_command` invokes `public_api` |
-| Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an absent `config/project.json` is an error; an **undeclared** leftover stack/transport dir warns |
+| Project facts (§15) | `config/project.json` agrees with the tree: declared `path`/`stack`/`enabled` transport dirs exist, `enabled` ⊆ `available`, `backend.python` matches `pyproject`; an absent `config/project.json` or a `layers.frontend.root` resolving outside the project is an error; an **undeclared** leftover stack/transport dir warns |
 | Agent-rules symlink (§5) | every `CLAUDE.md` is a symlink to its sibling `AGENT.md`; every `AGENT.md` has that sibling |
 | Owned-exception boundary (§18) | in library code (`src`/`models`/`runtimes`/`agents`), no `raise` of an exception **type** imported from a foreign (non-local, non-stdlib) module — wrap it in an owned error; `# practice-ok: <reason>` waives |
 | Frozen-config gate (§18) | a class carrying the declared marker (`config/practices.json` `tokens.config_marker`, `# practice: frozen-config`) must be provably immutable (frozen dataclass / `NamedTuple` / attrs-frozen); keyed on the marker, never a `*Config` name suffix; `# practice-ok` waives |
@@ -1054,7 +1054,8 @@ It is keyed **by layer/concern, never one global `language`**:
   declarations, and `check_N` stays silent until it adds a twin of its own.
 
 `check_H` **errors** on a hard contradiction (a declared `path`/`stack`/
-`enabled` transport dir that is missing; `enabled` not in `available`; a
+`enabled` transport dir that is missing; a `layers.frontend.root` that resolves
+outside the project; `enabled` not in `available`; a
 `backend.python` that disagrees with `pyproject.toml`'s `requires-python`) and
 **warns** on an *undeclared leftover* — a stack dir under the frontend `root`,
 or a transport dir under `api/`, that the manifest doesn't list. So a stack you
@@ -1068,6 +1069,8 @@ declarative: `runtimes/registry.py` `DEFAULT_RUNTIME` and `models/registry.py`
 `DEFAULT_MODEL` decide what code gets when it names no engine or adapter, and
 no check ties each pair together. A missing `config/project.json` is an error:
 `check_H` reports that no project fact can be judged until it is restored.
+Frontend confinement uses `scripts/git_tree.py` `confined_path` when the check
+runs; a link swapped later is not caught.
 
 **One reader.** Code reads `config/project.json`, `config/practices.json` and
 the variables they declare only through `scripts/config_loader.py`: `read` opens

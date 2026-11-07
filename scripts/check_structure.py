@@ -36,7 +36,8 @@ Checks:
      carries a `- NOT` bullet (the negative-scope line)
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR), and an
-     absent manifest is an ERR; an undeclared leftover stack/transport dir
+     absent manifest or an escaping layers.frontend.root is an ERR;
+     an undeclared leftover stack/transport dir
      WARNs (CONVENTIONS section 15).
      An optional 'runtimes' block is validated the same way (section 16)
   I. Agent-rules symlink (ERR): every CLAUDE.md is a symlink to its sibling
@@ -194,6 +195,7 @@ import child_env  # noqa: E402
 import child_exec  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
+import git_tree  # noqa: E402
 import markdown_html_data  # noqa: E402
 import run_date  # noqa: E402
 import shell_gate  # noqa: E402
@@ -1699,6 +1701,8 @@ def check_H():
     disk but absent from the manifest is a WARN (an undeclared leftover).
     An absent manifest is an error: copier never prunes it, so a tree without
     it is one whose every declared fact goes unjudged.
+    Frontend confinement judges the path when this check runs; a link swapped
+    later is not caught.
     Stdlib JSON, so it runs under the old pre-commit interpreter (no tomllib).
     See CONVENTIONS section 15.
     """
@@ -1742,6 +1746,16 @@ def check_H():
 
     frontend = _expect(layers.get("frontend"), dict, "layers.frontend", {})
     froot = frontend.get("root")
+    if isinstance(froot, str) and froot:
+        try:
+            git_tree.confined_path(ROOT, froot)
+        except git_tree.PathEscape as exc:
+            err(
+                "config/project.json: layers.frontend.root '%s' is not confined "
+                "to the project (%s) -- choose a root inside the project"
+                % (_shown(froot), _shown(str(exc)))
+            )
+            froot = None
     if isinstance(froot, str) and froot:
         available = _expect(
             frontend.get("available"), list, "layers.frontend.available", []

@@ -1,8 +1,8 @@
 """
-title: Unit — check_structure check_H (layers.app names a runnable composition root)
+title: Unit — check_structure check_H (composition roots and frontend confinement)
 kind: tests
 layer: n/a
-summary: check_H's layers.app rule, pinned: an absent key is silent (a project from before the key arrives through `copier update`), null declares that the project has no composition root, and an object must carry a string `path` that exists as a package with `__main__.py` or as a `.py` file, and a string `module` that is the dotted form of that path's trailing components, which is what scripts/run_app.py imports. A non-object value, a missing path, a package without `__main__.py` and a module that does not match its path are each one error naming the key.
+summary: check_H's layers.app rule, pinned: an absent key is silent (a project from before the key arrives through `copier update`), null declares that the project has no composition root, and an object must carry a string `path` that exists as a package with `__main__.py` or as a `.py` file, and a string `module` that is the dotted form of that path's trailing components, which is what scripts/run_app.py imports. A non-object value, a missing path, a package without `__main__.py` and a module that does not match its path are each one error naming the key. Frontend roots resolving outside the project are refused without changing external files; internal and absent frontends remain clean.
 """
 
 import json
@@ -24,13 +24,14 @@ _ABSENT = object()
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     """An empty root with the gate's module state isolated (as test_check_w)."""
-    (tmp_path / "config").mkdir()
-    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    root = tmp_path / "project"
+    (root / "config").mkdir(parents=True)
+    monkeypatch.setattr(cs, "ROOT", str(root))
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
     monkeypatch.setattr(cs, "_CONFIG_READ", {})
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
-    return tmp_path
+    return root
 
 
 def _package(root, relpath, *, main=True):
@@ -137,3 +138,62 @@ def test_an_absent_manifest_is_an_error_naming_the_fix(repo):
     mine = [e for e in cs.errors if e.startswith("config/project.json:")]
     assert len(mine) == 1 and "not found" in mine[0], cs.errors
     assert "restore it" in mine[0], mine
+
+
+@pytest.mark.parametrize("escape", ["absolute", "relative", "parent-link"])
+def test_frontend_escape(repo, escape):
+    """An existing stack outside the project is refused without touching it."""
+    outside = repo.parent / "outside"
+    stack = outside / "frontend" / "astro"
+    stack.mkdir(parents=True)
+    sentinel = stack / "sentinel"
+    original = b"external frontend must survive\x00\xff"
+    sentinel.write_bytes(original)
+    if escape == "absolute":
+        froot = str(outside / "frontend")
+    elif escape == "relative":
+        froot = "../outside/frontend"
+    else:
+        (repo / "linked").symlink_to(outside, target_is_directory=True)
+        froot = "linked/frontend"
+    (repo / "config" / "project.json").write_text(
+        json.dumps(
+            {
+                "layers": {
+                    "frontend": {
+                        "root": froot,
+                        "stack": "astro",
+                        "available": ["astro"],
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cs.check_H()
+
+    assert sentinel.read_bytes() == original
+    assert len(cs.errors) == 1, cs.errors
+    assert "layers.frontend.root" in cs.errors[0], cs.errors
+    assert cs.warnings == [], cs.warnings
+
+
+@pytest.mark.parametrize("frontend", [False, True], ids=["absent", "in-project"])
+def test_frontend_control(repo, *, frontend):
+    """An absent frontend and an existing internal stack both remain clean."""
+    layers = {}
+    if frontend:
+        (repo / "frontend" / "astro").mkdir(parents=True)
+        layers["frontend"] = {
+            "root": "frontend",
+            "stack": "astro",
+            "available": ["astro"],
+        }
+    (repo / "config" / "project.json").write_text(
+        json.dumps({"layers": layers}), encoding="utf-8"
+    )
+
+    cs.check_H()
+
+    assert cs.errors == [] and cs.warnings == [], (cs.errors, cs.warnings)

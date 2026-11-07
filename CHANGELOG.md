@@ -41,6 +41,7 @@ version rather than a bare commit:
   and deletion. Writers use the checked destination. Internal links remain usable;
   an explicit absolute export directory remains allowed. Checks apply at call
   time and do not catch a link swapped before the write.
+  The structure gate refuses a frontend root outside the project, including an absolute root (`test_frontend_escape`).
 
 - **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
   Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
