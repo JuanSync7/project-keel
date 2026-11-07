@@ -2,7 +2,7 @@
 title: Integration — the gate's evidence record, written by a real gate run
 kind: tests
 layer: n/a
-summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners. Every document but an accepted ADR that lists most of verify's goals, as a `+`, comma, `and` or `or` list of make targets in a code line, table row, list item or prose paragraph that names verify, names exactly the Makefile's goals in its order; the reader is shown on each form, and on an example of a few goals and a unit that does not name verify, which it leaves alone. Every quote of verify's recipe line is the Makefile's line word for word, and the `gate_evidence.py` roster row of scripts/README.md and its template twin each carries one.
+summary: A scratch git repository carrying the evidence writer, its siblings, keel's own config/project.json, schema and `test` recipe, and the selection guard with a conftest that declares `--keel-full-gate` as keel's does, runs a real reduced gate through scripts/gate_evidence.py with real make, pytest and git. Two runs on the same tree exit 0 and write byte-identical records naming HEAD, a clean tree and pytest's own counts, with no absolute path, host or user in them, and leave what git lists unchanged (the writer's rerun_proof). A planted failing test keeps make's real exit code and leaves a red record naming the dirty tree; under `make -i` the exit is 0, as -i asks, and the record is still red (tests-failed). `make -n` runs nothing and writes nothing. The record validates against config/evidence/gate-record.schema.json and each fault twin (missing field, wrong type, extra field, unknown version) is rejected. keel and its template both ignore config/project.json `evidence.dir`; a generated project, which has no template twin, judges its own tree only. docs/guides/deterministic-checks.md's section on the record names the schema's fields and reasons and the verify recipe's goals, read back and held equal to those owners. Every document but an accepted ADR that lists most of verify's goals, as a `+`, comma, `and` or `or` list of make targets in a code line, table row, list item or prose paragraph that names verify, names exactly the Makefile's goals in its order; the reader is shown on each form, and on an example of a few goals and a unit that does not name verify, which it leaves alone. Every quote of verify's recipe line is the Makefile's line word for word, and the `gate_evidence.py` roster row of scripts/README.md and its template twin each carries one.
 @covers scripts/gate_evidence.py
 """
 
@@ -57,6 +57,30 @@ _TEST_OK = """def test_one():
 
 def test_two():
     assert "a".upper() == "A"
+"""
+
+
+# keel's `test` recipe runs the selection guard and passes --keel-full-gate, so
+# the scratch gate ships the guard and a conftest that declares the option and
+# hands it to the guard as tests/conftest.py does; the rest of keel's conftest
+# (scratch root, isolation) has no part in a two-test gate.
+_GUARD = "tests/selection_guard.py"
+_CONFTEST = """import os
+
+import pytest
+
+import selection_guard
+
+
+def pytest_addoption(parser):
+    parser.addoption("--keel-full-gate", action="store_true")
+
+
+def pytest_configure(config):
+    if config.getoption("--keel-full-gate") and selection_guard.check_full_gate(
+        config.invocation_params.args, os.environ.get("PYTEST_ADDOPTS", "")
+    ):
+        raise pytest.UsageError("full gate refused a narrowed run")
 """
 
 
@@ -143,7 +167,8 @@ def _build(base):
         "%s/\n.pytest_cache/\n__pycache__/\n" % _EVIDENCE["dir"], encoding="utf-8"
     )
     (repo / "Makefile").write_text(_makefile(), encoding="utf-8")
-    (repo / "tests").mkdir()
+    script_copy.copy_with_imports(repo, _ROOT, [_GUARD])
+    (repo / "tests" / "conftest.py").write_text(_CONFTEST, encoding="utf-8")
     (repo / "tests" / "test_ok.py").write_text(_TEST_OK, encoding="utf-8")
     for argv in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "init")):
         out = _run(repo, env, "git", *argv)
