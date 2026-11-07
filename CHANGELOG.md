@@ -59,6 +59,10 @@ version rather than a bare commit:
   including history, tables and fences, and counts NUL-containing binaries.
   Only test modules with the copier-absent module skip guard are exempt.
   Keel-only records now sit in `docs/internals/`, which one Copier exclusion leaves out.
+- **Private package imports survive constant fallbacks (KEEL-PRIVATTR-2).**
+  check_D resolves imports with only None or scalar constant fallbacks in
+  except handlers; other bindings remain unresolved. The guide states the
+  limits for rebinding, getattr, star imports and private data folders.
 - **Private submodule attribute access fails check_D (KEEL-PRIVATTR-1).**
   Imported chains such as `pkg._sub`, including aliases and dotted imports,
   respect the package boundary. Binding resolution excludes shadowing locals

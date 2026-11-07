@@ -182,6 +182,51 @@ def test_attribute_access_resolves_import_bindings_and_preserves_controls(
     assert "import the name the package's __init__.py exports" in cs.errors[0]
 
 
+@pytest.mark.parametrize("fallback", ["None", "False", "0", "'unavailable'"])
+@pytest.mark.parametrize("local", [False, True], ids=["module", "function"])
+def test_import_with_only_except_constant_fallback_finds_private_submodule(
+    repo, fallback, local
+):
+    source = (
+        "try:\n    import pkg as p\nexcept ImportError:\n    p = %s\n"
+        "p._sub.run()\n" % fallback
+    )
+    line = 5
+    if local:
+        source = "def f():\n" + "".join(
+            "    " + s for s in source.splitlines(keepends=True)
+        )
+        line += 1
+    _write(repo, dict(_PACKAGE, **{"src/other/user.py": source}))
+    cs.check_D()
+    assert len(cs.errors) == 1, cs.errors
+    assert cs.errors[0].startswith(
+        f"src/other/user.py:{line}: accesses the private submodule pkg._sub "
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "try:\n    import pkg\nexcept ImportError:\n    pkg = object()\n"
+        "pkg._sub.run()\n",
+        "try:\n    import pkg\nexcept ImportError:\n    pkg = None\n"
+        "pkg = object()\npkg._sub.run()\n",
+        "try:\n    import pkg\nexcept ImportError:\n    pkg = other\npkg._sub.run()\n",
+        "import pkg\npkg = None\npkg._sub.run()\n",
+        "def f(pkg):\n    try:\n        import pkg\n"
+        "    except ImportError:\n        pkg = None\n    pkg._sub.run()\n",
+        "try:\n    import pkg\nexcept ImportError:\n"
+        "    def f():\n        pkg = None\n        pkg._sub.run()\n",
+    ],
+    ids=["call", "extra-call", "name", "outside-except", "parameter", "nested-scope"],
+)
+def test_other_bindings_keep_attribute_root_unresolved(repo, source):
+    _write(repo, dict(_PACKAGE, **{"src/other/user.py": source}))
+    cs.check_D()
+    assert cs.errors == []
+
+
 def test_keel_tree_has_no_private_submodule_crossing(monkeypatch):
     monkeypatch.setattr(cs, "ROOT", str(_ROOT))
     monkeypatch.setattr(cs, "errors", [])

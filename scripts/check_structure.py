@@ -1084,7 +1084,7 @@ def _private_submodule_findings(full, node):
 
 def _private_attribute_finding(full, node, module):
     """A private submodule accessed through an imported package, else None."""
-    dotted = module.dotted(node.value)
+    dotted = module.dotted(node.value, except_fallbacks=True)
     package = _absolute_package_dir(dotted)
     if package is None or full.startswith(package + os.sep):
         return None
@@ -4890,6 +4890,21 @@ def _literal_str(node):
     return None
 
 
+def _is_scalar_literal(node):
+    """True for a literal constant node: a string, bytes, number, bool, None or
+    `...`. Tested by class name because 3.6 spells these Str/Bytes/Num/
+    NameConstant/Ellipsis, 3.8+ spells them Constant, and the old names stop
+    existing as ast attributes in 3.14."""
+    return node.__class__.__name__ in (
+        "Constant",
+        "Str",
+        "Bytes",
+        "Num",
+        "NameConstant",
+        "Ellipsis",
+    )
+
+
 def _call_base(func):
     """Dotted receiver of an attribute call: `os.path.join` -> 'os.path'. Empty
     when the receiver is not a plain dotted name (a call, a subscript, self)."""
@@ -6648,19 +6663,54 @@ class _Module(object):
             return "origin", imports[0]
         return "ambiguous", imports
 
-    def _chain(self, node):
+    def _only_except_fallbacks(self, name, scope):
+        """Non-import bindings are scalar literal assignments in except bodies.
+
+        Used only by D; X keeps treating mixed bindings as ambiguous.
+        """
+        home = self.home(name, scope)
+        for event in home.binds[name]:
+            if isinstance(event, ast.Import) or (
+                isinstance(event, ast.ImportFrom) and not event.level
+            ):
+                continue
+            if not isinstance(event, ast.Name) or not isinstance(event.ctx, ast.Store):
+                return False
+            assignment = self.parents.get(id(event))
+            if not isinstance(assignment, (ast.Assign, ast.AnnAssign)):
+                return False
+            if not _is_scalar_literal(assignment.value):
+                return False
+            ancestor = self.parents.get(id(assignment))
+            while ancestor is not None and not isinstance(
+                ancestor, (ast.ExceptHandler,) + _SCOPES
+            ):
+                ancestor = self.parents.get(id(ancestor))
+            if not isinstance(ancestor, ast.ExceptHandler):
+                return False
+        return True
+
+    def _chain(self, node, *, except_fallbacks=False):
         parts = []
         while isinstance(node, ast.Attribute):
             parts.append(node.attr)
             node = node.value
         if not isinstance(node, ast.Name):
             return None, None, ""
-        kind, value = self.lookup(node.id, self.scope_of(node))
+        scope = self.scope_of(node)
+        kind, value = self.lookup(node.id, scope)
+        if (
+            except_fallbacks
+            and kind == "ambiguous"
+            and len(value) == 1
+            and self._only_except_fallbacks(node.id, scope)
+        ):
+            kind, value = "origin", value[0]
         return kind, value, "".join("." + p for p in reversed(parts))
 
-    def dotted(self, node):
+    def dotted(self, node, *, except_fallbacks=False):
         """The dotted origin of a Name/Attribute chain through the imports, else None."""
-        kind, value, rest = self._chain(node)
+        kind, value, rest = self._chain(node, except_fallbacks=except_fallbacks)
         return value + rest if kind == "origin" else None
 
     def candidates(self, node):
