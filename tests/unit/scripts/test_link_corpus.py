@@ -3,9 +3,17 @@ title: Confined link_corpus mutations
 summary: External sentinel preservation, usable internal links and explicit output policy.
 """
 
-import link_corpus as job
+import sys
+from pathlib import Path
+
 import pytest
-from exit_codes import ExitCode
+
+_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT / "scripts"))
+sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
+
+import link_corpus as job  # noqa: E402
+from exit_codes import ExitCode  # noqa: E402
 
 pytestmark = pytest.mark.unit
 

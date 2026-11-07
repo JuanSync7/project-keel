@@ -1321,6 +1321,10 @@ def test_a_generated_project_passes_its_own_suite(tmp_path, answers, generate):
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", **answers)
 
+    assert not (dest / "tests/unit/scripts/jobs").exists()
+    assert (dest / "tests/unit/scripts/test_build_corpus.py").is_file()
+    assert (dest / "tests/integration/test_test_package_imports.py").is_file()
+
     structure = _structure_gate(dest)
     assert structure.returncode == 0, structure.stdout + structure.stderr
 

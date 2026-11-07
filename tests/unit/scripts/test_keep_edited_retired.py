@@ -63,3 +63,41 @@ def test_is_edited_on_bytes_that_are_not_utf8():
 def test_a_body_without_frontmatter_is_compared_whole():
     assert ker.is_edited(b"plain\n", b"plain\n") is False
     assert ker.is_edited(b"updated: 1\n", b"updated: 2\n") is True
+
+
+def test_parent_escape(escaped, monkeypatch):
+    root, outside = escaped
+    sentinel = outside / "adapter.yml"
+    before = b"unedited adapter\n"
+    sentinel.write_bytes(before)
+    monkeypatch.setattr(ker, "deleted_paths", lambda root: [])
+    monkeypatch.setattr(ker, "_resolve", lambda *args: "base")
+    monkeypatch.setattr(ker, "_tree", lambda *args, **kwargs: {})
+    monkeypatch.setattr(ker, "_successors", lambda *args: {})
+    monkeypatch.setattr(ker, "_keel_render", lambda *args: (before, None))
+    with pytest.raises(ker.PathEscape, match="path leaves its root"):
+        ker.judge(str(root), str(root), "base", retire={"linked/adapter.yml": "ci"})
+    assert sentinel.read_bytes() == before
+
+
+def test_restoration_parent_escape(escaped):
+    root, outside = escaped
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"unchanged")
+    with pytest.raises(ker.PathEscape, match="path leaves its root"):
+        ker._restore(str(root), "linked/restored.md", "100644", b"restored")
+    assert sentinel.read_bytes() == b"unchanged"
+    assert not (outside / "restored.md").exists()
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_missing_target_created(tmp_path, linked):
+    root = tmp_path / "project"
+    target = root / "real"
+    target.mkdir(parents=True)
+    if linked:
+        (root / "alias").symlink_to(target, target_is_directory=True)
+    parent = "alias" if linked else "real"
+    ker._restore(str(root), parent + "/restored.md", "100755", b"restored")
+    assert (target / "restored.md").read_bytes() == b"restored"
+    assert (target / "restored.md").stat().st_mode & 0o111

@@ -366,3 +366,13 @@ def pytest_sessionfinish(session, exitstatus):
         return
     session.exitstatus = code
     _say(config, message)
+
+
+@pytest.fixture
+def escaped(tmp_path):
+    """A project with an escaping parent link and an outside sentinel directory."""
+    root, outside = tmp_path / "project", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    return root, outside

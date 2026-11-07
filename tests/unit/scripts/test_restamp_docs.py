@@ -25,6 +25,7 @@ import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
+from exit_codes import ExitCode  # noqa: E402
 
 import hermetic_git  # noqa: E402
 
@@ -696,3 +697,55 @@ def test_conflicted_manifest_exits_2_cleanly(tmp_path, check):
     ], proc.stderr
     assert "Traceback" not in proc.stderr, proc.stderr
     assert "updated: 2026-01-01" in doc.read_text(encoding="utf-8")
+
+
+def test_parent_escape(escaped, monkeypatch):
+    root, outside = escaped
+    sentinel = outside / "a.md"
+    before = b"---\nupdated: 2020-01-01\n---\n"
+    sentinel.write_bytes(before)
+    monkeypatch.setattr(
+        restamp_docs,
+        "worklist",
+        lambda *args: [("linked/a.md", datetime.date(2026, 11, 7))],
+    )
+    rc = restamp_docs.main(["--root", str(root), "--today", "2026-11-07"])
+    assert sentinel.read_bytes() == before
+    assert rc == ExitCode.USAGE
+
+
+def test_escape_aborts_run_before_any_write(escaped, monkeypatch):
+    root, outside = escaped
+    before = b"---\nupdated: 2020-01-01\n---\n"
+    (root / "a.md").write_bytes(before)
+    (outside / "z.md").write_bytes(before)
+    monkeypatch.setattr(
+        restamp_docs,
+        "worklist",
+        lambda *args: [
+            (p, datetime.date(2026, 11, 7)) for p in ("a.md", "linked/z.md")
+        ],
+    )
+    rc = restamp_docs.main(["--root", str(root), "--today", "2026-11-07"])
+    assert (outside / "z.md").read_bytes() == before
+    assert (root / "a.md").read_bytes() == before
+    assert rc == ExitCode.USAGE
+
+
+def test_internal_parent_link(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    real = root / "real"
+    real.mkdir(parents=True)
+    (root / "alias").symlink_to(real, target_is_directory=True)
+    doc = real / "a.md"
+    doc.write_bytes(b"---\nupdated: 2020-01-01\n---\n")
+    monkeypatch.setattr(
+        restamp_docs,
+        "worklist",
+        lambda *args: [("alias/a.md", datetime.date(2026, 11, 7))],
+    )
+    assert (
+        restamp_docs.main(["--root", str(root), "--today", "2026-11-07"])
+        == ExitCode.SUCCESS
+    )
+    assert b"updated: 2026-11-07" in doc.read_bytes()
