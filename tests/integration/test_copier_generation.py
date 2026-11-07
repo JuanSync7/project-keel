@@ -2997,11 +2997,11 @@ def _readme_quickstart(project):
 def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     """Slice CMP-4.S4 held downstream: a generated project gets the writer, the
     stdlib siblings it imports, its schema, the `evidence` block and the ignore
-    line, and its own `verify` recipe runs the driver. A reduced gate (the
-    project's own `check` and `test`) run twice through the driver exits 0,
+    line, and its own `verify` recipe runs the driver. The project's own `unit`
+    goal runs one canonical-render test twice through the driver, exits 0,
     writes byte-identical records naming HEAD, and leaves what git lists alone.
-    Reduced, not the whole `verify`: lint and typecheck add minutes and nothing
-    the record's derivation depends on."""
+    One real pytest case supplies the JUnit counts the writer requires; the
+    full suite adds minutes and nothing the record's derivation depends on."""
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj")
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
@@ -3031,12 +3031,19 @@ def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     run_env = _on_arrival(dict(env, PY=sys.executable))
     for key in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
         run_env.pop(key, None)
+    # Forward pytest's selection as a make variable: the child allowlist does
+    # not copy PYTEST_ADDOPTS from the driver's environment.
+    run_env["MAKEFLAGS"] = (
+        " -- PYTEST_ADDOPTS="
+        r"tests/unit/scripts/test_gate_evidence.py::test_render_is_canonical\ "
+        "--junitxml=" + evidence["dir"] + "/junit/unit.xml"
+    )
     record = dest / evidence["dir"] / "verify.json"
     seen = []
     for _ in range(2):
         ran = subprocess.run(
             [sys.executable, "scripts/gate_evidence.py", "--gate", "verify", "--"]
-            + ["make", "check", "test"],
+            + ["make", "unit"],
             cwd=str(dest),
             env=run_env,
             capture_output=True,
