@@ -6,17 +6,17 @@ status: template
 owner: TBD
 public_api: src/app/__init__.py
 tags: []
-summary: OPTIONAL single-process composition root. Delete it for client-server web apps, and set config/project.json layers.app to null with it.
+summary: OPTIONAL single-process composition root. Deletion needs config/project.json edits and docs/README.md row removal.
 id: src-app-readme
 created: 2026-06-17
-updated: 2026-11-05
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
 
 # App (composition root) — OPTIONAL
 
-OPTIONAL single-process composition root. Delete it for client-server web apps, and set config/project.json layers.app to null with it.
+OPTIONAL single-process composition root. Deletion needs config/project.json edits and docs/README.md row removal.
 
 **Optional. Keep it only if one process wires the layers together.**
 
@@ -28,7 +28,7 @@ Two archetypes decide whether you need it:
 
 | Project | Entrypoint | Keep `app/`? |
 |---------|-----------|--------------|
-| **Client-server web** (separate FE build + BE server) | FE = its own build; BE = its server (`api/`/`backend/`) | **No** — nothing imports both in one process. Delete this dir. |
+| **Client-server web** (separate FE build + BE server) | FE = its own build; BE = its server (`api/`/`backend/`) | **No** — nothing imports both in one process. Delete this dir, remove its rows from `docs/README.md`, and make the config edits below. |
 | **Single-process** (CLI, service, library) | one `__main__`/`bin` that wires everything | **Yes** — that wiring *is* this dir. |
 
 A CLI with no `frontend/` is the single-process kind, so its wiring
@@ -40,7 +40,9 @@ lives here. A React+API product is the first kind, so it has no `app/`.
 exit 0. Moving the composition root means changing `layers.app`; check_H
 errors when its path or module stops matching the tree.
 
-**Delete this dir** and three entries change with it, or the gate goes red:
+**Delete this dir** and remove every row from `docs/README.md` whose Directory
+cell names `src/app/` or one of its subdirectories.
+Three config entries change with it, or the gate goes red:
 set config/project.json `layers.app` to `null` (so `make run` says there is
 no composition root instead of failing to import one); add `smoke` to
 `make_targets.empty_test_selections` with a reason such as `"no composition

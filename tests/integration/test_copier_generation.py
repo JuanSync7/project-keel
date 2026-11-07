@@ -671,7 +671,10 @@ def test_pyproject_twin_stays_pinned_to_keels_own():
 # The README's "delete what you don't need" advice, read out of the GENERATED
 # project's own README rather than restated here — so adding a directory to that
 # sentence is covered by this test instead of quietly widening a false promise.
-_DELETE_ADVICE = re.compile(r"Delete any optional dirs you don't need \(([^)]*)\)")
+_DELETE_ADVICE = re.compile(
+    r"Delete any optional dirs you don't need \(([^)]*)\)(.*?)(?:\n\n|\Z)",
+    re.DOTALL,
+)
 _BACKTICKED = re.compile(r"`([^`]+)`")
 
 
@@ -682,7 +685,26 @@ def _readme_deletable_dirs(project):
         "the generated README no longer carries the 'delete any optional dirs' "
         "sentence this test verifies; re-derive it rather than deleting the pin"
     )
+    assert "docs/README.md" in hit.group(2), hit.group(0)
     return [name.rstrip("/") for name in _BACKTICKED.findall(hit.group(1))]
+
+
+def _remove_document_index_rows(project, deleted):
+    """Apply the advised index edit for a directory and all its descendants."""
+    path = project / "docs" / "README.md"
+    kept = []
+    removed = []
+    for line in path.read_text(encoding="utf-8").splitlines(keepends=True):
+        row = re.match(r"^\| `([^`]+)` \|", line)
+        directory = row.group(1).rstrip("/") if row else None
+        if directory == deleted or (
+            directory is not None and directory.startswith(deleted + "/")
+        ):
+            removed.append(directory)
+        else:
+            kept.append(line)
+    assert deleted in removed, (deleted, removed)
+    path.write_text("".join(kept), encoding="utf-8")
 
 
 def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path, generate):
@@ -708,6 +730,7 @@ def test_the_readmes_delete_advice_leaves_a_green_gate(tmp_path, generate):
             "even have" % name
         )
         shutil.rmtree(str(dest / name))
+        _remove_document_index_rows(dest, name)
 
     r = subprocess.run(
         [sys.executable, "scripts/check_structure.py"],
@@ -2058,7 +2081,8 @@ def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path, generate
     root. Doing exactly that must leave the structure gate and `make smoke` green:
     the README names the manifest edits (layers.app null, smoke declared empty,
     run kept out of the effect sweep) that go with the deletion, src/app/AGENT.md
-    names the same three, and this test applies them from the README's own words."""
+    names the same three. Both name docs/README.md's directory rows to remove,
+    and this test applies those edits from the README's own words."""
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", frontend_stack="none")
     advice = _APP_DELETE_ADVICE.search((dest / "src" / "app" / "README.md").read_text())
@@ -2069,11 +2093,17 @@ def test_following_src_apps_delete_advice_leaves_a_green_gate(tmp_path, generate
     # The agent rules give the same advice, and an agent reads those first: a
     # bare "delete this dir" there turns the gate red when followed.
     rules = (dest / "src" / "app" / "AGENT.md").read_text(encoding="utf-8")
-    for named in ("layers.app", "empty_test_selections", "effect_proof_skip"):
+    for named in (
+        "layers.app",
+        "empty_test_selections",
+        "effect_proof_skip",
+        "docs/README.md",
+    ):
         assert named in advice.group(1), (named, advice.group(1))
         assert named in rules, ("src/app/AGENT.md", named)
 
     shutil.rmtree(str(dest / "src" / "app"))
+    _remove_document_index_rows(dest, "src/app")
     path = dest / "config" / "project.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["layers"]["app"] = None

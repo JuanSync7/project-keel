@@ -182,6 +182,8 @@ rename `src/backend/example_feature/` to your first real package. Then drop
 each deleted directory's line from the tree under Top-level layout:
 `tests/integration/test_doc_drift.py` fails while the tree lists a directory
 that does not exist.
+Remove every row from `docs/README.md` whose Directory cell names a deleted
+directory or one of its subdirectories.
 
 `models/` is the exception: `config/project.json` **declares** the adapters that live
 there, so deleting the directory alone leaves the manifest claiming adapters that no
