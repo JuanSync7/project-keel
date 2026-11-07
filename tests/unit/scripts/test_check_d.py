@@ -22,7 +22,9 @@ pytestmark = pytest.mark.unit
 def scanned_modules(monkeypatch):
     """Require every check_D run to judge at least one parsed module."""
     scanned = []
+    runs = []
     parse = cs._parse_python
+    check = cs.check_D
 
     def counted_parse(full):
         result = parse(full)
@@ -30,9 +32,17 @@ def scanned_modules(monkeypatch):
             scanned.append(full)
         return result
 
+    def counted_check():
+        before = len(scanned)
+        check()
+        runs.append(len(scanned) - before)
+
     monkeypatch.setattr(cs, "_parse_python", counted_parse)
+    # Counted per run through the attribute each test calls: a run the CHECK
+    # twin gate replaces with a silent check is no run and owes no count.
+    monkeypatch.setattr(cs, "check_D", counted_check)
     yield scanned
-    assert len(scanned) > 0
+    assert all(count > 0 for count in runs), runs
 
 
 @pytest.fixture
