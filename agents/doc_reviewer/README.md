@@ -6,7 +6,7 @@ status: template
 owner: TBD
 public_api: agents/doc_reviewer/__init__.py
 tags: [agent, documentation, review, rosters, freshness]
-summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs with per-file restoration attempted on red.
+summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs with journalled restoration attempted on red.
 id: agents-doc-reviewer
 created: 2026-09-02
 updated: 2026-11-07
@@ -32,7 +32,7 @@ report a change — this agent judges, one chunk at a time, with the guide's own
 the corpus as its context. Every edit lands through `apply_refactor`, gated on
 `make check-docs` (the structure gate plus strict freshness). On red, the doer
 attempts to restore planned files one at a time. A failed restore is
-`RollbackError`, naming every unrestored file; a crash can leave a half-applied tree.
+`RollbackError`, naming every unrestored file; startup replays interrupted targets from the durable journal.
 
 It is thin: policy + prompt only. The doers are `scripts/` tools (per the specs in
 `agents/tools/`, declared in `tools.md`); control flow is a neutral `Plan` on a
@@ -90,3 +90,6 @@ Its thin CLI is `scripts/doc_review.py` (`make doc-review`); its event trigger i
 vendor-specific skill is `.claude/skills/doc-review/`. The nightly schedule
 (`.github/workflows/scheduled.yml`, `ops/scheduled/crontab.example`) runs the
 deterministic doer, not this agent: a schedule has no one to read a judgment.
+
+The apply doer recovers before applying the next spec and logs recovered paths.
+A `journal_conflict: true` report stops the loop for evidence inspection.

@@ -820,6 +820,12 @@ KEYS = tuple(
     sorted(
         (
             _row(
+                ("refactor", "journal_path"),
+                "repo_path",
+                NONE,
+                "the ignored, untracked durable undo journal for scripts/apply_refactor.py",
+            ),
+            _row(
                 ("ANTHROPIC_API_KEY",),
                 "nonempty_str_or_null",
                 None,
@@ -933,7 +939,8 @@ KEYS = tuple(
             ),
             # 60 s: a margin for the tool child's start, the gated apply's
             # plan_edits and writes before the gate and its rollback after a
-            # red one (scripts/apply_refactor.py, run by an agent's _run), and
+            # red one, including journal, target and recovery fsyncs
+            # (scripts/apply_refactor.py, run by an agent's _run), and
             # the gate runner's start and its two tree snapshots. Measured: the
             # start and both snapshots took about 0.3 s on a small tree, and
             # two snapshots of a 200,000-file tree on local disk about 7 s;

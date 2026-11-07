@@ -6,7 +6,7 @@ status: stable
 owner: platform-team
 public_api: scripts/apply_refactor.py
 tags: [tool, refactor, gate, apply, rollback]
-summary: Apply one bounded edit spec file by file, run a make gate, and attempt per-file restoration on red; a failed restore raises RollbackError naming every unrestored file.
+summary: Recover interrupted refactors, then journal one bounded spec and commit it after a green gate; retain failed restores for replay.
 id: tool-apply-refactor
 created: 2026-07-07
 updated: 2026-11-07
@@ -25,21 +25,30 @@ tool_effect: writes
 ## Purpose
 The refactor loop's **hands + safety net**. Given a JSON edit spec on stdin it
 validates each edit before writing (each `find` must match its file exactly once).
-It writes the planned files one at a time and runs a make gate through
-`scripts/run_make_target.py`. If the gate goes red, it attempts to restore each
-planned file from its saved text, one file at a time. A failed restore raises
-`RollbackError` naming every unrestored file after attempting the other restores.
-The runner refuses a gate
-labelled wider than `config/project.json` `make_targets.gate_effects` (`--gate
-fmt` is red, not a pass) and fails a gate run that changed the tree, naming the
-paths in `gate_output`. A chunk is *accepted* only when the gate stays green.
-Restoration is not a transaction: a crash between files can leave a half-applied
-tree. This is how
-`agents/practice_refactor` cannot mark a chunk done unless it satisfies the very
-`make verify` the gate encodes.
+It recovers pending originals under an exclusive nonblocking lock before reading
+stdin or a spec file, then plans and applies that proposal in the same run.
+The required `refactor.journal_path` names an ignored, untracked journal
+(default manifest: `.evidence/refactor-journal.json`); its sibling `.lock` stays
+in place. Contention refuses with exit 1 and a retry action.
+The journal records raw prior bytes or absence, modes, prior and intended SHA-256,
+checkout identity and `.refactor-tmp-` directories. Planning uses universal
+newlines: a `find` containing LF matches a CRLF original, and output keeps its
+uniform newline convention. Mixed conventions are refused.
+Prepared publication precedes every target write. Each publication writes a
+sibling temporary, fsyncs it, replaces the destination and fsyncs its directory.
+The states are prepared, applied after all targets, and committed after a green
+`scripts/run_make_target.py` gate. A red gate or apply error restores originals;
+startup replays any pre-commit interruption, including one after a green gate.
+A committed journal is cleaned without undo. Replay removes orphan temporaries
+and only removes the journal after all restores succeed. A failed restore raises
+`RollbackError` after trying every target and retains the evidence for retry.
+A live recorded gate process group, conflicting bytes or corrupt evidence
+refuses recovery with `journal_conflict: true`. Both agents stop and surface it.
+The gate runner refuses wider effect labels and fails a green gate that changed
+the tree. A chunk is accepted only after committed is durable.
 
 ## When to use
-- To apply one proposed, bounded refactor with a gate and per-file restoration
+- To apply one proposed, bounded refactor with a durable journal and restoration
   on red; inspect any restore failure before another run.
 - NOT to decide *which* edit to make (that is the agent's model step) and NOT to
   gate without editing (that is `run_make_target`).
@@ -56,7 +65,7 @@ tree. This is how
 | `--root` | no | `.` | repo root the edit paths are relative to |
 | `--gate` | no | `verify` | make target to gate on; `none` skips the gate and is a human caller's flag, never an agent's |
 | `--allow` | no | none (repeatable) | a file this run may edit; an edit to any other file is refused before any write |
-| `--dry-run` | no | off | validate + list the files, write nothing |
+| `--dry-run` | no | off | open existing evidence and lock read-only; create neither, clean no temporaries; report pending recovery without applying a proposal, otherwise validate and list files |
 | `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, passed to `run_make_target`; a whole number from 1 to 604800, else refused (exit 2) before any edit |
 | `--json` | no | off | emit the result as JSON |
 
@@ -84,26 +93,26 @@ and when it names a `gate`: a spec that still names one is an old caller, and
 dropping the key silently would let the reply believe it chose the gate.
 
 ## Output
-With `--json`, a result object: `{practice, gate, applied, rolled_back, files, gate_output}`.
-`rolled_back: true` means all planned files' saved text was restored.
-Exit 0 when applied (or dry-run), 1 when the gate failed or restoration failed,
-2 on a bad or refused spec, 14 when config/project.json `agents` is a config
-fault (the message names the key). A restore failure emits `{"error": "RollbackError: ..."}`
-instead of a result. Its stderr report names every unrestored file, the write
-failure and the next step: restore those files from their saved originals or
-version control and inspect the tree before another refactor.
+With `--json`, a result object: `{practice, gate, applied, rolled_back, files, gate_output, recovered}`.
+`recovered` lists paths restored at startup, independently of `applied`.
+`rolled_back: true` means every planned original was restored byte for byte.
+Exit 0 when applied (or dry-run), 1 on a red gate, restore failure, lock contention
+or journal conflict, 2 on a refused spec, and 14 on a config fault.
+A recovery refusal carries `journal_conflict: true` and an `error` naming the
+configured journal and remedy. Preserve the evidence and reconcile it before
+retrying. Failed restores report `RollbackError` and retain the journal.
+Error reports retain `recovered` if reading or planning the next spec fails.
 
 ## Side effects
-WRITES the planned files one at a time. If the gate goes red or raises before
-returning a verdict (for example a timeout or killed `make`), the doer attempts
-to write each planned file's saved text back independently. It continues after
-a restore write fails, then raises `RollbackError` naming every unrestored file.
-The CLI reports this restore failure with `ExitCode.FAILURE`, rather than the
-gate's own failure. It does not restore changes the gate made outside the
-planned files. It refuses file creation, so there are no newly created planned
-files to remove. It provides no transaction or crash recovery: a crash during
-application or restoration can leave a half-applied tree. Runs the gate through
-`run_make_target` (`make <target>` as a subprocess); no model call.
+WRITES the journal, its persistent lock and planned targets. Replacement preserves
+file modes; it promises neither owner nor ACL preservation. Recovery can unlink
+an interrupted creation or recreate a deleted original from saved bytes, though
+proposals still refuse creation and deletion. No timestamps or permanent process
+ids are stored; the gate process-group id is transient while it runs.
+Journal, target and recovery fsyncs consume `agents.tool_gate_margin_seconds`.
+The transaction provides replay of planned targets, without reader isolation or
+restoration of unrelated gate writes. Runs one make gate through
+`run_make_target`; no model call.
 
 ## Used by
 - agents/practice_refactor

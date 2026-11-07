@@ -1052,3 +1052,41 @@ def test_the_doc_review_cli_reports_every_opener_beyond_the_chunk_limit(
         assert lines[1].startswith("OPENER docs/c.md.jinja:2:")
         assert all("(advisory)" in line for line in lines)
     assert "apply_refactor" not in runner.calls
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_pending_journal_then_spec_applies_and_logs_recovery(
+    seams, monkeypatch, caplog, conflict
+):
+    runner, model, root = seams
+    calls = []
+
+    def pending(args, stdin=None, *, root):
+        if "scripts/apply_refactor.py" not in args:
+            return runner(args, stdin, root=root)
+        calls.append(args)
+        assert not {"--recover", "--discard-journal", "--yes"}.intersection(args)
+        return (
+            1 if conflict else 0,
+            json.dumps(
+                {
+                    "journal_conflict": conflict,
+                    "error": "journal needs inspection",
+                    "recovered": ["prior.md"],
+                    "applied": not conflict,
+                    "files": [args[args.index("--allow") + 1]],
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(_BRAIN + "._run", pending)
+    caplog.set_level("INFO")
+    if conflict:
+        with pytest.raises(RuntimeError, match="journal needs inspection"):
+            review(execute=True, max_model_calls=8, root=str(root))
+        assert len(calls) == 1
+    else:
+        result = review(execute=True, max_model_calls=8, root=str(root))
+        assert result.applied and len(calls) == 2
+        assert "prior.md" in caplog.text and "recover" in caplog.text.lower()

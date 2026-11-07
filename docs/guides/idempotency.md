@@ -296,3 +296,13 @@ the agent working in it is told the rule before it writes the tenth doer.
 | A gate run never rewrites the tree or changes shared state | `scripts/run_make_target.py` (refuses by label, fails a dirty run) and `$(WRITE_GUARD)` | gate |
 | Two writers on one artifact agree which is authoritative | — | judged |
 | A doer's default output path is tracked or ignored | — | judged |
+
+
+The refactor doer keeps `rerun: fixed-point`: an interrupted transaction replays
+raw prior bytes (including CRLF) and modes before reading the next spec. Its
+required `refactor.journal_path` is ignored and untracked. Journal publication,
+target replacement and recovery use fsync and directory fsync, consuming
+`agents.tool_gate_margin_seconds`. The prepared → applied → committed journal
+has no timestamps or permanent pids; only the gate's transient process-group id.
+A second recovery with no pending journal changes no target bytes. The repeated
+recovery case in `tests/integration/test_idempotence.py` proves that property.

@@ -2,12 +2,13 @@
 title: Doc reviewer brain
 layer: backend
 public_api: no
-summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A style-rule retrieval that query_corpus refuses raises RulesRefused, a RuntimeError carrying report()'s three parts, before the baseline gate; so does one that finds no node at all on an execute run (`[]` from a checkout with no corpus, or a corpus with no node for the rule query), so no model is asked for edits with an empty rules section, while a dry run, which asks none, shows that empty section in its preview. A style-rule report that is blank, non-JSON, too deeply nested or not a list of objects raises the shared scripts/tool_reports.py ToolReportUnreadable before baseline. A review_docs, run_make_target or apply_refactor run that answers with anything but a readable JSON object, or a review_docs run that exits non-zero, raises ToolReportUnreadable, a RuntimeError carrying report()'s three parts and naming the tool and the root, never an empty report read as zero findings, a red baseline or a declined chunk. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus.
+summary: Plan: gather the deterministic doc findings (review_docs) -> retrieve the style rules (query_corpus) -> gate a green baseline -> (propose -> apply+gate+rollback) one finding per step; on a durable Runtime. Judgment only where a rule cannot decide. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the reviewed root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. A finding on a file the corpus does not place at a corpus.served_visibilities level (config_loader.is_served), on a file that states a level outside it on disk now or none that can be read (config_loader.is_served_now over scripts/corpus_level.py stated_now), or on any file when the corpus cannot be read, is withheld: reported with why, never sent. A style-rule retrieval that query_corpus refuses raises RulesRefused, a RuntimeError carrying report()'s three parts, before the baseline gate; so does one that finds no node at all on an execute run (`[]` from a checkout with no corpus, or a corpus with no node for the rule query), so no model is asked for edits with an empty rules section, while a dry run, which asks none, shows that empty section in its preview. A style-rule report that is blank, non-JSON, too deeply nested or not a list of objects raises the shared scripts/tool_reports.py ToolReportUnreadable before baseline. A review_docs, run_make_target or apply_refactor run that answers with anything but a readable JSON object, or a review_docs run that exits non-zero, raises ToolReportUnreadable, a RuntimeError carrying report()'s three parts and naming the tool and the root, never an empty report read as zero findings, a red baseline or a declined chunk. review is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; every step keeps only the root and reads its wiki/corpus.json, so the withholding check and the style-rule retrieval, which hands query_corpus `--root` alone, read one corpus. The apply doer recovers interrupted targets before the next spec; recovered paths are logged, and journal_conflict stops the loop for evidence inspection.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from dataclasses import dataclass
@@ -388,8 +389,8 @@ def _propose(state, meter):
 def _apply(state):
     """Writes: apply the spec through the gated doer, advance the cursor.
 
-    A red gate triggers per-file restoration; RollbackError names failed
-    restores, and a crash can leave a partial tree.
+    A durable journal restores originals on red or at startup after a crash.
+    Recovery paths are logged, and a journal conflict stops the loop.
     """
     chunk = state["chunks"][state["cursor"]]
     applied = list(state.get("applied", ()))
@@ -419,6 +420,13 @@ def _apply(state):
         res = tool_reports.read_report(
             "scripts/apply_refactor.py", rc, out, err, state["root"], container=dict
         )
+        for recovered in res.get("recovered", []):
+            logging.getLogger(__name__).info("Recovered refactor target: %s", recovered)
+        if res.get("journal_conflict"):
+            raise RuntimeError(
+                "apply_refactor journal conflict: %s"
+                % res.get("error", "inspect the configured journal before retrying")
+            )
         if res.get("applied"):
             applied.extend(res.get("files", []))
         else:

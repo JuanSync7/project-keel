@@ -292,7 +292,16 @@ def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path, monkey
     keel = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
     policy = root / "config" / "project.json"
     policy.parent.mkdir()
-    policy.write_text(json.dumps({"agents": keel["agents"]}), encoding="utf-8")
+    policy.write_text(
+        json.dumps(
+            {
+                "agents": keel["agents"],
+                "refactor": {"journal_path": ".evidence/refactor-journal.json"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(".evidence/\n")
     target = root / "mod.py"
     target.write_text("x = old_name(1)\n", encoding="utf-8")
     for argv in (["init", "-q"], ["add", "--", "mod.py"]):
@@ -302,9 +311,28 @@ def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path, monkey
         "edits": [{"file": "mod.py", "find": "old_name", "replace": "new_name"}],
     }
 
+    class Crash(BaseException):
+        pass
+
+    def cut(name):
+        if name == "target:0":
+            raise Crash
+
+    monkeypatch.setattr(apply_refactor, "_checkpoint", cut, raising=False)
+    with pytest.raises(Crash):
+        apply_refactor.apply_and_gate(spec, str(root), gate="none")
+    monkeypatch.setattr(apply_refactor, "_checkpoint", lambda name: None)
     first = apply_refactor.apply_and_gate(spec, str(root), gate="none")
+    assert first["recovered"] == ["mod.py"]
     assert first["applied"], first
     after_first = target.read_bytes()
+    repeated = apply_refactor.apply_and_gate(
+        {"edits": [{"file": "mod.py", "content": after_first.decode("utf-8")}]},
+        str(root),
+        gate="none",
+    )
+    assert repeated["recovered"] == []
+    assert target.read_bytes() == after_first
 
     # Refused because the anchor is gone, not for any other reason.
     with pytest.raises(apply_refactor.RefactorError, match="find text not present"):

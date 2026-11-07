@@ -31,7 +31,7 @@ never reaches a prompt; the propose step asks the file's level again. It gates a
 `run_make_target`, then for each chunk proposes one bounded edit and applies it
 through `apply_refactor` — which gates on `make verify` and attempts to restore
 planned files one at a time on red. A failed restore is `RollbackError`, naming
-every unrestored file; a crash can leave a half-applied tree. So the agent **cannot mark a chunk done unless it satisfies
+every unrestored file; startup replays interrupted targets from the durable journal. So the agent **cannot mark a chunk done unless it satisfies
 the very rule the gate encodes**.
 
 It is thin: policy + prompt only. The real work lives in `scripts/` doers,
@@ -56,3 +56,6 @@ a run that raises it with exit 2 through `report`.
 Its vendor-specific trigger is the `.claude/skills/practice-refactor/` skill; its
 thin CLI entrypoint is `scripts/refactor_practice.py`. See
 [coding-practices](../../docs/guides/coding-practices.md) for the catalogue.
+
+The apply doer recovers before applying the next spec and logs recovered paths.
+A `journal_conflict: true` report stops the loop for evidence inspection.

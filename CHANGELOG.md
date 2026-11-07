@@ -25,6 +25,12 @@ version rather than a bare commit:
   them before a blank line, and preserve their paragraph interruption rules.
   One data module holds the fixed type-6 tag names; grammar copies stay pinned.
 
+- **Interrupted refactors recover their whole change set (KEEL-ROLLBACK-2).**
+  A durable undo journal restores original bytes and modes before the next spec;
+  both agents log recovery and stop on conflicting evidence. A downstream
+  project must add `refactor.journal_path` as an ignored, untracked path
+  (the template uses `.evidence/refactor-journal.json`).
+
 - **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
   Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
   the twin is the generated project's own history, so the document-drift gate

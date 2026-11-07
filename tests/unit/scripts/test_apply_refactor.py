@@ -9,7 +9,6 @@ import json
 import os
 import subprocess
 import sys
-from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -88,7 +87,17 @@ def _policy_tree(root, agents=None):
     block = _template_agents() if agents is None else agents
     path = root / "config" / "project.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"agents": block}, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps(
+            {
+                "agents": block,
+                "refactor": {"journal_path": ".evidence/refactor-journal.json"},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(".evidence/\n")
     _track(root, "config/project.json")
     return path
 
@@ -156,7 +165,7 @@ def test_a_refused_gate_is_red_and_rolls_back(tmp_path, monkeypatch):
     res = ar.apply_and_gate(spec, str(tmp_path), gate="fmt")
     assert res["rolled_back"] is True and res["applied"] is False
     assert "[tree]" in res["gate_output"]
-    assert f.read_text(encoding="utf-8") == "keep = 1\n"
+    assert f.read_bytes() == b"keep = 1\n"
 
 
 def test_a_gate_that_dirtied_the_tree_is_red_and_names_the_paths(tmp_path, monkeypatch):
@@ -173,7 +182,7 @@ def test_a_gate_that_dirtied_the_tree_is_red_and_names_the_paths(tmp_path, monke
     monkeypatch.setattr(ar.run_make_target, "run_target", fake)
     res = ar.apply_and_gate(spec, str(tmp_path), gate="check")
     assert res["rolled_back"] is True and "wiki/x.json" in res["gate_output"]
-    assert f.read_text(encoding="utf-8") == "keep = 1\n"
+    assert f.read_bytes() == b"keep = 1\n"
 
 
 def _raise(exc):
@@ -199,24 +208,21 @@ def test_a_gate_that_raises_anything_is_red_and_rolls_back(tmp_path, exc):
     res = ar.apply_and_gate(spec, str(tmp_path), gate="check", gate_runner=_raise(exc))
     assert res["rolled_back"] is True and res["applied"] is False
     assert type(exc).__name__ in res["gate_output"]
-    assert f.read_text(encoding="utf-8") == "keep = 1\n"
+    assert f.read_bytes() == b"keep = 1\n"
 
 
 def _fail_restore_writes(monkeypatch, paths, *, gate_raises=False):
     restoring = False
     attempted = []
 
-    def fail_write(text):
-        raise OSError("restore write denied")
+    publish = ar._publish
 
-    @contextmanager
-    def injected_open(path, *args, **kwargs):
-        with open(path, *args, **kwargs) as handle:
-            if restoring:
-                attempted.append(path)
-                if path in {str(p) for p in paths}:
-                    monkeypatch.setattr(handle, "write", fail_write)
-            yield handle
+    def injected_publish(path, data, mode):
+        if restoring and str(path).endswith(".py"):
+            attempted.append(str(path))
+            if str(path) in {str(p) for p in paths}:
+                raise OSError("restore write denied")
+        publish(path, data, mode)
 
     def red_gate(gate, cwd, timeout):
         nonlocal restoring
@@ -225,7 +231,7 @@ def _fail_restore_writes(monkeypatch, paths, *, gate_raises=False):
             raise RuntimeError("gate crashed")
         return False, "gate rejected the edit"
 
-    monkeypatch.setattr(ar, "open", injected_open, raising=False)
+    monkeypatch.setattr(ar, "_publish", injected_publish)
     monkeypatch.setattr(ar, "_read_only_gate", red_gate)
     return attempted
 
@@ -276,8 +282,8 @@ def test_second_restore_failure_keeps_first_restored_and_names_second(
     attempted = _fail_restore_writes(monkeypatch, [b])
     with pytest.raises(Exception) as exc:
         ar.apply_and_gate(spec, str(tmp_path))
-    assert a.read_text(encoding="utf-8") == _KEEP
-    assert b.read_text(encoding="utf-8") != _KEEP
+    assert a.read_bytes() == _KEEP.encode("utf-8")
+    assert b.read_bytes() != _KEEP.encode("utf-8")
     assert type(exc.value).__name__ == "RollbackError"
     assert "b.py" in str(exc.value)
     assert attempted == [str(a), str(b)]
@@ -295,7 +301,7 @@ def test_restore_failures_name_every_unrestored_file_and_continue(
     assert attempted == [str(p) for p in paths]
     assert type(exc.value).__name__ == "RollbackError"
     assert "a.py" in str(exc.value) and "b.py" in str(exc.value)
-    assert paths[2].read_text(encoding="utf-8") == _KEEP
+    assert paths[2].read_bytes() == _KEEP.encode("utf-8")
 
 
 # --- an agent edit cannot reach the code that judges it ------------------------
@@ -690,7 +696,7 @@ def test_an_edit_to_a_file_git_does_not_track_is_refused_before_any_write(
     tmp_path, case
 ):
     _policy_tree(tmp_path)
-    _plant(tmp_path, ".gitignore", ".venv\nnode_modules\n")
+    _plant(tmp_path, ".gitignore", ".venv\nnode_modules\n.evidence/\n")
     rel = _UNTRACKED[case]
     _plant(tmp_path, rel, track=False)
     before = _snapshot(tmp_path)
@@ -727,7 +733,12 @@ def test_git_state_is_refused_by_the_tracked_rule_even_when_unlisted(tmp_path):
 def test_an_edit_outside_a_git_work_tree_is_refused(tmp_path):
     root = tmp_path / "bare"
     root.mkdir()
-    block = json.dumps({"agents": _template_agents()})
+    block = json.dumps(
+        {
+            "agents": _template_agents(),
+            "refactor": {"journal_path": ".evidence/refactor-journal.json"},
+        }
+    )
     (root / "config").mkdir()
     (root / "config" / "project.json").write_text(block, encoding="utf-8")
     module = _plant(root, "m.py", track=False)
@@ -949,11 +960,13 @@ def test_the_cli_defaults_the_gate_to_verify_and_takes_none_only_as_a_flag(
 ):
     seen = []
 
-    def fake(spec, root, gate="unset", timeout=0, allow=None, **kwargs):
+    def fake(
+        load, root, gate, timeout, gate_runner, allow, policy, recovered, **kwargs
+    ):
         seen.append(gate)
         return {"practice": "", "gate": gate, "applied": True, "files": []}
 
-    monkeypatch.setattr(ar, "apply_and_gate", fake)
+    monkeypatch.setattr(ar, "_run", fake)
     spec_file = tmp_path / "spec.json"
     spec_file.write_text(json.dumps(_edit("m.py")), encoding="utf-8")
     argv = ["--spec", str(spec_file), "--root", str(tmp_path)]
@@ -967,11 +980,13 @@ def test_the_cli_timeout_is_unset_unless_given(tmp_path, monkeypatch):
     given one is passed through unchanged."""
     seen = []
 
-    def fake(spec, root, gate="unset", timeout=0, allow=None, **kwargs):
+    def fake(
+        load, root, gate, timeout, gate_runner, allow, policy, recovered, **kwargs
+    ):
         seen.append(timeout)
         return {"practice": "", "gate": gate, "applied": True, "files": []}
 
-    monkeypatch.setattr(ar, "apply_and_gate", fake)
+    monkeypatch.setattr(ar, "_run", fake)
     spec_file = tmp_path / "spec.json"
     spec_file.write_text(json.dumps(_edit("m.py")), encoding="utf-8")
     argv = ["--spec", str(spec_file), "--root", str(tmp_path)]
@@ -994,4 +1009,384 @@ def test_a_timeout_outside_its_bound_is_refused_before_any_edit(
     argv = ["--spec", str(spec_file), "--root", str(tmp_path), "--timeout", value]
     assert ar.main(argv) == ExitCode.USAGE
     assert called == [] and "--timeout" in capsys.readouterr().err
-    assert f.read_text(encoding="utf-8") == "keep = 1\n"
+    assert f.read_bytes() == b"keep = 1\n"
+
+
+class _Crash(BaseException):
+    pass
+
+
+def _journal(root):
+    return root / ".evidence/refactor-journal.json"
+
+
+def _interrupt(monkeypatch, seam):
+    def cut(name):
+        if name == seam:
+            raise _Crash(name)
+
+    monkeypatch.setattr(ar, "_checkpoint", cut, raising=False)
+
+
+def test_crlf_original_restored_byte_identical(tmp_path):
+    f, spec = _spec(tmp_path)
+    original = b"keep = 1\r\nnext = 3\r\n"
+    f.write_bytes(original)
+    f.chmod(0o751)
+    res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=lambda *a: (False, "red"))
+    assert res["rolled_back"]
+    assert f.read_bytes() == original
+    assert f.stat().st_mode & 0o7777 == 0o751
+
+
+def test_lf_find_keeps_crlf_result(tmp_path):
+    f, _ = _spec(tmp_path)
+    f.write_bytes(b"keep = 1\r\nnext = 3\r\n")
+    spec = _edit("m.py", "keep = 1\nnext", "keep = 2\nnext")
+    ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert f.read_bytes() == b"keep = 2\r\nnext = 3\r\n"
+
+
+def test_write_failure_replays_all(tmp_path, monkeypatch):
+    f, spec = _spec(tmp_path)
+    b = _plant(tmp_path, "b.py")
+    spec["edits"] += _edit("b.py")["edits"]
+    original = [p.read_bytes() for p in (f, b)]
+
+    def fail(name):
+        if name == "target:0":
+            raise OSError("write failed")
+
+    monkeypatch.setattr(ar, "_checkpoint", fail, raising=False)
+    with pytest.raises(OSError, match="write failed"):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert [p.read_bytes() for p in (f, b)] == original
+    assert not _journal(tmp_path).exists()
+
+
+def test_red_gate_has_complete_journal(tmp_path):
+    import base64
+    import hashlib
+
+    f, spec = _spec(tmp_path)
+    original = f.read_bytes()
+    evidence = []
+
+    def red(*args):
+        evidence.append(_journal(tmp_path).read_bytes())
+        return False, "red"
+
+    res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=red)
+    assert len(evidence) == 1, "gate has no durable undo journal"
+    journal = json.loads(evidence[0])
+    assert journal["state"] == "applied" and res["rolled_back"]
+    assert len(journal["targets"]) == 1
+    entry = journal["targets"][0]
+    assert base64.b64decode(entry["prior"]) == original
+    assert entry["prior_sha256"] == hashlib.sha256(original).hexdigest()
+    assert entry["intended_sha256"] == hashlib.sha256(b"keep = 2\n").hexdigest()
+    assert f.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "seam",
+    [
+        "before_prepared",
+        "prepared",
+        "target:0",
+        "targets",
+        "gate",
+        "during_gate",
+        "green",
+        "committed",
+    ],
+)
+def test_crash_cut(tmp_path, monkeypatch, seam):
+    f, spec = _spec(tmp_path)
+    b = _plant(tmp_path, "b.py")
+    spec["edits"] += _edit("b.py")["edits"]
+    original = [p.read_bytes() for p in (f, b)]
+    _interrupt(monkeypatch, seam)
+
+    def running(*args):
+        raise _Crash("during_gate")
+
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(
+            spec,
+            str(tmp_path),
+            gate="check" if seam == "during_gate" else "none",
+            gate_runner=running,
+        )
+    monkeypatch.setattr(ar, "_checkpoint", lambda name: None)
+    seen = []
+    # A different proposal proves recovery precedes planning.
+    other = _plant(tmp_path, "other.py")
+
+    def gate(*args):
+        seen.extend(p.read_bytes() for p in (f, b))
+        return True, "ok"
+
+    result = ar.apply_and_gate(_edit(other.name), str(tmp_path), gate_runner=gate)
+    expected = [b"keep = 2\n"] * 2 if seam == "committed" else original
+    assert seen == expected
+    assert result["recovered"] == (
+        [] if seam in ("before_prepared", "committed") else ["m.py", "b.py"]
+    )
+    assert not _journal(tmp_path).exists()
+
+
+def test_failed_restore_retains_replay(tmp_path, monkeypatch):
+    f, spec = _spec(tmp_path)
+    original = f.read_bytes()
+    with monkeypatch.context() as restore_patch:
+        _fail_restore_writes(restore_patch, [f])
+        with pytest.raises(ar.RollbackError):
+            ar.apply_and_gate(spec, str(tmp_path))
+        assert _journal(tmp_path).exists()
+    result = ar.apply_and_gate(
+        spec, str(tmp_path), gate_runner=lambda *a: (False, "red")
+    )
+    assert result["recovered"] == ["m.py"]
+    assert f.read_bytes() == original
+
+
+def test_replay_removes_orphan_temp(tmp_path, monkeypatch):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "prepared")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    orphan = tmp_path / ".refactor-tmp-orphan"
+    journal_orphan = _journal(tmp_path).parent / ".refactor-tmp-journal"
+    orphan.write_bytes(b"partial")
+    journal_orphan.write_bytes(b"partial")
+    monkeypatch.setattr(ar, "_checkpoint", lambda name: None)
+    ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert not orphan.exists() and not journal_orphan.exists()
+    assert f.read_bytes() == b"keep = 2\n"
+
+
+def test_second_run_cannot_take_the_lock(tmp_path, capsys):
+    import fcntl
+
+    f, spec = _spec(tmp_path)
+    journal = _journal(tmp_path)
+    journal.parent.mkdir()
+    specfile = tmp_path / "spec.json"
+    specfile.write_text(json.dumps(spec))
+    with open(str(journal) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        code = ar.main(["--root", str(tmp_path), "--spec", str(specfile), "--json"])
+    assert code is ExitCode.FAILURE
+    assert "lock" in capsys.readouterr().err
+    assert f.read_bytes() == b"keep = 1\n"
+
+
+def test_dry_run_creates_no_lock_or_dir(tmp_path, capsys):
+    f, spec = _spec(tmp_path)
+    specfile = tmp_path / "spec.json"
+    specfile.write_text(json.dumps(spec))
+    assert (
+        ar.main(
+            ["--root", str(tmp_path), "--spec", str(specfile), "--dry-run", "--json"]
+        )
+        is ExitCode.SUCCESS
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["pending_recovery"] is False
+    assert not _journal(tmp_path).parent.exists()
+    assert f.read_bytes() == b"keep = 1\n"
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "bytes",
+        "corrupt",
+        "checkout",
+        "live_group",
+        "nested",
+        "invalid_group",
+        "duplicate",
+    ],
+)
+def test_journal_conflict_preserves_evidence(tmp_path, monkeypatch, capsys, fault):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "prepared")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    monkeypatch.setattr(ar, "_checkpoint", lambda name: None)
+    journal = _journal(tmp_path)
+    data = json.loads(journal.read_bytes())
+    if fault == "bytes":
+        f.write_bytes(b"human edit\r\n")
+    elif fault == "corrupt":
+        data["targets"][0]["prior"] = "bad"
+    elif fault == "checkout":
+        data["checkout"] = "/wrong/checkout"
+    elif fault == "live_group":
+        data["gate_pgid"] = 12345
+        monkeypatch.setattr(ar, "_group_alive", lambda group: True, raising=False)
+    elif fault == "invalid_group":
+        data["gate_pgid"] = 1 << 100
+    if fault == "nested":
+        journal.write_bytes(b"[" * 2000 + b"0" + b"]" * 2000)
+    elif fault == "duplicate":
+        journal.write_text(json.dumps(data)[:-1] + ', "state": "prepared"}')
+    else:
+        journal.write_text(json.dumps(data))
+    evidence, target = journal.read_bytes(), f.read_bytes()
+    specfile = tmp_path / "spec.json"
+    specfile.write_text(json.dumps(spec))
+    assert (
+        ar.main(["--root", str(tmp_path), "--spec", str(specfile), "--json"])
+        is ExitCode.FAILURE
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["journal_conflict"] is True
+    assert journal.read_bytes() == evidence and f.read_bytes() == target
+
+
+@pytest.mark.parametrize("fault", ["tracked", "listed", "directory", "git_error"])
+def test_unusable_journal_is_config_fault_even_in_dry_run(
+    tmp_path, monkeypatch, capsys, fault
+):
+    f, spec = _spec(tmp_path)
+    config = tmp_path / "config/project.json"
+    data = json.loads(config.read_bytes())
+    if fault == "tracked":
+        data["refactor"]["journal_path"] = "m.py"
+    elif fault == "listed":
+        data["refactor"]["journal_path"] = "unignored/journal.json"
+    elif fault == "directory":
+        _journal(tmp_path).mkdir(parents=True)
+    else:
+
+        def broken(*args):
+            raise ar.git_tree.GitFailedError(128, "injected check-ignore error")
+
+        monkeypatch.setattr(ar.git_tree, "is_ignored", broken)
+    config.write_text(json.dumps(data))
+    specfile = tmp_path / "spec.json"
+    specfile.write_text(json.dumps(spec))
+    assert (
+        ar.main(
+            ["--root", str(tmp_path), "--spec", str(specfile), "--dry-run", "--json"]
+        )
+        is ExitCode.CONFIG
+    )
+    assert "refactor.journal_path" in capsys.readouterr().err
+    assert f.read_bytes() == b"keep = 1\n"
+    assert not Path(str(_journal(tmp_path)) + ".lock").exists()
+
+
+def test_dry_run_pending_journal_reads_no_spec_and_changes_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "target:0")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+
+    def unread(*args):
+        raise AssertionError("dry-run read a spec while recovery was pending")
+
+    monkeypatch.setattr(ar, "_load_spec", unread)
+    before = _snapshot(tmp_path)
+    assert ar.main(["--root", str(tmp_path), "--dry-run", "--json"]) is ExitCode.SUCCESS
+    assert json.loads(capsys.readouterr().out)["pending_recovery"] is True
+    assert _snapshot(tmp_path) == before
+    assert f.read_bytes() == b"keep = 2\n"
+
+
+def test_recovery_precedes_spec_read_and_error_keeps_recovered(
+    tmp_path, monkeypatch, capsys
+):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "target:0")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+
+    def unread(*args):
+        assert f.read_bytes() == b"keep = 1\n"
+        raise ValueError("bad next spec")
+
+    monkeypatch.setattr(ar, "_load_spec", unread)
+    assert ar.main(["--root", str(tmp_path), "--json"]) is ExitCode.USAGE
+    captured = capsys.readouterr()
+    result = json.loads(captured.out)
+    assert "recovered: m.py" in captured.err
+    assert result["recovered"] == ["m.py"] and "bad next spec" in result["error"]
+    assert f.read_bytes() == b"keep = 1\n" and not _journal(tmp_path).exists()
+
+
+def test_default_gate_records_process_group_before_verdict(tmp_path):
+    f, spec = _spec(tmp_path)
+    config = tmp_path / "config/project.json"
+    manifest = json.loads((_ROOT / "config/project.json").read_bytes())
+    config.write_text(json.dumps(manifest))
+    (tmp_path / "Makefile").write_text(
+        "ok: ## [local] Read the running gate journal\n\t@cat .evidence/refactor-journal.json\n"
+    )
+    _track(tmp_path, "Makefile")
+    _git(
+        tmp_path,
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-qm",
+        "seed",
+    )
+    result = ar.apply_and_gate(spec, str(tmp_path), gate="ok", timeout=10)
+    assert result["applied"] is True, result
+    during = json.loads(result["gate_output"])
+    assert during["state"] == "applied" and during["gate_pgid"] > 0
+    assert f.read_bytes() == b"keep = 2\n"
+    assert not _journal(tmp_path).exists()
+
+
+@pytest.mark.parametrize("absence", ["prior", "intended"])
+def test_replay_handles_absent_original_or_deleted_target(
+    tmp_path, monkeypatch, absence
+):
+    import base64
+
+    f, spec = _spec(tmp_path)
+    original = f.read_bytes()
+    _interrupt(monkeypatch, "prepared")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    monkeypatch.setattr(ar, "_checkpoint", lambda name: None)
+    journal = _journal(tmp_path)
+    data = json.loads(journal.read_bytes())
+    entry = data["targets"][0]
+    if absence == "prior":
+        entry["prior"] = entry["prior_sha256"] = None
+        f.write_bytes(b"keep = 2\n")
+    else:
+        entry["intended_sha256"] = None
+        f.unlink()
+        assert base64.b64decode(entry["prior"]) == original
+    journal.write_text(json.dumps(data))
+    other = _plant(tmp_path, "other.py")
+    result = ar.apply_and_gate(_edit(other.name), str(tmp_path), gate="none")
+    assert result["recovered"] == ["m.py"]
+    if absence == "prior":
+        assert not f.exists()
+    else:
+        assert f.read_bytes() == original
+    assert not journal.exists()
+
+
+@pytest.mark.parametrize("source", ["original", "intended"])
+def test_mixed_newlines_refused_before_publication(tmp_path, source):
+    f, spec = _spec(tmp_path)
+    original = b"keep = 1\r\nnext = 3\n" if source == "original" else b"keep = 1\n"
+    f.write_bytes(original)
+    if source == "intended":
+        spec = {"edits": [{"file": "m.py", "content": "keep = 2\rnext = 3\n"}]}
+    with pytest.raises(ar.RefactorError, match="newline"):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert f.read_bytes() == original and not _journal(tmp_path).exists()

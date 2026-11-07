@@ -189,10 +189,11 @@ It is an ordinary keel agent — a neutral `Plan` on a `Runtime`, model from
    `make_targets.gate_effects`, so the baseline cannot rewrite the tree it
    measures (CONVENTIONS §7).
 3. **propose** (model-call) — draft ONE bounded edit for the chunk at the cursor.
-4. **apply** (writes) — `apply_refactor` applies it file by file and attempts
-   per-file restoration unless `make verify` stays green. A failed restore
-   raises `RollbackError` naming every unrestored file. A crash between files
-   can leave a half-applied tree.
+4. **apply** (writes) — `apply_refactor` recovers interrupted targets, then
+   journals the proposal before target writes and commits after `make verify`
+   stays green. A red gate restores original bytes and modes. A failed restore
+   raises `RollbackError` and retains the journal for startup replay. Both
+   agents log recovered paths and stop on a journal conflict.
 
 So the agent **cannot mark a chunk done unless it satisfies the very rule the
 gate encodes** — the gate, not the model's judgment, is the definition of done
@@ -204,9 +205,12 @@ Its mechanical hands are two vendor-neutral `scripts/` doers (no model, no
 provider): **`run_make_target.py`** runs a make target whose effect label a
 gate may run, fails a green run that changed the tree, and reports a structured
 pass/fail (the *gate*), and **`apply_refactor.py`** applies one bounded edit
-file by file and attempts to restore the planned files' saved text on red —
-each declared as a tool in `agents/tools/`. Restoration is not a transaction;
-`agents/tools/apply_refactor.tool.md` states its failure and crash limits.
+under an exclusive nonblocking lock with the required `refactor.journal_path`
+ignored, untracked journal — each declared as a tool in `agents/tools/`. Startup
+replays raw originals before reading the next spec. Publication uses a sibling
+temporary, fsync, replace and directory fsync. The tool card
+`agents/tools/apply_refactor.tool.md` states conflict and restore failure handling;
+unrelated gate writes and reader isolation remain outside the transaction.
 The agent supplies the judgment (which chunk, which practice, what edit);
 the gate decides acceptance. See [dev-loops](dev-loops.md) for the convergence discipline.
 

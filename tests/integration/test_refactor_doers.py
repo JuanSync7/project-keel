@@ -51,7 +51,13 @@ def _policy_tree(root):
     an edit in a tree whose config/project.json has no `agents` block."""
     path = root / "config" / "project.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"agents": _template_agents()}), encoding="utf-8")
+    (root / ".gitignore").write_text(".evidence/\n")
+    path.write_text(
+        json.dumps(
+            {"agents": _template_agents(), "refactor": _template_manifest()["refactor"]}
+        ),
+        encoding="utf-8",
+    )
 
 
 def _track_all(root):
@@ -102,7 +108,7 @@ def test_apply_rolls_back_every_file_when_the_gate_fails(tmp_path):
     }
     res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=_fail_gate)
     assert res["applied"] is False and res["rolled_back"] is True
-    assert f.read_text(encoding="utf-8") == original  # reverted byte-for-byte
+    assert f.read_bytes() == original.encode("utf-8")  # reverted byte-for-byte
     assert "FAILED" in res["gate_output"]
 
 
@@ -119,7 +125,7 @@ def test_apply_rolls_back_when_the_gate_raises_or_times_out(tmp_path):
     }
     res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=_timeout_gate)
     assert res["applied"] is False and res["rolled_back"] is True
-    assert f.read_text(encoding="utf-8") == original  # reverted despite the hung gate
+    assert f.read_bytes() == original.encode("utf-8")  # reverted despite the hung gate
     assert "did not complete" in res["gate_output"]
 
 
@@ -152,8 +158,8 @@ def test_rollback_restores_all_files_across_a_multi_file_edit(tmp_path):
     }
     res = ar.apply_and_gate(spec, str(tmp_path), gate_runner=_fail_gate)
     assert res["rolled_back"] is True
-    assert (tmp_path / "a.py").read_text(encoding="utf-8") == "x = 1\n"
-    assert (tmp_path / "b.py").read_text(encoding="utf-8") == "y = 1\n"
+    assert (tmp_path / "a.py").read_bytes() == b"x = 1\n"
+    assert (tmp_path / "b.py").read_bytes() == b"y = 1\n"
 
 
 def test_plan_edits_rejects_a_missing_file_before_writing(tmp_path):

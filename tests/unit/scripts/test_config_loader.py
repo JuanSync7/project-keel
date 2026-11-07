@@ -1727,3 +1727,16 @@ def test_full_gate_option_table_has_a_required_keys_row():
     row = config_loader.rows(("tests", "full_gate_options"))[0]
     assert row.type == "object"
     assert row.default is config_loader.NONE
+
+
+def test_refactor_journal_path_is_required_repo_path():
+    (row,) = config_loader.rows(("refactor", "journal_path"))
+    assert row.type == "repo_path" and row.default is config_loader.NONE
+    with pytest.raises(config_loader.ConfigError):
+        config_loader.resolve({}, (row,), config_loader.CONFIG_FILE)
+    value = config_loader.resolve(
+        {"refactor": {"journal_path": ".undo/journal.json"}},
+        (row,),
+        config_loader.CONFIG_FILE,
+    )
+    assert value[("refactor", "journal_path")] == ".undo/journal.json"

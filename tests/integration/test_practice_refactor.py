@@ -666,3 +666,53 @@ def test_a_doc_reclassified_after_the_build_never_reaches_a_prompt(
     meter = ModelMeter(None, 8, lambda name: model)
     assert brain._propose(state, meter) == {"spec": None}
     assert model.prompts == []
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+def test_pending_journal_then_spec_applies_and_logs_recovery(
+    tmp_path, monkeypatch, caplog, conflict
+):
+    runner, model = _Runner(), _Model()
+    calls = []
+
+    def pending(args, stdin=None, *, root):
+        if "scripts/apply_refactor.py" not in args:
+            return runner(args, stdin, root=root)
+        calls.append(args)
+        assert not {"--recover", "--discard-journal", "--yes"}.intersection(args)
+        return (
+            1 if conflict else 0,
+            json.dumps(
+                {
+                    "journal_conflict": conflict,
+                    "error": "journal needs inspection",
+                    "recovered": ["prior.py"],
+                    "applied": not conflict,
+                    "files": [args[args.index("--allow") + 1]],
+                }
+            ),
+            "",
+        )
+
+    _patch(monkeypatch, pending, model)
+    caplog.set_level("INFO")
+    if conflict:
+        with pytest.raises(RuntimeError, match="journal needs inspection"):
+            refactor(
+                "precise-container-types",
+                execute=True,
+                max_model_calls=8,
+                root=_files(tmp_path),
+                checkpointer=_checkpointer(tmp_path),
+            )
+        assert len(calls) == 1
+    else:
+        result = refactor(
+            "precise-container-types",
+            execute=True,
+            max_model_calls=8,
+            root=_files(tmp_path),
+            checkpointer=_checkpointer(tmp_path),
+        )
+        assert result.refactored and len(calls) == 2
+        assert "prior.py" in caplog.text and "recover" in caplog.text.lower()
