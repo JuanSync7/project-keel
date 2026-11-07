@@ -37,7 +37,7 @@ CHECKS = (
         "id": "CHECK-E",
         "check": "check_E",
         "enforces": "Exported symbols defined in a module carry docstrings.",
-        "twin": "tests/unit/scripts/test_check_o.py::test_exported_symbol_without_docstring_is_an_error_now",
+        "twin": "tests/unit/scripts/test_check_faults.py::test_export_without_docstring_fails",
     },
     {
         "id": "CHECK-F",
@@ -67,19 +67,19 @@ CHECKS = (
         "id": "CHECK-J",
         "check": "check_J",
         "enforces": "Library boundaries do not raise foreign exception types.",
-        "twin": "tests/unit/scripts/test_check_structure_parse.py::test_a_syntax_error_is_an_error_from_any_check_that_reads_it",
+        "twin": "tests/unit/scripts/test_check_faults.py::test_foreign_exception_boundary_fails",
     },
     {
         "id": "CHECK-K",
         "check": "check_K",
         "enforces": "Marked configuration classes are provably immutable.",
-        "twin": "tests/unit/scripts/test_check_structure_parse.py::test_the_frozen_config_and_tensor_checks_report_it_too",
+        "twin": "tests/unit/scripts/test_check_faults.py::test_mutable_marked_config_fails",
     },
     {
         "id": "CHECK-L",
         "check": "check_L",
         "enforces": "Enabled tensor profiles warn on parameters without shape annotations.",
-        "twin": "tests/unit/scripts/test_config_loaders.py::test_check_L_is_not_silently_disabled_by_an_unreadable_project_json",
+        "twin": "tests/unit/scripts/test_check_faults.py::test_tensor_without_shape_warns",
     },
     {
         "id": "CHECK-M",

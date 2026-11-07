@@ -1,6 +1,6 @@
 """
 title: Unit — structure checks reject planted faults through their entrypoints
-summary: Small temporary-tree twins exercise check functions whose existing negative tests covered only helpers. Every case requires at least one error from its check.
+summary: Small temporary-tree twins plant each check's own fault and assert its diagnostic. Every case requires at least one error or warning from its check.
 """
 
 import json
@@ -38,6 +38,54 @@ def test_missing_package_boundary_fails(repo):
     _write(repo, "src/pkg/mod.py", "value = 1\n")
     cs.check_C()
     assert len(cs.errors) == 1 and "no __init__.py" in cs.errors[0], cs.errors
+
+
+def test_export_without_docstring_fails(repo):
+    _write(repo, "src/pkg/mod.py", '__all__ = ["f"]\ndef f(): return 1\n')
+    cs.check_E()
+    assert len(cs.errors) == 1, cs.errors
+    assert "exported symbol 'f' has no docstring" in cs.errors[0], cs.errors
+
+
+def test_foreign_exception_boundary_fails(repo):
+    _write(
+        repo,
+        "src/pkg/mod.py",
+        "from vendor import VendorError\ndef f(): raise VendorError()\n",
+    )
+    cs.check_J()
+    assert len(cs.errors) == 1, cs.errors
+    assert "raises third-party exception 'VendorError'" in cs.errors[0], cs.errors
+
+
+def test_mutable_marked_config_fails(repo):
+    _write(
+        repo,
+        "config/practices.json",
+        json.dumps({"tokens": {"config_marker": "practice: frozen-config"}}),
+    )
+    _write(repo, "src/pkg/mod.py", "# practice: frozen-config\nclass Settings: pass\n")
+    cs.check_K()
+    assert len(cs.errors) == 1, cs.errors
+    assert "class 'Settings' declares" in cs.errors[0], cs.errors
+    assert "not provably immutable" in cs.errors[0], cs.errors
+
+
+def test_tensor_without_shape_warns(repo):
+    _write(
+        repo,
+        "config/project.json",
+        json.dumps({"practices": {"profiles": {"cuda": True}}}),
+    )
+    _write(
+        repo,
+        "config/practices.json",
+        json.dumps({"tokens": {"tensor_base_types": ["Tensor"]}}),
+    )
+    _write(repo, "src/pkg/mod.py", "def f(x: Tensor): pass\n")
+    cs.check_L()
+    assert len(cs.warnings) == 1, cs.warnings
+    assert "parameter 'x' is a naked Tensor" in cs.warnings[0], cs.warnings
 
 
 def test_copied_agent_rules_fail(repo):

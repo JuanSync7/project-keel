@@ -46,6 +46,7 @@ version rather than a bare commit:
   missing or stale rows, unresolved twin files or functions, empty twins and
   zero rows judged. Seven short temporary-tree twins complete the existing
   fault-injection coverage without changing check behavior.
+  CMP-19.S2 requires each twin to fail when its check is silent.
 - **Shipped source paths respect unconditional docs/ exclusions (KEEL-CABINET-1).**
   The document-drift gate reads all shipped text sources with Copier's matcher,
   including history, tables and fences, and counts NUL-containing binaries.
