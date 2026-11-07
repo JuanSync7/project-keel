@@ -320,7 +320,7 @@ def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path, generate)
     assert 'requires-python = ">=3.11"' in pyproject
     # display form (title-cased) reaches the README heading + frontmatter title
     assert "\n# Acme Widgets\n" in readme
-    assert "\ntitle: Acme Widgets\n" in readme
+    assert '\ntitle: "Acme Widgets"\n' in readme
 
     # the real judge: the generated tree passes its own structural gate
     r = subprocess.run(
