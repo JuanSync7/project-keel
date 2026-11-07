@@ -15,6 +15,10 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Every shipped document has a reachable index link (KEEL-CABINET-1).** The documentation
+  index links guides, decisions, specifications and repository labels from the
+  root README. Its template twin omits maintainer records and answer-pruned
+  documents; a reachability gate rejects orphans and empty graphs.
 - **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
   Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
   the twin is the generated project's own history, so the document-drift gate

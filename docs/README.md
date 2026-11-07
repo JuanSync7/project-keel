@@ -34,14 +34,129 @@ Where to start:
 
 | Subdir | Audience | Content |
 |--------|----------|---------|
-| `architecture/` | builders | system shape, components, data flow |
-| `specs/` | builders/QA | requirements + acceptance criteria |
-| `design/` | builders | per-feature design, task breakdown, contracts |
-| `guides/` | adopters and contributors (each guide's row says which) | user guides, engineering guides, how-tos |
-| `reference/` | everyone | per-module reference (the only part that thinly mirrors `src/`); the settings reference, `reference/settings.md`; and the feature catalogue, `reference/features.md` |
-| `adr/` | builders | Architecture Decision Records (numbered, immutable) |
+| [architecture/](architecture/README.md) | builders | system shape, components, data flow |
+| [specs/](specs/README.md) | builders/QA | requirements + acceptance criteria |
+| [design/](design/README.md) | builders | per-feature design, task breakdown, contracts |
+| [guides/](guides/README.md) | adopters and contributors (each guide's row says which) | user guides, engineering guides, how-tos |
+| [reference/](reference/README.md) | everyone | per-module reference (the only part that thinly mirrors `src/`); the settings reference, `reference/settings.md`; and the feature catalogue, `reference/features.md` |
+| [adr/](adr/README.md) | builders | Architecture Decision Records (numbered, immutable) |
 
 Before writing anything here, read **[doc-style](guides/doc-style.md)** — how
 prose is written in this repository, and the twin of
 [python-style](guides/python-style.md) for code. `make check-docs` gates the
 mechanical half; `make doc-review` reports the rest.
+
+## Repository document map
+
+Every shipped Markdown document is linked below or from an index above.
+The links include directory rules and their tool-specific aliases so either
+filename can be found from the root README.
+The guide and decision lists below keep their individual records reachable
+through index links as well as the descriptive rosters.
+
+| Directory | Documents |
+|-----------|-----------|
+| `./` | [AGENT.md](../AGENT.md) · [CHANGELOG.md](../CHANGELOG.md) · [CLAUDE.md](../CLAUDE.md) · [CONTRIBUTING.md](../CONTRIBUTING.md) · [CONVENTIONS.md](../CONVENTIONS.md) · [README.md](../README.md) |
+| `.claude/` | [README.md](../.claude/README.md) |
+| `.claude/skills/doc-review/` | [SKILL.md](../.claude/skills/doc-review/SKILL.md) |
+| `.claude/skills/practice-refactor/` | [SKILL.md](../.claude/skills/practice-refactor/SKILL.md) |
+| `agents/` | [AGENT.md](../agents/AGENT.md) · [CLAUDE.md](../agents/CLAUDE.md) · [README.md](../agents/README.md) |
+| `agents/doc_reviewer/` | [AGENT.md](../agents/doc_reviewer/AGENT.md) · [CLAUDE.md](../agents/doc_reviewer/CLAUDE.md) · [README.md](../agents/doc_reviewer/README.md) · [prompt.md](../agents/doc_reviewer/prompt.md) · [tools.md](../agents/doc_reviewer/tools.md) |
+| `agents/index_enforcer/` | [AGENT.md](../agents/index_enforcer/AGENT.md) · [CLAUDE.md](../agents/index_enforcer/CLAUDE.md) · [README.md](../agents/index_enforcer/README.md) · [prompt.md](../agents/index_enforcer/prompt.md) · [tools.md](../agents/index_enforcer/tools.md) |
+| `agents/practice_refactor/` | [AGENT.md](../agents/practice_refactor/AGENT.md) · [CLAUDE.md](../agents/practice_refactor/CLAUDE.md) · [README.md](../agents/practice_refactor/README.md) · [prompt.md](../agents/practice_refactor/prompt.md) · [tools.md](../agents/practice_refactor/tools.md) |
+| `agents/tools/` | [AGENT.md](../agents/tools/AGENT.md) · [CLAUDE.md](../agents/tools/CLAUDE.md) · [README.md](../agents/tools/README.md) · [accountability_report.tool.md](../agents/tools/accountability_report.tool.md) · [apply_refactor.tool.md](../agents/tools/apply_refactor.tool.md) · [build_corpus.tool.md](../agents/tools/build_corpus.tool.md) · [link_corpus.tool.md](../agents/tools/link_corpus.tool.md) · [query_corpus.tool.md](../agents/tools/query_corpus.tool.md) · [review_docs.tool.md](../agents/tools/review_docs.tool.md) · [run_make_target.tool.md](../agents/tools/run_make_target.tool.md) · [structure_check.tool.md](../agents/tools/structure_check.tool.md) |
+| `agents/triage/` | [AGENT.md](../agents/triage/AGENT.md) · [CLAUDE.md](../agents/triage/CLAUDE.md) · [README.md](../agents/triage/README.md) |
+| `agents/wiki_navigator/` | [AGENT.md](../agents/wiki_navigator/AGENT.md) · [CLAUDE.md](../agents/wiki_navigator/CLAUDE.md) · [README.md](../agents/wiki_navigator/README.md) · [prompt.md](../agents/wiki_navigator/prompt.md) · [tools.md](../agents/wiki_navigator/tools.md) |
+| `api/` | [AGENT.md](../api/AGENT.md) · [CLAUDE.md](../api/CLAUDE.md) · [README.md](../api/README.md) |
+| `api/edge_nginx/` | [AGENT.md](../api/edge_nginx/AGENT.md) · [CLAUDE.md](../api/edge_nginx/CLAUDE.md) · [README.md](../api/edge_nginx/README.md) |
+| `api/grpc/` | [AGENT.md](../api/grpc/AGENT.md) · [CLAUDE.md](../api/grpc/CLAUDE.md) · [README.md](../api/grpc/README.md) |
+| `api/rest_fastapi/` | [AGENT.md](../api/rest_fastapi/AGENT.md) · [CLAUDE.md](../api/rest_fastapi/CLAUDE.md) · [README.md](../api/rest_fastapi/README.md) |
+| `api/rest_fastapi/aad/` | [AGENT.md](../api/rest_fastapi/aad/AGENT.md) · [CLAUDE.md](../api/rest_fastapi/aad/CLAUDE.md) · [README.md](../api/rest_fastapi/aad/README.md) |
+| `config/` | [AGENT.md](../config/AGENT.md) · [CLAUDE.md](../config/CLAUDE.md) · [README.md](../config/README.md) |
+| `containers/` | [AGENT.md](../containers/AGENT.md) · [CLAUDE.md](../containers/CLAUDE.md) · [README.md](../containers/README.md) |
+| `demo/` | [AGENT.md](../demo/AGENT.md) · [CLAUDE.md](../demo/CLAUDE.md) · [README.md](../demo/README.md) |
+| `demo/aad_reference_agent/` | [AGENT.md](../demo/aad_reference_agent/AGENT.md) · [CLAUDE.md](../demo/aad_reference_agent/CLAUDE.md) · [README.md](../demo/aad_reference_agent/README.md) |
+| `docs/` | [AGENT.md](AGENT.md) · [CLAUDE.md](CLAUDE.md) |
+| `docs/adr/` | [README.md](adr/README.md) |
+| `docs/architecture/` | [README.md](architecture/README.md) · [transports.md](architecture/transports.md) |
+| `docs/design/` | [README.md](design/README.md) |
+| `docs/reference/` | [README.md](reference/README.md) · [features.md](reference/features.md) · [settings.md](reference/settings.md) |
+| `docs/specs/` | [README.md](specs/README.md) · [example-feature.md](specs/example-feature.md) |
+| `evals/` | [AGENT.md](../evals/AGENT.md) · [CLAUDE.md](../evals/CLAUDE.md) · [README.md](../evals/README.md) · [README_run.md](../evals/README_run.md) |
+| `mcp/` | [AGENT.md](../mcp/AGENT.md) · [CLAUDE.md](../mcp/CLAUDE.md) · [README.md](../mcp/README.md) |
+| `models/` | [AGENT.md](../models/AGENT.md) · [CLAUDE.md](../models/CLAUDE.md) · [README.md](../models/README.md) |
+| `ops/` | [AGENT.md](../ops/AGENT.md) · [CLAUDE.md](../ops/CLAUDE.md) · [README.md](../ops/README.md) |
+| `ops/scheduled/` | [AGENT.md](../ops/scheduled/AGENT.md) · [CLAUDE.md](../ops/scheduled/CLAUDE.md) · [README.md](../ops/scheduled/README.md) |
+| `runtimes/` | [AGENT.md](../runtimes/AGENT.md) · [CLAUDE.md](../runtimes/CLAUDE.md) · [README.md](../runtimes/README.md) |
+| `scripts/` | [AGENT.md](../scripts/AGENT.md) · [CLAUDE.md](../scripts/CLAUDE.md) · [README.md](../scripts/README.md) |
+| `scripts/hooks/` | [AGENT.md](../scripts/hooks/AGENT.md) · [CLAUDE.md](../scripts/hooks/CLAUDE.md) · [README.md](../scripts/hooks/README.md) |
+| `scripts/jobs/` | [AGENT.md](../scripts/jobs/AGENT.md) · [CLAUDE.md](../scripts/jobs/CLAUDE.md) · [README.md](../scripts/jobs/README.md) |
+| `src/` | [AGENT.md](../src/AGENT.md) · [CLAUDE.md](../src/CLAUDE.md) · [README.md](../src/README.md) |
+| `src/app/` | [AGENT.md](../src/app/AGENT.md) · [CLAUDE.md](../src/app/CLAUDE.md) · [README.md](../src/app/README.md) |
+| `src/backend/` | [AGENT.md](../src/backend/AGENT.md) · [CLAUDE.md](../src/backend/CLAUDE.md) · [README.md](../src/backend/README.md) |
+| `src/frontend/` | [AGENT.md](../src/frontend/AGENT.md) · [CLAUDE.md](../src/frontend/CLAUDE.md) · [README.md](../src/frontend/README.md) |
+| `src/frontend/astro/` | [AGENT.md](../src/frontend/astro/AGENT.md) · [CLAUDE.md](../src/frontend/astro/CLAUDE.md) · [README.md](../src/frontend/astro/README.md) |
+| `src/frontend/react-vite/` | [AGENT.md](../src/frontend/react-vite/AGENT.md) · [CLAUDE.md](../src/frontend/react-vite/CLAUDE.md) · [README.md](../src/frontend/react-vite/README.md) |
+| `src/shared/` | [AGENT.md](../src/shared/AGENT.md) · [CLAUDE.md](../src/shared/CLAUDE.md) · [README.md](../src/shared/README.md) |
+| `test-docs/` | [AGENT.md](../test-docs/AGENT.md) · [CLAUDE.md](../test-docs/CLAUDE.md) · [README.md](../test-docs/README.md) · [strategy.md](../test-docs/strategy.md) |
+| `test-docs/coverage/` | [register.md](../test-docs/coverage/register.md) |
+| `test-docs/test-plan/` | [README.md](../test-docs/test-plan/README.md) |
+| `tests/` | [AGENT.md](../tests/AGENT.md) · [CLAUDE.md](../tests/CLAUDE.md) · [README.md](../tests/README.md) |
+| `tests/e2e/` | [README.md](../tests/e2e/README.md) |
+| `tests/integration/` | [README.md](../tests/integration/README.md) |
+| `tests/smoke/` | [README.md](../tests/smoke/README.md) |
+| `tests/unit/` | [README.md](../tests/unit/README.md) |
+| `wiki/` | [AGENT.md](../wiki/AGENT.md) · [CLAUDE.md](../wiki/CLAUDE.md) · [README.md](../wiki/README.md) |
+
+## Guide documents
+
+- [Guides](guides/README.md)
+- [Agent runtimes (Plan + Runtime; LangGraph as one engine)](guides/agent-runtimes.md)
+- [Exposing a service as an agent (the agent surface)](guides/agent-surface.md)
+- [Coding practices (what Keel enforces, advises, and documents)](guides/coding-practices.md)
+- [Deterministic checks (the template linter)](guides/deterministic-checks.md)
+- [Development loops (TDD, bounded convergence, end-to-end coverage)](guides/dev-loops.md)
+- [Documentation style — how prose is written here](guides/doc-style.md)
+- [Generate and upgrade](guides/generate-and-upgrade.md)
+- [Solving the general case (don't fit the eval)](guides/generic-solution.md)
+- [Idempotency](guides/idempotency.md)
+- [Limits and troubleshooting](guides/limits-and-troubleshooting.md)
+- [Python style (how code is written here)](guides/python-style.md)
+- [Shell style (how shell scripts are written here)](guides/shell-style.md)
+- [The showcase site (product demo, synced front-to-back)](guides/showcase-site.md)
+
+## Template decisions
+
+- [ADR-K-0001: Record architecture decisions](adr/keel/K-0001-record-architecture-decisions.md)
+- [ADR-K-0002: A vendor-neutral agent surface, with AAD as the first adapter](adr/keel/K-0002-agent-surface-and-discovery.md)
+- [ADR-K-0003: Agent control flow as a neutral Runtime, with LangGraph as one adapter](adr/keel/K-0003-agent-control-flow-runtime.md)
+- [ADR-K-0004: Interactive project generation via copier (root-as-template), superseding scaffold.py](adr/keel/K-0004-project-templating-copier.md)
+- [ADR-K-0005: Declare the external environment in config/environment.json — Docker's contract, applied to what you cannot containerize](adr/keel/K-0005-external-environment-manifest.md)
+- [ADR-K-0006: Retire declined answers with `_migrations`, accepting the `--trust` requirement, amending ADR-K-0004](adr/keel/K-0006-answer-retirement-via-migrations.md)
+- [ADR-K-0007: Make the bundled showcase optional, and derive the project's identity from its manifest, amending ADR-K-0004](adr/keel/K-0007-optional-showcase-and-project-owned-identity.md)
+- [ADR-K-0008: Agent interpretability is a gated contract — the module header, authored coverage, and corpus currency](adr/keel/K-0008-gated-module-contract-for-agent-interpretability.md)
+- [ADR-K-0009: Release identity — a tag names a commit no descendant is ahead of](adr/keel/K-0009-release-identity-and-the-tag-ordering-rule.md)
+- [ADR-K-0010: Generation runs a stamping task, so `copier copy` needs `--trust`, amending ADR-K-0006 and ADR-K-0007](adr/keel/K-0010-generation-needs-trust-to-stamp-docs.md)
+- [ADR-K-0011: Every make target declares its effect, and a gate runner runs only a read-only one](adr/keel/K-0011-make-target-effect-labels.md)
+- [ADR-K-0012: A child process gets an allowlisted environment, not every credential the parent holds](adr/keel/K-0012-child-process-environment-allowlist.md)
+- [ADR-K-0013: Template and project ADRs live in separate number spaces](adr/keel/K-0013-template-and-project-adr-number-spaces.md)
+- [ADR-K-0014: A project adds structure checks in a directory it owns, not by editing the gate](adr/keel/K-0014-project-owned-structure-checks.md)
+- [ADR-K-0015: A write-shaped target is exempted by a named reason, and a guarded recipe is a write](adr/keel/K-0015-write-shape-exemptions-and-guarded-recipe-converse.md)
+- [ADR-K-0016: Tag locally before the release verify, push only on green](adr/keel/K-0016-release-order-tag-before-verify.md)
+- [ADR-K-0017: make verify writes a derived, typed evidence record through a driver in its recipe](adr/keel/K-0017-gate-evidence-record.md)
+- [ADR-K-0018: a model adapter sends its credential only to a host config lists for it](adr/keel/K-0018-model-endpoint-host-allowlist.md)
+- [ADR-K-0019: one gate run has one date, handed to every goal through the child-environment allowlist](adr/keel/K-0019-one-date-per-gate-run.md)
+- [ADR-K-0020: one launcher decides where a long script runs, and an unknown host counts as shared](adr/keel/K-0020-shared-compute-launcher.md)
+- [ADR-K-0021: imports flow up a configured layer order, and a shared module never ends the process](adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md)
+- [ADR-K-0022: one config loader in the bottom layer, the environment over the file only where a row names a variable, and its own exit code](adr/keel/K-0022-one-config-loader.md)
+- [ADR-K-0023: the release canary gates a release, not a commit](adr/keel/K-0023-canary-gates-a-release-not-a-commit.md)
+- [ADR-K-0024: what a test may reach](adr/keel/K-0024-what-a-test-may-reach.md)
+- [ADR-K-0025: a committed secret meets a keyed gate and a scanner, and a missing scanner fails closed](adr/keel/K-0025-committed-secrets-keyed-gate-and-scanner.md)
+- [ADR-K-0026: an agent edit cannot reach the code that judges it](adr/keel/K-0026-agent-edits-cannot-reach-the-judge.md)
+- [ADR-K-0027: a generated project's own code warns until a hard date, from a record that only shrinks](adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md)
+- [Template ADRs](adr/keel/README.md)
+
+## Template maintainer records
+
+[The internal cabinet](internals/README.md) holds keel’s plans and run records.
+Copier excludes this cabinet from generated projects.

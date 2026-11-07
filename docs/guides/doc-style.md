@@ -106,6 +106,20 @@ the corpus turns it into an edge when it resolves, and `make advise` lists the
 ones that do not. Prefer the root-relative spelling; a bare basename used as a
 noun (`check_structure.py`) is prose, and the graph cannot follow it.
 
+Keep every shipped Markdown document reachable from the root `README.md`
+through Markdown links in READMEs or documents whose frontmatter says
+`form: index`.
+`tests/integration/test_doc_index.py` follows only those index edges; a prose
+path, a link inside fenced or inline code, an image, an HTML comment or a link
+only in a leaf document supplies no index edge.
+The gate uses the same Copier exclusion matcher as the document-drift gate,
+counts a `.md` file and its `.md.jinja` twin once using the twin's source, and
+allows a conditionally excluded document to be absent.
+It prints document, index, edge and orphan counts, and fails on any orphan or
+on zero documents, indexes or edges.
+The template's documentation index has a divergence twin so generated projects
+omit the maintainer-only cabinet link and links to answer-pruned documents.
+
 ## 4. Statements: one claim per sentence, and name the mechanism
 
 A sentence makes one claim, and the claim is checkable. "The gate enforces
@@ -218,6 +232,7 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | Frontmatter present, vocabularies valid, `superseded_by` when replaced | `check_A` | gate |
 | Every `##`-annotated make target is in `make help` | `check_P` | gate |
 | Every link and `§N` resolves | `check_Q` | gate |
+| Every shipped Markdown document is reachable from the root README through Markdown links in READMEs and `form: index` documents; twins count once, conditional absence is allowed, and zero documents, indexes or edges fail | `tests/integration/test_doc_index.py` | gate |
 | The check catalogue and the triggers agree | `check_R` | gate |
 | A roster names every member, nothing else, with a `Not for` cell | `check_S` | gate |
 | A tool spec's seven sections, effect word, `- NOT` line | `check_F` | gate |

@@ -304,6 +304,7 @@ the row says which mechanism, if any, enforces each.
 
 | Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
 |---------|----------------------|------------|----------|------------------|----------|-------|
+| `document index reachability` | Requires every shipped Markdown document to be reachable from the root README through Markdown links in READMEs and `form: index` documents; reports graph and orphan counts. | `make test` | — | Template-only Copier inventory; deduplicates twins using Jinja source, permits conditional absence, and refuses zero documents, indexes or edges. Prose, code, images, comments and leaf-only links supply no index edges. | [doc-style.md](../guides/doc-style.md) | always |
 | `test-first loop` | A new behaviour starts as a failing mirror test, then the smallest change that passes it. | follow the loop | — | A discipline, not a check: `make verify` gates the result, not the order. | [dev-loops.md](../guides/dev-loops.md) | always |
 | `vertical slices` | A task is cut into end-to-end slices, each verified and committed alone. | name it in a plan doc | [`work_naming.slice_trailer`](settings.md#configprojectjson) | check_Z holds the names; the slicing itself is review's. | [dev-loops.md](../guides/dev-loops.md) | always |
 | `generic solutions` | A change solves the class of inputs, never the example a test names. | `make advise` | — | `make advise` flags answer keys; it never fails the build. | [generic-solution.md](../guides/generic-solution.md) | always |

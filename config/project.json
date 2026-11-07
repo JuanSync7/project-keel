@@ -7,6 +7,7 @@
       "pyproject.toml": "parity",
       "config/project.json": "divergence",
       "README.md": "parity",
+      "docs/README.md": "divergence",
     "docs/guides/README.md": "parity",
     "scripts/jobs/README.md": "parity",
     "scripts/README.md": "parity",
