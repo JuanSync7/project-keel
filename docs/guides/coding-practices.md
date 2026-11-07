@@ -193,7 +193,7 @@ It is an ordinary keel agent — a neutral `Plan` on a `Runtime`, model from
    journals the proposal before target writes and commits after `make verify`
    stays green. A red gate restores original bytes and modes. A failed restore
    raises `RollbackError` and retains the journal for startup replay. Both
-   agents log recovered paths and stop on a journal conflict.
+   agents log recovered paths and stop on a journal conflict or lock contention.
 
 So the agent **cannot mark a chunk done unless it satisfies the very rule the
 gate encodes** — the gate, not the model's judgment, is the definition of done

@@ -1094,6 +1094,7 @@ def test_red_gate_has_complete_journal(tmp_path):
         "before_prepared",
         "prepared",
         "target:0",
+        "target:1",
         "targets",
         "gate",
         "during_gate",
@@ -1101,7 +1102,7 @@ def test_red_gate_has_complete_journal(tmp_path):
         "committed",
     ],
 )
-def test_crash_cut(tmp_path, monkeypatch, seam):
+def test_crash_cut(tmp_path, monkeypatch, capsys, seam):
     f, spec = _spec(tmp_path)
     b = _plant(tmp_path, "b.py")
     spec["edits"] += _edit("b.py")["edits"]
@@ -1134,6 +1135,8 @@ def test_crash_cut(tmp_path, monkeypatch, seam):
         [] if seam in ("before_prepared", "committed") else ["m.py", "b.py"]
     )
     assert not _journal(tmp_path).exists()
+    if seam == "committed":
+        assert "committed" in capsys.readouterr().err
 
 
 def test_failed_restore_retains_replay(tmp_path, monkeypatch):
@@ -1149,6 +1152,73 @@ def test_failed_restore_retains_replay(tmp_path, monkeypatch):
     )
     assert result["recovered"] == ["m.py"]
     assert f.read_bytes() == original
+
+
+def test_failed_commit_fsync_and_restore_recover_originals(tmp_path, monkeypatch):
+    f, spec = _spec(tmp_path)
+    original = b"keep = 1\r\n"
+    f.write_bytes(original)
+    journal = _journal(tmp_path)
+    fsync_dir, publish = ar._fsync_dir, ar._publish
+    failed = []
+    restores = []
+
+    def fail_commit(directory):
+        if (
+            directory == journal.parent
+            and journal.exists()
+            and json.loads(journal.read_bytes())["state"] == "committed"
+            and not failed
+        ):
+            failed.append(directory)
+            raise OSError("committed directory fsync failed")
+        fsync_dir(directory)
+
+    def fail_restore(path, data, mode):
+        if path == f and data == original and failed:
+            restores.append(path)
+            raise OSError("restore denied")
+        publish(path, data, mode)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ar, "_fsync_dir", fail_commit)
+        patch.setattr(ar, "_publish", fail_restore)
+        with pytest.raises(ar.RollbackError, match="restore denied"):
+            ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert len(failed) == len(restores) == 1
+    assert json.loads(journal.read_bytes())["state"] == "applied"
+    other = _plant(tmp_path, "other.py")
+    result = ar.apply_and_gate(_edit(other.name), str(tmp_path), gate="none")
+    assert result["recovered"] == ["m.py"]
+    assert f.read_bytes() == original
+    assert not journal.exists()
+
+
+def test_gate_never_starts_when_process_group_save_fails(tmp_path, monkeypatch):
+    import time
+
+    _spec(tmp_path)
+    marker = tmp_path / "gate-started"
+    saves = []
+
+    def fail_save(path, journal):
+        saves.append(journal["gate_pgid"])
+        deadline = time.monotonic() + 0.5
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        raise OSError("pgid save failed")
+
+    monkeypatch.setattr(ar, "_save", fail_save)
+    with pytest.raises(OSError, match="pgid save failed"):
+        ar._gate_process(
+            [sys.executable, "-B", "-c", "open('gate-started', 'w').close()"],
+            str(tmp_path),
+            10,
+            path=_journal(tmp_path),
+            journal={"state": "applied"},
+        )
+    assert len(saves) == 1 and saves[0] > 0
+    assert not marker.exists(), "gate ran before its process group was durable"
 
 
 def test_replay_removes_orphan_temp(tmp_path, monkeypatch):
@@ -1178,7 +1248,9 @@ def test_second_run_cannot_take_the_lock(tmp_path, capsys):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         code = ar.main(["--root", str(tmp_path), "--spec", str(specfile), "--json"])
     assert code is ExitCode.FAILURE
-    assert "lock" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "lock" in captured.err
+    assert json.loads(captured.out)["lock_busy"] is True
     assert f.read_bytes() == b"keep = 1\n"
 
 
@@ -1244,6 +1316,8 @@ def test_journal_conflict_preserves_evidence(tmp_path, monkeypatch, capsys, faul
     )
     result = json.loads(capsys.readouterr().out)
     assert result["journal_conflict"] is True
+    if fault == "live_group":
+        assert "12345" in result["error"]
     assert journal.read_bytes() == evidence and f.read_bytes() == target
 
 

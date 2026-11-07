@@ -28,4 +28,5 @@ These rules are **local and authoritative** for this directory. They inherit fro
 - The refactor loop is **durable**: one chunk per step, cursor-checkpointed, so a crash mid-refactor (an EDR SIGKILL) resumes via the checkpointer and accepted chunks are not re-proposed. `refactor` defaults to a `FileCheckpointer` under `wiki/.runtime` and auto-resumes a leftover snapshot.
 
 The apply doer recovers before applying the next spec and logs recovered paths.
-A `journal_conflict: true` report stops the loop for evidence inspection.
+A `journal_conflict: true` or `lock_busy: true` report stops the loop for
+evidence inspection or retry after the lock is released.

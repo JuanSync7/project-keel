@@ -304,5 +304,9 @@ required `refactor.journal_path` is ignored and untracked. Journal publication,
 target replacement and recovery use fsync and directory fsync, consuming
 `agents.tool_gate_margin_seconds`. The prepared → applied → committed journal
 has no timestamps or permanent pids; only the gate's transient process-group id.
+A stdin barrier holds the gate until that id is durable. If committed publication
+fails, applied is re-saved before restoration so a failed restore stays replayable.
+Committed startup cleanup keeps accepted bytes and logs to stderr. Lock contention
+reports `lock_busy: true`; both agents stop on it or `journal_conflict: true`.
 A second recovery with no pending journal changes no target bytes. The repeated
 recovery case in `tests/integration/test_idempotence.py` proves that property.

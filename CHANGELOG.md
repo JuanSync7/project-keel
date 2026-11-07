@@ -27,7 +27,9 @@ version rather than a bare commit:
 
 - **Interrupted refactors recover their whole change set (KEEL-ROLLBACK-2).**
   A durable undo journal restores original bytes and modes before the next spec;
-  both agents log recovery and stop on conflicting evidence. A downstream
+  the gate waits for its process-group id to be durable, and failed commit
+  publication keeps rollback replayable. Both agents log recovery and stop on
+  conflicting evidence or lock contention. A downstream
   project must add `refactor.journal_path` as an ignored, untracked path
   (the template uses `.evidence/refactor-journal.json`).
 

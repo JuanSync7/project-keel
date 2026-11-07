@@ -1054,9 +1054,9 @@ def test_the_doc_review_cli_reports_every_opener_beyond_the_chunk_limit(
     assert "apply_refactor" not in runner.calls
 
 
-@pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("refusal", [None, "journal_conflict", "lock_busy"])
 def test_pending_journal_then_spec_applies_and_logs_recovery(
-    seams, monkeypatch, caplog, conflict
+    seams, monkeypatch, caplog, refusal
 ):
     runner, model, root = seams
     calls = []
@@ -1067,13 +1067,14 @@ def test_pending_journal_then_spec_applies_and_logs_recovery(
         calls.append(args)
         assert not {"--recover", "--discard-journal", "--yes"}.intersection(args)
         return (
-            1 if conflict else 0,
+            1 if refusal else 0,
             json.dumps(
                 {
-                    "journal_conflict": conflict,
+                    "journal_conflict": refusal == "journal_conflict",
+                    "lock_busy": refusal == "lock_busy",
                     "error": "journal needs inspection",
                     "recovered": ["prior.md"],
-                    "applied": not conflict,
+                    "applied": not refusal,
                     "files": [args[args.index("--allow") + 1]],
                 }
             ),
@@ -1082,7 +1083,7 @@ def test_pending_journal_then_spec_applies_and_logs_recovery(
 
     monkeypatch.setattr(_BRAIN + "._run", pending)
     caplog.set_level("INFO")
-    if conflict:
+    if refusal:
         with pytest.raises(RuntimeError, match="journal needs inspection"):
             review(execute=True, max_model_calls=8, root=str(root))
         assert len(calls) == 1

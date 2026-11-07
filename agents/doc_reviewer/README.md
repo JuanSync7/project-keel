@@ -92,4 +92,5 @@ vendor-specific skill is `.claude/skills/doc-review/`. The nightly schedule
 deterministic doer, not this agent: a schedule has no one to read a judgment.
 
 The apply doer recovers before applying the next spec and logs recovered paths.
-A `journal_conflict: true` report stops the loop for evidence inspection.
+A `journal_conflict: true` or `lock_busy: true` report stops the loop for
+evidence inspection or retry after the lock is released.

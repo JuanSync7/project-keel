@@ -28,4 +28,5 @@ These rules are **local and authoritative** for this directory. They inherit fro
 - The loop is **durable**: one chunk per step, cursor-checkpointed under `wiki/.runtime`, so a crash resumes without re-proposing accepted chunks.
 
 The apply doer recovers before applying the next spec and logs recovered paths.
-A `journal_conflict: true` report stops the loop for evidence inspection.
+A `journal_conflict: true` or `lock_busy: true` report stops the loop for
+evidence inspection or retry after the lock is released.

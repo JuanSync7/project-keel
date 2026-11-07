@@ -668,9 +668,9 @@ def test_a_doc_reclassified_after_the_build_never_reaches_a_prompt(
     assert model.prompts == []
 
 
-@pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("refusal", [None, "journal_conflict", "lock_busy"])
 def test_pending_journal_then_spec_applies_and_logs_recovery(
-    tmp_path, monkeypatch, caplog, conflict
+    tmp_path, monkeypatch, caplog, refusal
 ):
     runner, model = _Runner(), _Model()
     calls = []
@@ -681,13 +681,14 @@ def test_pending_journal_then_spec_applies_and_logs_recovery(
         calls.append(args)
         assert not {"--recover", "--discard-journal", "--yes"}.intersection(args)
         return (
-            1 if conflict else 0,
+            1 if refusal else 0,
             json.dumps(
                 {
-                    "journal_conflict": conflict,
+                    "journal_conflict": refusal == "journal_conflict",
+                    "lock_busy": refusal == "lock_busy",
                     "error": "journal needs inspection",
                     "recovered": ["prior.py"],
-                    "applied": not conflict,
+                    "applied": not refusal,
                     "files": [args[args.index("--allow") + 1]],
                 }
             ),
@@ -696,7 +697,7 @@ def test_pending_journal_then_spec_applies_and_logs_recovery(
 
     _patch(monkeypatch, pending, model)
     caplog.set_level("INFO")
-    if conflict:
+    if refusal:
         with pytest.raises(RuntimeError, match="journal needs inspection"):
             refactor(
                 "precise-container-types",

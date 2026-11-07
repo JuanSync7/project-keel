@@ -29,7 +29,7 @@ It recovers pending originals under an exclusive nonblocking lock before reading
 stdin or a spec file, then plans and applies that proposal in the same run.
 The required `refactor.journal_path` names an ignored, untracked journal
 (default manifest: `.evidence/refactor-journal.json`); its sibling `.lock` stays
-in place. Contention refuses with exit 1 and a retry action.
+in place. Contention refuses with exit 1, `lock_busy: true` and a retry action; both agents stop.
 The journal records raw prior bytes or absence, modes, prior and intended SHA-256,
 checkout identity and `.refactor-tmp-` directories. Planning uses universal
 newlines: a `find` containing LF matches a CRLF original, and output keeps its
@@ -39,10 +39,12 @@ sibling temporary, fsyncs it, replaces the destination and fsyncs its directory.
 The states are prepared, applied after all targets, and committed after a green
 `scripts/run_make_target.py` gate. A red gate or apply error restores originals;
 startup replays any pre-commit interruption, including one after a green gate.
-A committed journal is cleaned without undo. Replay removes orphan temporaries
+If committed publication fails, the journal is re-saved as applied before restoration.
+A committed journal is cleaned without undo and its cleanup is logged to stderr. Replay removes orphan temporaries
 and only removes the journal after all restores succeed. A failed restore raises
 `RollbackError` after trying every target and retains the evidence for retry.
-A live recorded gate process group, conflicting bytes or corrupt evidence
+The gate waits on a stdin pipe until its process-group id is durably journalled.
+A live recorded gate process group (named by id), conflicting bytes or corrupt evidence
 refuses recovery with `journal_conflict: true`. Both agents stop and surface it.
 The gate runner refuses wider effect labels and fails a green gate that changed
 the tree. A chunk is accepted only after committed is durable.
@@ -98,9 +100,10 @@ With `--json`, a result object: `{practice, gate, applied, rolled_back, files, g
 `rolled_back: true` means every planned original was restored byte for byte.
 Exit 0 when applied (or dry-run), 1 on a red gate, restore failure, lock contention
 or journal conflict, 2 on a refused spec, and 14 on a config fault.
-A recovery refusal carries `journal_conflict: true` and an `error` naming the
+A conflicting-journal refusal carries `journal_conflict: true` and an `error` naming the
 configured journal and remedy. Preserve the evidence and reconcile it before
-retrying. Failed restores report `RollbackError` and retain the journal.
+retrying. Lock contention carries `lock_busy: true`; both agents stop on either flag.
+Failed restores report `RollbackError` and retain the journal.
 Error reports retain `recovered` if reading or planning the next spec fails.
 
 ## Side effects

@@ -405,11 +405,25 @@ def _gate_process(
             # to end, so start_child defers it until session.proc is set,
             # inside this try, so that the KeyboardInterrupt a replayed Ctrl-C
             # raises reaches the except that ends make.
+            # The pipe prevents exec until recovery can identify the gate.
             proc = run_make_target.resource_limits.start_child(
-                session, cmd, cwd, None, run_make_target.subprocess.STDOUT
+                session,
+                [
+                    "sh",
+                    "-c",
+                    'read -r release && exec "$@" < /dev/null',
+                    "refactor-gate",
+                    *cmd,
+                ],
+                cwd,
+                run_make_target.subprocess.PIPE,
+                run_make_target.subprocess.STDOUT,
             )
             journal["gate_pgid"] = proc.pid
             _save(path, journal)
+            assert proc.stdin is not None  # start_child asks for a pipe
+            proc.stdin.write(b"go\n")
+            proc.stdin.close()
             assert proc.stdout is not None  # start_child asks for a pipe
             reader = run_make_target.resource_limits.PipeReader(proc.stdout)
             try:
@@ -455,6 +469,8 @@ def _gate_process(
             session.end()
             raise
         finally:
+            if session.proc is not None and session.proc.stdin is not None:
+                session.proc.stdin.close()
             if reader is not None:
                 reader.finish(0)
 
@@ -641,7 +657,7 @@ def _validated(path: Path, root: str) -> dict[str, Any]:
             type(group) is not int or group <= 0 or _group_alive(group)
         ):
             raise ValueError(
-                "gate process group is alive or invalid; wait for it to exit"
+                "gate process group %s is alive or invalid; wait for it to exit" % group
             )
         targets = journal["targets"]
         if not isinstance(targets, list) or not targets:
@@ -735,6 +751,7 @@ def _recover(path: Path, root: str) -> list[str]:
         for directory in journal["directories"]:
             _clean(Path(root) / directory)
         _remove(path)
+        print("apply_refactor: cleaned committed journal %s" % path, file=sys.stderr)
         return []
     return _restore(path, journal, root)
 
@@ -812,6 +829,9 @@ def _transact(
     except RollbackError:
         raise
     except Exception:
+        if journal["state"] == "committed":
+            journal["state"] = "applied"
+            _save(path, journal)
         _restore(path, journal, root)
         raise
     if ok:
@@ -983,6 +1003,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 {
                     "error": str(exc),
                     "journal_conflict": isinstance(exc, JournalConflict),
+                    "lock_busy": isinstance(exc, LockBusy),
                     "recovered": recovered,
                 },
                 sys.stdout,
