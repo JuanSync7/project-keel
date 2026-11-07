@@ -155,6 +155,52 @@ def test_the_pinned_archive_installs_its_program_and_records_it(project, capsys)
     assert scan_secrets._recorded(str(project.root), cfg) == (str(program), None)
 
 
+@pytest.mark.parametrize("destination", ["name", "archive"])
+def test_install_escape(project, tmp_path, destination):
+    project.publish()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    if destination == "name":
+        sentinel = outside / _CFG["rev"] / _NAME
+        sentinel.parent.mkdir()
+        project.tools.mkdir()
+        (project.tools / _NAME).symlink_to(outside, target_is_directory=True)
+    else:
+        sentinel = outside / "archive.tar.gz"
+        project.program().parent.mkdir(parents=True)
+        (project.program().parent / "scanner_testos.tar.gz").symlink_to(sentinel)
+    sentinel.write_bytes(b"external sentinel\n")
+    before = sentinel.read_bytes()
+    result = project.run()
+    assert sentinel.read_bytes() == before
+    assert result == ExitCode.CONFIG
+    assert not (project.root / _RECORD).exists()
+
+
+def test_record_escape_no_git(project, tmp_path, monkeypatch):
+    project.publish()
+    shutil.rmtree(project.root / ".git")
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(project.root.parent))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "scanner.json"
+    sentinel.write_bytes(b"external sentinel\n")
+    (project.root / "records").symlink_to(outside, target_is_directory=True)
+    project.scanner(record_file="records/scanner.json")
+    result = project.run()
+    assert sentinel.read_bytes() == b"external sentinel\n"
+    assert result == ExitCode.CONFIG
+    assert not project.tools.exists()
+
+
+def test_internal_parent_link(project):
+    project.publish()
+    (project.tools / "actual").mkdir(parents=True)
+    (project.tools / _NAME).symlink_to("actual", target_is_directory=True)
+    assert project.run() == ExitCode.SUCCESS
+    assert project.program().read_bytes() == _PROGRAM
+
+
 def test_a_second_run_fetches_nothing_and_changes_nothing(project, capsys):
     project.publish()
     assert project.run() == ExitCode.SUCCESS

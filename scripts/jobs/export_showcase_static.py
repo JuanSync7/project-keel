@@ -3,7 +3,7 @@
 title: Export showcase static job
 kind: script
 layer: n/a
-summary: Deterministic: snapshot the showcase API + agent front door to static files so the frontend runs with no backend (static hosting, e.g. GitHub Pages).
+summary: Deterministic: snapshot the showcase API + agent front door to static files so the frontend runs with no backend (static hosting, e.g. GitHub Pages). Before any mutation, confined_path checks every output: configured outputs must resolve inside --root (CONFIG on refusal), as must relative --out-dir paths (USAGE on refusal); an explicit absolute --out-dir authorizes its own output root. Internal links and missing targets remain usable. A link swapped after a check is not caught.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 
 def _declared_frontend_public(root: str) -> str | None:
@@ -79,6 +80,7 @@ def main(argv=None) -> int:
         help="site base for llms.txt links (e.g. /my-project); default: relative",
     )
     args = ap.parse_args(argv)
+    args.root = os.path.abspath(args.root)
 
     try:
         from backend.showcase import load_showcase, to_jsonable
@@ -108,6 +110,39 @@ def main(argv=None) -> int:
         )
         return ExitCode.SUCCESS
 
+    out = out_dir if os.path.isabs(out_dir) else os.path.join(args.root, out_dir)
+    api = os.path.join(out, "api")
+    # An explicit absolute output authorizes that directory; project-relative
+    # spellings and manifest paths must stay under the project root.
+    boundary = out if args.out_dir and os.path.isabs(args.out_dir) else args.root
+    outputs = [
+        os.path.join(api, name + ".json")
+        for name in (
+            "overview",
+            "features",
+            "principles",
+            "models",
+            "practices",
+            "profiles",
+            "checks",
+            "setup",
+            "wiki/tree",
+            "wiki/nodes",
+        )
+    ] + [os.path.join(out, name) for name in ("llms.txt", "llms-full.txt")]
+    try:
+        for path in outputs:
+            confined_path(boundary, path)
+    except PathEscape as exc:
+        return report(
+            ExitCode.USAGE if args.out_dir else ExitCode.CONFIG,
+            "%s: an output is not confined (%s)"
+            % (WHO, config_loader.shown(str(exc), bare=True)),
+            "--out-dir" if args.out_dir else "config/project.json layers.frontend",
+            "keep project-relative outputs inside the project without escaping "
+            "links, or supply an explicit absolute --out-dir",
+        )
+
     try:
         served = config_loader.served_visibilities(args.root)
     except config_loader.ConfigError as exc:
@@ -123,8 +158,6 @@ def main(argv=None) -> int:
             % ", ".join(config_loader.VISIBILITY_ORDER),
         )
     sc = load_showcase(args.root, served_visibilities=served)
-    out = out_dir if os.path.isabs(out_dir) else os.path.join(args.root, out_dir)
-    api = os.path.join(out, "api")
 
     # 1) Single object/list endpoints — mirror showcase_api.py exactly.
     _write_json(os.path.join(api, "overview.json"), to_jsonable(sc.overview()))

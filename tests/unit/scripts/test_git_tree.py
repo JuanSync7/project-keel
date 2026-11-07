@@ -23,6 +23,74 @@ import hermetic_git  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize(
+    "spelling", ["dotdot", "parent", "target", "loop", "missing", "leave-return"]
+)
+def test_confined_path_refuses_escape(tmp_path, spelling):
+    root = tmp_path / "project"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"external sentinel\n")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    (root / "target").symlink_to(sentinel)
+    (root / "loop").symlink_to("loop")
+    paths = {
+        "dotdot": "../outside/sentinel",
+        "parent": "link/sentinel",
+        "target": "target",
+        "loop": "loop/file",
+        "missing": "link/missing/new",
+        "leave-return": "link/../project/file",
+    }
+    with pytest.raises(git_tree.PathEscape):
+        git_tree.confined_path(str(root), paths[spelling])
+    assert sentinel.read_bytes() == b"external sentinel\n"
+
+
+@pytest.mark.parametrize(
+    "spelling", ["actual/file", "link/file", "link/missing/new", "target", "."]
+)
+def test_confined_path_allows_internal_and_missing_targets(tmp_path, spelling):
+    root = tmp_path / "project"
+    (root / "actual").mkdir(parents=True)
+    (root / "actual/file").write_bytes(b"inside\n")
+    (root / "link").symlink_to("actual", target_is_directory=True)
+    (root / "target").symlink_to("actual/file")
+    path = root / spelling
+    assert git_tree.confined_path(str(root), str(path)) == str(path.resolve())
+
+
+def test_confined_path_allows_root_through_parent_link(tmp_path):
+    real_parent = tmp_path / "real"
+    root = real_parent / "project"
+    root.mkdir(parents=True)
+    (tmp_path / "alias").symlink_to(real_parent, target_is_directory=True)
+    alias = tmp_path / "alias/project"
+    assert git_tree.confined_path(str(alias), str(alias / "new")) == str(root / "new")
+
+
+def test_confined_path_refuses_unreadable_parent(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    root.mkdir()
+    blocked = root / "blocked"
+    blocked.mkdir()
+    sentinel = tmp_path / "sentinel"
+    sentinel.write_bytes(b"external sentinel\n")
+    original = git_tree.os.lstat
+
+    def unreadable(path):
+        if str(path) == str(blocked):
+            raise PermissionError("unreadable parent")
+        return original(path)
+
+    monkeypatch.setattr(git_tree.os, "lstat", unreadable)
+    with pytest.raises(git_tree.PathEscape, match="unreadable parent"):
+        git_tree.confined_path(str(root), "blocked/new")
+    assert sentinel.read_bytes() == b"external sentinel\n"
+
+
 def _git(repo, env, *argv):
     subprocess.run(
         ["git", *argv], cwd=str(repo), env=env, check=True, capture_output=True

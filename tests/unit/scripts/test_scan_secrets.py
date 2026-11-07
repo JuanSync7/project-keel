@@ -29,6 +29,26 @@ import hermetic_git  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
+
+def test_record_parent_symlink_cannot_escape_project(project, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "scanner.json"
+    sentinel.write_bytes(b"external sentinel\n")
+    (project.root / "records").symlink_to(outside, target_is_directory=True)
+    project.scanner(record_file="records/scanner.json")
+    refused = False
+    try:
+        project.record()
+    except ValueError as exc:
+        assert isinstance(exc, scan_secrets.git_tree.PathEscape)
+        refused = True
+    assert sentinel.read_bytes() == b"external sentinel\n"
+    assert refused
+    assert project.run("--history") == ExitCode.CONFIG
+    assert project.calls() == []
+
+
 _BLOCK = ("secrets", "scanner")
 
 

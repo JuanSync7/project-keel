@@ -33,6 +33,12 @@ version rather than a bare commit:
   project must add `refactor.journal_path` as an ignored, untracked path
   (the template uses `.evidence/refactor-journal.json`).
 
+- **Writer destinations stay inside their authorized root (KEEL-PATH-CONTAIN-1).**
+  Scanner installation, scanner records and static export refuse resolved
+  escapes and symlink loops before mutation. Internal links remain usable;
+  an explicit absolute export directory remains allowed. Checks apply at call
+  time and do not catch a link swapped before the write.
+
 - **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
   Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
   the twin is the generated project's own history, so the document-drift gate

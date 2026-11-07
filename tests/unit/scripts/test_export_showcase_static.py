@@ -98,3 +98,83 @@ def test_a_refused_served_level_writes_nothing(tmp_path, capsys):
     )
     assert not out.exists()
     assert "corpus.served_visibilities" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "spelling", ["dotdot", "parent-link", "leaf-link", "late-leaf-link"]
+)
+def test_manifest_escape(tmp_path, spelling):
+    root = tmp_path / "project"
+    _project(root)
+    outside = tmp_path / "outside"
+    sentinel = outside / "astro/public/api/overview.json"
+    sentinel.parent.mkdir(parents=True)
+    sentinel.write_bytes(b"external sentinel\n")
+    frontend = "../outside"
+    if spelling == "parent-link":
+        (root / "frontend").symlink_to(outside, target_is_directory=True)
+        frontend = "frontend"
+    elif spelling in ("leaf-link", "late-leaf-link"):
+        frontend = "frontend"
+        api = root / "frontend/astro/public/api"
+        api.mkdir(parents=True)
+        leaf = (
+            api / "overview.json"
+            if spelling == "leaf-link"
+            else api.parent / "llms-full.txt"
+        )
+        leaf.symlink_to(sentinel)
+    config = root / "config/project.json"
+    config.write_text(
+        json.dumps({"layers": {"frontend": {"root": frontend, "stack": "astro"}}})
+    )
+    result = export.main(["--root", str(root)])
+    assert sentinel.read_bytes() == b"external sentinel\n"
+    assert result == ExitCode.CONFIG
+    assert not (root / "frontend/astro/public/llms.txt").exists()
+
+
+def test_explicit_out_outside_root_is_unchanged(tmp_path):
+    root = tmp_path / "project"
+    _project(root)
+    outside = tmp_path / "outside"
+    assert (
+        export.main(["--root", str(root), "--out-dir", str(outside)])
+        == ExitCode.SUCCESS
+    )
+    assert "api/overview.json" in _written(outside)
+
+
+def test_relative_out_escape(tmp_path):
+    root = tmp_path / "project"
+    _project(root)
+    sentinel = tmp_path / "outside/api/overview.json"
+    sentinel.parent.mkdir(parents=True)
+    sentinel.write_bytes(b"external sentinel\n")
+    result = export.main(["--root", str(root), "--out-dir", "../outside"])
+    assert sentinel.read_bytes() == b"external sentinel\n"
+    assert result == ExitCode.USAGE
+
+
+def test_relative_root_and_out_escape(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    _project(root)
+    sentinel = tmp_path / "outside/api/overview.json"
+    sentinel.parent.mkdir(parents=True)
+    sentinel.write_bytes(b"external sentinel\n")
+    (root / "site").symlink_to(sentinel.parents[1], target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    result = export.main(["--root", "project", "--out-dir", "site"])
+    assert sentinel.read_bytes() == b"external sentinel\n"
+    assert result == ExitCode.USAGE
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_missing_target_created(tmp_path, linked):
+    _project(tmp_path)
+    (tmp_path / "actual").mkdir()
+    if linked:
+        (tmp_path / "site").symlink_to("actual", target_is_directory=True)
+    out = "site/nested"
+    assert export.main(["--root", str(tmp_path), "--out-dir", out]) == ExitCode.SUCCESS
+    assert "api/overview.json" in _written(tmp_path / out)

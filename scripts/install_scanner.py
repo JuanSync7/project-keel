@@ -3,7 +3,7 @@
 title: install_scanner — fetch the pinned secret scanner release, check its sha256, install it per user and record it
 kind: script
 layer: n/a
-summary: `make secrets-install`'s doer, which needs no Go toolchain and no build: it picks this platform's archive from config/project.json `secrets.scanner.release_assets` (the key is the lowercased `<system>-<machine>`, such as `linux-x86_64`), fetches the file name joined to `secrets.scanner.release_url` (https, or file:// for a directory the host already holds), and installs the archive's one regular member named `secrets.scanner.name` as `<install_root>/<name>/<rev>/<name>` under `secrets.scanner.install_root`, outside the checkout, only when the archive's sha256 is the pinned one. It keeps the archive beside the program and records the program through scripts/scan_secrets.py `write_record`, the record every scan runs. A second run trusts nothing written beside the program: it finds the program unchanged only when the kept archive's sha256 is the config pin and the program's sha256 is that of the archive's one member, and then fetches nothing and rewrites nothing; otherwise, a lost archive or execute bit included, it fetches and installs again. A `secrets.scanner.name` other than the scanner scripts/scan_secrets.py adapts (`ADAPTER`), an unlisted platform, an install root or program path that resolves inside the checkout, a record file git would track and a refused setting (a `rev` or `name` that is not one path part included) are CONFIG before anything is fetched; a URL that cannot be read is BACKEND_ABSENT naming `secrets.scanner.release_url`; a sha256 that differs, a reply over `secrets.scanner.download_max_bytes`, an archive that cannot be read as a .tar.gz (a cut gzip stream included) or one without exactly one regular member of that name is FAILURE, and each leaves nothing installed and no record. A local file that cannot be read or written (the install root, the kept archive, the program, the record, the scratch directory) is USAGE naming that path, never a network fault. Stdlib-only. Every message names configured text (the scanner name and rev, a pinned asset, the install root, the record file, the release URL), a path derived from it and an error's text that may quote one through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`.
+summary: `make secrets-install`'s doer, which needs no Go toolchain and no build: it picks this platform's archive from config/project.json `secrets.scanner.release_assets` (the key is the lowercased `<system>-<machine>`, such as `linux-x86_64`), fetches the file name joined to `secrets.scanner.release_url` (https, or file:// for a directory the host already holds), and installs the archive's one regular member named `secrets.scanner.name` as `<install_root>/<name>/<rev>/<name>` under `secrets.scanner.install_root`, outside the checkout, only when the archive's sha256 is the pinned one. It keeps the archive beside the program and records the program through scripts/scan_secrets.py `write_record`, the record every scan runs. A second run trusts nothing written beside the program: it finds the program unchanged only when the kept archive's sha256 is the config pin and the program's sha256 is that of the archive's one member, and then fetches nothing and rewrites nothing; otherwise, a lost archive or execute bit included, it fetches and installs again. A `secrets.scanner.name` other than the scanner scripts/scan_secrets.py adapts (`ADAPTER`), an unlisted platform, an install root or program path that resolves inside the checkout, a record file git would track and a refused setting (a `rev` or `name` that is not one path part included) are CONFIG before anything is fetched; a URL that cannot be read is BACKEND_ABSENT naming `secrets.scanner.release_url`; a sha256 that differs, a reply over `secrets.scanner.download_max_bytes`, an archive that cannot be read as a .tar.gz (a cut gzip stream included) or one without exactly one regular member of that name is FAILURE, and each leaves nothing installed and no record. After path confinement succeeds, a local file that cannot be read or written (the install root, the kept archive, the program, the record, the scratch directory) is USAGE naming that path, never a network fault. Stdlib-only. Every message names configured text (the scanner name and rev, a pinned asset, the install root, the record file, the release URL), a path derived from it and an error's text that may quote one through scripts/config_loader.py `shown` and `joined`, hidden when it holds an `@`. Before any fetch or mutation, confined_path refuses a program or archive escaping install_root or a record escaping the project with CONFIG; internal symlinks and missing destinations remain allowed. The checks judge paths at call time and do not catch links swapped before writing.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_install_scanner.py
@@ -29,6 +29,7 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import config_loader  # noqa: E402
+import git_tree  # noqa: E402
 import scan_secrets  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -290,8 +291,9 @@ def _run(root, cfg, inst):
             "add a `%s` entry with the release's archive file name and its sha256 "
             "from the vendor's checksums file, or run on a listed platform" % key,
         )
-    install_root = os.path.expanduser(inst["install_root"])
+    install_root = os.path.abspath(os.path.expanduser(inst["install_root"]))
     program = os.path.join(install_root, name, rev, name)
+    kept = os.path.join(os.path.dirname(program), asset["file"])
     # The program path is judged too, resolved: a link under the root could
     # still lead into the checkout.
     for path in (install_root, program):
@@ -304,6 +306,18 @@ def _run(root, cfg, inst):
                 "point it at a per-user directory outside the checkout, with no "
                 "link under it into the checkout",
             )
+    try:
+        for path in (program, kept):
+            git_tree.confined_path(install_root, path)
+        git_tree.confined_path(root, os.path.join(root, cfg["record_file"]))
+    except git_tree.PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "a configured destination is not confined (%s)" % _shown(str(exc)),
+            "%s.install_root / record_file" % _WHERE,
+            "keep the program and archive inside the install root and the record "
+            "inside the project, without escaping links",
+        )
     if not scan_secrets.record_is_ignored(root, cfg):
         return report(
             ExitCode.CONFIG,
@@ -312,7 +326,6 @@ def _run(root, cfg, inst):
             "%s.record_file" % _WHERE,
             "ignore that path in .gitignore, then rerun",
         )
-    kept = os.path.join(os.path.dirname(program), asset["file"])
     url = inst["release_url"].rstrip("/") + "/" + asset["file"]
     try:
         fetched = not _installed(program, kept, asset, name)
@@ -322,6 +335,13 @@ def _run(root, cfg, inst):
             recorded = scan_secrets.write_record(root, cfg, program)
     except _Refused as exc:
         return report(ExitCode.FAILURE, exc.what, exc.on, exc.next_step)
+    except git_tree.PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the scanner record is not confined (%s)" % _shown(str(exc)),
+            "%s.record_file" % _WHERE,
+            "keep the record inside the project without escaping links",
+        )
     except _Unfetched as exc:
         return report(
             ExitCode.BACKEND_ABSENT,

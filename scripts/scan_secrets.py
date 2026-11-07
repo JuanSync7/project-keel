@@ -3,7 +3,7 @@
 title: scan_secrets — the secret scanner's adapter, over what a commit would carry and over every commit
 kind: script
 layer: n/a
-summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. `other_adapter` and `OTHER_ADAPTER_NEXT` are that rule, which scripts/install_scanner.py applies too. Every mode runs only the program recorded in `secrets.scanner.record_file`, never one found on PATH: no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. `write_record`, which scripts/install_scanner.py calls, records an absolute path, `secrets.scanner.rev` and the program's sha256, rewriting the file only when its bytes would change. `--staged` scans the staged diff and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches, and options that reach no commit are NOTHING_JUDGED. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3. Every message names configured text (the scanner name, rev, record file, a log option, an exclusion), the recorded program's path and an error's text that may quote one through scripts/config_loader.py `shown`, hidden when it holds an `@`; a refused file the tree holds is named as written.
+summary: The gitleaks adapter: runs the scanner config/project.json `secrets.scanner` pins and prints each finding as `file:line rule`, a history finding with its commit's first 12 hex digits after it, never the value. A `secrets.scanner.name` other than gitleaks is CONFIG before anything runs, because the flags, rules file and report fields here are gitleaks's own; another scanner is a second adapter. `other_adapter` and `OTHER_ADAPTER_NEXT` are that rule, which scripts/install_scanner.py applies too. Every mode runs only the program recorded in `secrets.scanner.record_file`, never one found on PATH: no record, one naming another program or rev, a recorded path that is gone or a program whose digest changed is BACKEND_ABSENT naming `make secrets-install`, never a skip. `write_record`, which scripts/install_scanner.py calls, records an absolute path, `secrets.scanner.rev` and the program's sha256, rewriting the file only when its bytes would change. `--staged` scans the staged diff and passes git's repository context, so the index a hook commits is the one judged; a stage that adds or changes no file (nothing staged, or deletions only) is NOTHING_JUDGED, because a scan over zero files proves nothing. `--staged-or-history`, the pre-commit hook's mode, scans the staged diff, or every commit when nothing is staged, as under `pre-commit run --all-files`. `--history` scans every commit `secrets.scanner.history_log_opts` reaches, and options that reach no commit are NOTHING_JUDGED. The scanner is handed redaction, the inline allow comments ignored, an empty ignore directory, a config that only extends its default rules, the finding status `secrets.scanner.leak_exit_code` and a JSON report in a temporary directory, under the allowlisted environment (scripts/child_env.py). Its status and its report must agree: 0 with an empty list, the finding status with findings; anything else, a report that is not a JSON list of findings included, is BACKEND_ABSENT with the scanner's stderr excerpt, because the scanner gave no verdict, so FAILURE always means a finding. A git command that ran and failed is USAGE. `secrets.scanner.exclusions` removes the findings of one rule in one exact file; one the history scan did not use is CONFIG. A scan beside the scanner's own config or ignore file (`secrets.scanner.refused_files`, anywhere git would commit it or at the root) is CONFIG before the scanner runs, because such a file decides what is judged. No repository, or a history with no commit, is NOTHING_JUDGED. Stdlib-only and 3.6-safe, because the pre-commit hook runs it under the host's python3. Every message names configured text (the scanner name, rev, record file, a log option, an exclusion), the recorded program's path and an error's text that may quote one through scripts/config_loader.py `shown`, hidden when it holds an `@`; a refused file the tree holds is named as written. write_record raises PathEscape before mutation for a record outside the project, including an escaping parent symlink; the CLI refuses that configured path with CONFIG before making scan temporaries. Internal links and missing destinations remain allowed. These are call-time checks, not protection against a link swapped before writing.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_scan_secrets.py
@@ -157,7 +157,10 @@ def record_is_ignored(root, cfg):
 def write_record(root, cfg, path):
     """Record the scanner at the absolute *path* under the configured name and
     rev with its sha256, the one record every scan runs; True when the file
-    changed. The caller has checked record_is_ignored."""
+    changed. The caller has checked record_is_ignored. Raises PathEscape before
+    writing when the configured record resolves outside the project."""
+    destination = os.path.join(root, cfg["record_file"])
+    git_tree.confined_path(root, destination)
     record = {
         "name": cfg["name"],
         "path": path,
@@ -165,9 +168,7 @@ def write_record(root, cfg, path):
         "sha256": sha256(path),
     }
     text = json.dumps(record, sort_keys=True, indent=2) + "\n"
-    return write_if_changed(
-        os.path.join(root, cfg["record_file"]), text.encode("utf-8")
-    )
+    return write_if_changed(destination, text.encode("utf-8"))
 
 
 def _recorded(root, cfg):
@@ -464,6 +465,7 @@ def main(argv=None, root=None):
     root = os.path.abspath(ROOT if root is None else root)
     try:
         cfg = settings(root)
+        git_tree.confined_path(root, os.path.join(root, cfg["record_file"]))
         why = other_adapter(cfg)
         if why is not None:
             return report(ExitCode.CONFIG, why, "%s.name" % _WHERE, OTHER_ADAPTER_NEXT)
@@ -478,6 +480,13 @@ def main(argv=None, root=None):
             "the secret scanner settings are refused",
             "; ".join(exc.lines),
             "fix the secrets.scanner block of config/project.json, then rerun",
+        )
+    except git_tree.PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the scanner record is not confined (%s)" % _shown(str(exc)),
+            "%s.record_file" % _WHERE,
+            "keep the record inside the project without escaping links",
         )
     except ChildEnvError as exc:
         return report(
