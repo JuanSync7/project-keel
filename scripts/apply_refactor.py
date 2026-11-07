@@ -3,7 +3,7 @@
 title: Apply a gated refactor (refactor doer)
 kind: script
 layer: n/a
-summary: Apply a bounded spec as a durable undo-journal transaction under an exclusive nonblocking lock. Recover interrupted targets before reading or planning the next spec; publish raw bytes and modes with fsync, replace and directory fsync; commit only after a green read-only gate. A red gate or apply error restores every original; failed restores retain the journal and raise RollbackError. A corrupt or conflicting journal refuses with journal_conflict. plan_edits enforces the configured agents edit policy, tracked targets, closed spec vocabulary and caller --allow binding before any target write. Gate writes outside planned targets are not restored. Dry-run creates nothing and reports pending recovery. Vendor-neutral, stdlib.
+summary: Apply a bounded spec as a durable undo-journal transaction under an exclusive nonblocking lock. Recover interrupted targets before reading or planning the next spec; publish raw bytes and modes with fsync, replace and directory fsync; commit only after a green read-only gate. A red gate or apply error restores every original; failed restores retain the journal and raise RollbackError. A corrupt or conflicting journal refuses with journal_conflict. plan_edits enforces the configured agents edit policy, tracked targets, closed spec vocabulary and caller --allow binding before any target write. Gate writes outside planned targets are not restored. Dry-run creates nothing and reports pending recovery. --recover exits after replay or cleanup without reading a spec; human-only --discard-journal --yes abandons evidence without touching targets. Vendor-neutral, stdlib.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -717,7 +717,8 @@ def _validated(path: Path, root: str) -> dict[str, Any]:
         RecursionError,
     ) as exc:
         raise JournalConflict(
-            "%s: %s; preserve the journal and reconcile the evidence before retrying"
+            "%s: %s; preserve the journal and reconcile the evidence before retrying; "
+            "a human may abandon recovery with --discard-journal --yes (keeps current targets)"
             % (path, exc)
         ) from exc
 
@@ -831,8 +832,13 @@ def _transact(
     except Exception:
         if journal["state"] == "committed":
             journal["state"] = "applied"
-            _save(path, journal)
-        _restore(path, journal, root)
+            # A publication failure must not bypass restoration of the targets.
+            try:
+                _save(path, journal)
+            finally:
+                _restore(path, journal, root)
+        else:
+            _restore(path, journal, root)
         raise
     if ok:
         _checkpoint("committed")
@@ -963,13 +969,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="gate timeout in seconds (default: config/project.json "
         "make_targets.gate_timeout_seconds)",
     )
-    ap.add_argument(
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument(
         "--dry-run",
         action="store_true",
         help="validate + show the planned files, write nothing",
     )
+    mode.add_argument(
+        "--recover",
+        action="store_true",
+        help="recover or clean the journal and exit without reading a spec",
+    )
+    mode.add_argument(
+        "--discard-journal",
+        action="store_true",
+        help="human only: abandon the journal without touching targets; requires --yes",
+    )
+    ap.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm --discard-journal (human only)",
+    )
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     args = ap.parse_args(argv)
+    if args.discard_journal != args.yes:
+        return report(
+            ExitCode.USAGE,
+            "apply_refactor: journal discard requires explicit confirmation",
+            "--discard-journal and --yes must be given together",
+            "inspect current targets, then use --discard-journal --yes to abandon recovery",
+        )
     fault = (
         None
         if args.timeout is None
@@ -985,18 +1014,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     recovered: list[str] = []
+    result: dict[str, object]
     try:
-        result = _run(
-            lambda: _load_spec(args.spec),
-            args.root,
-            args.gate,
-            args.timeout,
-            None,
-            args.allow,
-            None,
-            recovered,
-            dry=args.dry_run,
-        )
+        if args.recover or args.discard_journal:
+            root = os.path.realpath(args.root)
+            path = _journal_path(root)
+            _validate_journal_path(root, path)
+            with _locked(path):
+                discarded = args.discard_journal and path.exists()
+                if args.discard_journal:
+                    _remove(path)
+                else:
+                    recovered.extend(_recover(path, root))
+            result = {
+                "files": [],
+                "recovered": recovered,
+                "recovery_only": args.recover,
+                "discarded_journal": discarded,
+            }
+        else:
+            result = _run(
+                lambda: _load_spec(args.spec),
+                args.root,
+                args.gate,
+                args.timeout,
+                None,
+                args.allow,
+                None,
+                recovered,
+                dry=args.dry_run,
+            )
     except (JournalConflict, LockBusy) as exc:
         if args.json:
             json.dump(
@@ -1015,7 +1062,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             ExitCode.FAILURE,
             "apply_refactor: journal recovery refused",
             _recovery_context(exc, recovered),
-            "inspect the configured journal and lock, reconcile conflicting evidence or wait for the gate, then retry",
+            "inspect the configured journal and lock, reconcile conflicting evidence or wait for the gate, then retry; "
+            "a human may abandon recovery with --discard-journal --yes",
         )
     except RollbackError as exc:
         if args.json:
@@ -1074,6 +1122,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.json:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
+    elif args.recover:
+        sys.stdout.write("apply_refactor: recovered %s\n" % ", ".join(recovered))
+    elif args.discard_journal:
+        sys.stdout.write("apply_refactor: discarded journal; targets unchanged\n")
     elif result.get("pending_recovery"):
         sys.stdout.write(
             "apply_refactor: pending recovery; run without --dry-run to replay the journal\n"
@@ -1086,7 +1138,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "apply_refactor: %s [%s] gate=%s -> %s\n"
             % (files, result["practice"], result["gate"], verb)
         )
-    if result.get("dry_run") or result["applied"]:
+    if (
+        args.recover
+        or args.discard_journal
+        or result.get("dry_run")
+        or result["applied"]
+    ):
         return ExitCode.SUCCESS
     return report(
         ExitCode.FAILURE,

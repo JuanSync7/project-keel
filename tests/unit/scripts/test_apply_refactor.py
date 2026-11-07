@@ -1464,3 +1464,90 @@ def test_mixed_newlines_refused_before_publication(tmp_path, source):
     with pytest.raises(ar.RefactorError, match="newline"):
         ar.apply_and_gate(spec, str(tmp_path), gate="none")
     assert f.read_bytes() == original and not _journal(tmp_path).exists()
+
+
+def _main_status(argv):
+    """Return the CLI status, including argparse's process exit."""
+    try:
+        return ar.main(argv)
+    except SystemExit as exc:
+        return exc.code
+
+
+@pytest.mark.parametrize("seam", [None, "target:0", "committed"])
+def test_explicit_recover_reads_no_spec(tmp_path, monkeypatch, capsys, seam):
+    f, spec = _spec(tmp_path)
+    if seam:
+        _interrupt(monkeypatch, seam)
+        with pytest.raises(_Crash):
+            ar.apply_and_gate(spec, str(tmp_path), gate="none")
+
+    def no_spec(path):
+        raise AssertionError("explicit recovery read a spec")
+
+    monkeypatch.setattr(ar, "_load_spec", no_spec)
+    code = _main_status(["--root", str(tmp_path), "--recover", "--json"])
+    assert code == ExitCode.SUCCESS
+    result = json.loads(capsys.readouterr().out)
+    assert result["recovered"] == (["m.py"] if seam == "target:0" else [])
+    assert f.read_bytes() == (b"keep = 2\n" if seam == "committed" else b"keep = 1\n")
+    assert not _journal(tmp_path).exists()
+
+
+@pytest.mark.parametrize("confirmed", [False, True])
+def test_human_discard_requires_yes_and_preserves_targets(
+    tmp_path, monkeypatch, capsys, confirmed
+):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "target:0")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    journal = _journal(tmp_path)
+    journal.write_bytes(b"corrupt human evidence")
+    evidence, target = journal.read_bytes(), f.read_bytes()
+    args = ["--root", str(tmp_path), "--discard-journal", "--json"]
+    if confirmed:
+        args.append("--yes")
+    code = _main_status(args)
+    assert code == (ExitCode.SUCCESS if confirmed else ExitCode.USAGE)
+    assert f.read_bytes() == target
+    if confirmed:
+        assert json.loads(capsys.readouterr().out)["discarded_journal"] is True
+        assert not journal.exists()
+    else:
+        assert "--yes" in capsys.readouterr().err
+        assert journal.read_bytes() == evidence
+
+
+def test_conflict_names_confirmed_discard_remedy(tmp_path, monkeypatch, capsys):
+    f, spec = _spec(tmp_path)
+    _interrupt(monkeypatch, "target:0")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    f.write_bytes(b"human change\n")
+    assert ar.main(["--root", str(tmp_path), "--json"]) == ExitCode.FAILURE
+    result = json.loads(capsys.readouterr().out)
+    assert str(_journal(tmp_path)) in result["error"]
+    assert "--discard-journal --yes" in result["error"]
+
+
+def test_failed_applied_resave_still_restores(tmp_path, monkeypatch):
+    f, spec = _spec(tmp_path)
+    original = f.read_bytes()
+    save = ar._save
+    failures = []
+
+    def fail_saves(path, journal):
+        if journal["state"] == "committed" or failures:
+            if journal["state"] == "committed":
+                save(path, journal)
+            failures.append(journal["state"])
+            raise OSError("journal save denied")
+        save(path, journal)
+
+    monkeypatch.setattr(ar, "_save", fail_saves)
+    with pytest.raises(OSError, match="journal save denied"):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert failures == ["committed", "applied"]
+    assert f.read_bytes() == original, "failed applied re-save skipped restoration"
+    assert not _journal(tmp_path).exists()

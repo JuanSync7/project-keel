@@ -10,7 +10,9 @@ from __future__ import annotations
 import ast
 import json
 import os
+import select
 import shutil
+import signal
 import subprocess
 import sys
 import types
@@ -24,6 +26,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
+from child_env import build_child_env  # noqa: E402
 
 # This file, as a `rerun_proof:` names it.
 _THIS_PROOF = "test:tests/integration/test_idempotence.py"
@@ -338,6 +342,165 @@ def test_apply_refactor_leaves_the_tree_alone_on_a_second_apply(tmp_path, monkey
     with pytest.raises(apply_refactor.RefactorError, match="find text not present"):
         apply_refactor.apply_and_gate(spec, str(root), gate="none")
     assert target.read_bytes() == after_first, "the refused second apply still wrote"
+
+
+@pytest.mark.parametrize(
+    "seam",
+    [
+        "before_prepared",
+        "prepared",
+        "target:0",
+        "target:1",
+        "targets",
+        "gate",
+        "during_gate",
+        "green",
+        "committed",
+    ],
+)
+def test_apply_refactor_kill_matrix(tmp_path, monkeypatch, seam):
+    """SIGKILL at every transaction cut, then recover twice without closing stdin."""
+    sys.path.insert(0, str(_ROOT / "tests"))
+    import hermetic_git
+
+    assert tmp_path.is_relative_to(Path("/dev/shm")), "kill scratch must be in memory"
+    work = tmp_path / "git-home"
+    work.mkdir()
+    for key, value in hermetic_git.git_env_vars(work).items():
+        monkeypatch.setenv(key, value)
+    env = build_child_env(root=str(_ROOT))
+    timeout = config_loader.resolve(
+        config_loader.read(str(_ROOT)),
+        config_loader.rows(("tests", "child_timeout_seconds")),
+        config_loader.CONFIG_FILE,
+    )[("tests", "child_timeout_seconds")]
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "config").mkdir()
+    keel = json.loads((_ROOT / "config/project.json").read_bytes())
+    (root / "config/project.json").write_text(
+        json.dumps(
+            {
+                "agents": keel["agents"],
+                "refactor": {"journal_path": ".evidence/refactor-journal.json"},
+            }
+        )
+    )
+    (root / ".gitignore").write_text(".evidence/\n")
+    targets = [root / "a.py", root / "b.py"]
+    originals = [b"a = 1\r\n", b"b = 1\n"]
+    intended = [b"a = 2\r\n", b"b = 2\n"]
+    for target, raw in zip(targets, originals, strict=True):
+        target.write_bytes(raw)
+        target.chmod(0o751)
+    for argv in (["init", "-q"], ["add", "a.py", "b.py"]):
+        subprocess.run(
+            ["git", *argv],
+            cwd=root,
+            env=env,
+            check=True,
+            capture_output=True,
+            timeout=timeout,
+        )
+    spec = root / "spec.json"
+    spec.write_text(
+        json.dumps(
+            {
+                "edits": [
+                    {"file": target.name, "find": "= 1", "replace": "= 2"}
+                    for target in targets
+                ]
+            }
+        )
+    )
+    driver = """
+import signal, sys
+sys.path.insert(0, sys.argv[1])
+import apply_refactor as ar
+def checkpoint(name):
+    if name == sys.argv[2]:
+        print(name, flush=True)
+        signal.pause()
+def gate(*args):
+    checkpoint('during_gate')
+    return True, 'green'
+ar._checkpoint = checkpoint
+ar._read_only_gate = gate
+ar.finish(ar.main(sys.argv[3:]))
+"""
+    with subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            driver,
+            str(_ROOT / "scripts"),
+            seam,
+            "--root",
+            str(root),
+            "--spec",
+            str(spec),
+            "--gate",
+            "test",
+            "--json",
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ) as child:
+        try:
+            assert select.select([child.stdout], [], [], timeout)[0], "cut not reached"
+            assert child.stdout.readline().decode().strip() == seam
+            child.kill()
+            assert child.wait(timeout=timeout) == -signal.SIGKILL
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=timeout)
+    journal = root / ".evidence/refactor-journal.json"
+    expected = intended if seam == "committed" else originals
+    snapshots = []
+    for attempt in range(2):
+        # Keeping the pipe open proves --recover needs neither a spec nor EOF.
+        with subprocess.Popen(
+            [
+                sys.executable,
+                str(_ROOT / "scripts/apply_refactor.py"),
+                "--root",
+                str(root),
+                "--recover",
+                "--json",
+            ],
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as recovery:
+            try:
+                code = recovery.wait(timeout=timeout)
+                output, error = recovery.communicate(timeout=timeout)
+            except BaseException:
+                recovery.kill()
+                recovery.wait(timeout=timeout)
+                raise
+        assert code == 0, error.decode()
+        result = json.loads(output)
+        restored = [target.name for target in targets]
+        assert result["recovered"] == (
+            restored
+            if attempt == 0 and seam not in ("before_prepared", "committed")
+            else []
+        )
+        assert [target.read_bytes() for target in targets] == expected
+        assert all(target.stat().st_mode & 0o7777 == 0o751 for target in targets)
+        assert not journal.exists()
+        assert not list(root.rglob(".refactor-tmp-*"))
+        snapshots.append(
+            [
+                (target.read_bytes(), target.stat().st_mode & 0o7777)
+                for target in targets
+            ]
+        )
+    assert snapshots[0] == snapshots[1], "second recovery changed targets"
 
 
 def test_launch_records_a_fixed_point(tmp_path, monkeypatch):

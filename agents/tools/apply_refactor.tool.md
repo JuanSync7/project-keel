@@ -40,6 +40,7 @@ The states are prepared, applied after all targets, and committed after a green
 `scripts/run_make_target.py` gate. A red gate or apply error restores originals;
 startup replays any pre-commit interruption, including one after a green gate.
 If committed publication fails, the journal is re-saved as applied before restoration.
+Restoration still runs if that re-save also fails.
 A committed journal is cleaned without undo and its cleanup is logged to stderr. Replay removes orphan temporaries
 and only removes the journal after all restores succeed. A failed restore raises
 `RollbackError` after trying every target and retains the evidence for retry.
@@ -48,6 +49,12 @@ A live recorded gate process group (named by id), conflicting bytes or corrupt e
 refuses recovery with `journal_conflict: true`. Both agents stop and surface it.
 The gate runner refuses wider effect labels and fails a green gate that changed
 the tree. A chunk is accepted only after committed is durable.
+
+`--recover` replays or cleans the journal and exits without reading a spec or stdin.
+A human may abandon even corrupt evidence with `--discard-journal --yes`; this
+unlinks only the configured journal and leaves every target untouched. Without
+`--yes`, discard refuses before creating artifacts. These modes and `--dry-run`
+are mutually exclusive. Both agents keep their existing argument sets.
 
 ## When to use
 - To apply one proposed, bounded refactor with a durable journal and restoration
@@ -69,6 +76,9 @@ the tree. A chunk is accepted only after committed is durable.
 | `--allow` | no | none (repeatable) | a file this run may edit; an edit to any other file is refused before any write |
 | `--dry-run` | no | off | open existing evidence and lock read-only; create neither, clean no temporaries; report pending recovery without applying a proposal, otherwise validate and list files |
 | `--timeout` | no | `make_targets.gate_timeout_seconds` | gate timeout in seconds, passed to `run_make_target`; a whole number from 1 to 604800, else refused (exit 2) before any edit |
+| `--recover` | no | off | replay or clean the journal and exit without reading a spec or stdin |
+| `--discard-journal` | no | off | human only: delete the journal without touching targets; requires `--yes` |
+| `--yes` | no | off | human confirmation for `--discard-journal`; refused alone |
 | `--json` | no | off | emit the result as JSON |
 
 Spec shape: `{"practice": "...", "edits": [{"file": "p", "find": "...", "replace": "..."}] }` (an edit may use `"content"` for a whole-file replacement). The gate is the caller's `--gate`, never the spec's.
@@ -98,11 +108,13 @@ dropping the key silently would let the reply believe it chose the gate.
 With `--json`, a result object: `{practice, gate, applied, rolled_back, files, gate_output, recovered}`.
 `recovered` lists paths restored at startup, independently of `applied`.
 `rolled_back: true` means every planned original was restored byte for byte.
-Exit 0 when applied (or dry-run), 1 on a red gate, restore failure, lock contention
+Recovery/discard JSON carries `{files: [], recovered, recovery_only, discarded_journal}`.
+A repeated recovery restores no paths and changes no target bytes or modes.
+Exit 0 when applied (or dry-run, recovery or confirmed discard), 1 on a red gate, restore failure, lock contention
 or journal conflict, 2 on a refused spec, and 14 on a config fault.
 A conflicting-journal refusal carries `journal_conflict: true` and an `error` naming the
-configured journal and remedy. Preserve the evidence and reconcile it before
-retrying. Lock contention carries `lock_busy: true`; both agents stop on either flag.
+configured journal and `--discard-journal --yes`. Preserve the evidence and
+reconcile it before retrying, or explicitly abandon recovery while keeping targets. Lock contention carries `lock_busy: true`; both agents stop on either flag.
 Failed restores report `RollbackError` and retain the journal.
 Error reports retain `recovered` if reading or planning the next spec fails.
 

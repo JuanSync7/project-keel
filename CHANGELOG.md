@@ -15,6 +15,12 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Refactor recovery and human discard are explicit (KEEL-ROLLBACK-2).**
+  `--recover` replays or cleans the journal without reading stdin or a spec.
+  Human-only `--discard-journal --yes` abandons evidence without touching targets.
+  Restoration runs even when the applied-state re-save fails; subprocess SIGKILL
+  cases prove recovery and its second-run fixed point at each transaction cut.
+
 - **Every shipped document has a reachable index link (KEEL-CABINET-1).** The documentation
   index links guides, decisions, specifications and repository labels from the
   root README. Its template twin omits maintainer records and answer-pruned
