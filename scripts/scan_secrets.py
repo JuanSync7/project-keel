@@ -160,7 +160,7 @@ def write_record(root, cfg, path):
     changed. The caller has checked record_is_ignored. Raises PathEscape before
     writing when the configured record resolves outside the project."""
     destination = os.path.join(root, cfg["record_file"])
-    git_tree.confined_path(root, destination)
+    destination = git_tree.confined_path(root, destination)
     record = {
         "name": cfg["name"],
         "path": path,

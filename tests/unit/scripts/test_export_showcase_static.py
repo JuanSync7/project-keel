@@ -178,3 +178,32 @@ def test_missing_target_created(tmp_path, linked):
     out = "site/nested"
     assert export.main(["--root", str(tmp_path), "--out-dir", out]) == ExitCode.SUCCESS
     assert "api/overview.json" in _written(tmp_path / out)
+
+
+def test_export_uses_resolved_destinations(tmp_path, monkeypatch):
+    _project(tmp_path)
+    out = tmp_path / "site"
+    out.mkdir()
+    real, outside = out / "real", tmp_path / "outside"
+    real.mkdir()
+    outside.mkdir()
+    link = out / "api"
+    link.symlink_to(real, target_is_directory=True)
+    sentinel = outside / "overview.json"
+    sentinel.write_bytes(b"external sentinel")
+    original = export.confined_path
+
+    def checked(boundary, path):
+        result = original(boundary, path)
+        if path.endswith("llms-full.txt"):
+            link.unlink()
+            link.symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(export, "confined_path", checked)
+    assert (
+        export.main(["--root", str(tmp_path), "--out-dir", str(out)])
+        == ExitCode.SUCCESS
+    )
+    assert sentinel.read_bytes() == b"external sentinel"
+    assert (real / "overview.json").is_file()

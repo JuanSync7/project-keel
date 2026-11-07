@@ -541,3 +541,29 @@ def test_a_program_that_lost_its_execute_bit_is_installed_again(project, capsys)
     assert project.run() == ExitCode.SUCCESS
     assert "already installed" not in capsys.readouterr().out
     assert project.program().stat().st_mode & stat.S_IXUSR
+
+
+def test_install_uses_resolved_destinations(project, monkeypatch):
+    project.publish()
+    project.tools.mkdir()
+    real = project.tools / "real"
+    real.mkdir()
+    link = project.tools / _NAME
+    link.symlink_to(real, target_is_directory=True)
+    outside = project.root.parent / "outside"
+    (outside / _CFG["rev"]).mkdir(parents=True)
+    sentinel = outside / _CFG["rev"] / _NAME
+    sentinel.write_bytes(b"external sentinel")
+    original = install_scanner.git_tree.confined_path
+
+    def checked(boundary, path):
+        result = original(boundary, path)
+        if str(boundary) == str(project.root) and link.resolve() == real:
+            link.unlink()
+            link.symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(install_scanner.git_tree, "confined_path", checked)
+    assert project.run() == ExitCode.SUCCESS
+    assert sentinel.read_bytes() == b"external sentinel"
+    assert (real / _CFG["rev"] / _NAME).is_file()

@@ -131,8 +131,7 @@ def main(argv=None) -> int:
         )
     ] + [os.path.join(out, name) for name in ("llms.txt", "llms-full.txt")]
     try:
-        for path in outputs:
-            confined_path(boundary, path)
+        destinations = {path: confined_path(boundary, path) for path in outputs}
     except PathEscape as exc:
         return report(
             ExitCode.USAGE if args.out_dir else ExitCode.CONFIG,
@@ -159,26 +158,24 @@ def main(argv=None) -> int:
         )
     sc = load_showcase(args.root, served_visibilities=served)
 
+    def write_json(path: str, obj: object) -> None:
+        """Write to the destination returned by the batch preflight."""
+        _write_json(destinations[path], obj)
+
     # 1) Single object/list endpoints — mirror showcase_api.py exactly.
-    _write_json(os.path.join(api, "overview.json"), to_jsonable(sc.overview()))
-    _write_json(os.path.join(api, "features.json"), to_jsonable(list(sc.features())))
-    _write_json(
-        os.path.join(api, "principles.json"), to_jsonable(list(sc.principles()))
-    )
-    _write_json(
-        os.path.join(api, "models.json"), to_jsonable(list(sc.model_adapters()))
-    )
-    _write_json(
+    write_json(os.path.join(api, "overview.json"), to_jsonable(sc.overview()))
+    write_json(os.path.join(api, "features.json"), to_jsonable(list(sc.features())))
+    write_json(os.path.join(api, "principles.json"), to_jsonable(list(sc.principles())))
+    write_json(os.path.join(api, "models.json"), to_jsonable(list(sc.model_adapters())))
+    write_json(
         os.path.join(api, "practices.json"), to_jsonable(list(sc.practice_items()))
     )
-    _write_json(
+    write_json(
         os.path.join(api, "profiles.json"), to_jsonable(list(sc.domain_profiles()))
     )
-    _write_json(os.path.join(api, "checks.json"), to_jsonable(list(sc.checks())))
-    _write_json(os.path.join(api, "setup.json"), to_jsonable(list(sc.setup_steps())))
-    _write_json(
-        os.path.join(api, "wiki", "tree.json"), to_jsonable(list(sc.doc_tree()))
-    )
+    write_json(os.path.join(api, "checks.json"), to_jsonable(list(sc.checks())))
+    write_json(os.path.join(api, "setup.json"), to_jsonable(list(sc.setup_steps())))
+    write_json(os.path.join(api, "wiki", "tree.json"), to_jsonable(list(sc.doc_tree())))
 
     # 2) Per-node detail (incl. rendered markdown) for every corpus node, as one
     #    map the client fetches once. This replaces the dynamic /api/wiki/node?id=
@@ -200,7 +197,7 @@ def main(argv=None) -> int:
         payload = to_jsonable(detail)
         payload["markdown"] = sc.markdown(nid)  # renderable body, baked in
         nodes[nid] = payload
-    _write_json(os.path.join(api, "wiki", "nodes.json"), nodes)
+    write_json(os.path.join(api, "wiki", "nodes.json"), nodes)
 
     # 3) Agent front door, colocated with the deployed site so it resolves under
     #    the static base (e.g. /my-project/llms.txt).
@@ -209,7 +206,7 @@ def main(argv=None) -> int:
         ("llms.txt", sc.llms_index(args.base_url, tree_url="/api/wiki/tree.json")),
         ("llms-full.txt", sc.llms_full()),
     ):
-        p = os.path.join(out, name)
+        p = destinations[os.path.join(out, name)]
         os.makedirs(os.path.dirname(p), exist_ok=True)
         with open(p, "w", encoding="utf-8") as fh:
             fh.write(text)

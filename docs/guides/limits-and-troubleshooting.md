@@ -50,6 +50,13 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   `readlink`, rejecting escapes, link loops and unreadable ancestors. Scanner
   installation confines its program and archive to the install root and its
   record to the project; static export checks every output before mutation.
+  The restamp and stamp-conflict jobs preflight the whole worklist before any
+  write. Retired-file deletion and restoration, corpus building and linking,
+  README indexing and no-app declaration also confine writes to the project.
+  These jobs refuse escapes with exit 2. The llms writer confines relative
+  output to the project and allows an explicit absolute output directory.
+  An explicit absolute corpus or README index output file authorizes its
+  parent directory. Relative file outputs stay under the project root. Writers use the resolved destination returned by the guard.
   Internal symlinks and absent targets are allowed. Configured escapes exit 14;
   an escaping relative `--out-dir` exits 2. An explicit absolute `--out-dir`
   authorizes its output root. A link swapped between check and write is not

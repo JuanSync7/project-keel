@@ -34,8 +34,10 @@ version rather than a bare commit:
   (the template uses `.evidence/refactor-journal.json`).
 
 - **Writer destinations stay inside their authorized root (KEEL-PATH-CONTAIN-1).**
-  Scanner installation, scanner records and static export refuse resolved
-  escapes and symlink loops before mutation. Internal links remain usable;
+  Scanner installation, scanner records, static export, docs migrations and
+  corpus/index jobs refuse resolved escapes and symlink loops before mutation.
+  Batch stamp jobs preflight every destination; retirement guards restoration
+  and deletion. Writers use the checked destination. Internal links remain usable;
   an explicit absolute export directory remains allowed. Checks apply at call
   time and do not catch a link swapped before the write.
 

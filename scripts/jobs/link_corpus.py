@@ -3,7 +3,7 @@
 title: Link corpus job
 kind: script
 layer: n/a
-summary: Deterministic: add keyword/entity link edges to wiki/corpus.json in place.
+summary: Deterministic: add keyword/entity link edges to wiki/corpus.json in place. An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-corpus
@@ -19,7 +19,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
-from exit_codes import ExitCode, finish  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 DEFAULT_CORPUS = os.path.join("wiki", "corpus.json")
 
@@ -93,6 +94,16 @@ def main(argv=None) -> int:
     path = (
         args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
     )
+    try:
+        boundary = os.path.dirname(path) if os.path.isabs(args.corpus) else ROOT
+        path = confined_path(boundary, path)
+    except PathEscape as exc:
+        return report(
+            ExitCode.USAGE,
+            "link_corpus: corpus escapes its root",
+            str(exc),
+            "keep relative --corpus inside the project or choose an explicit absolute corpus",
+        )
     if not os.path.exists(path):
         print("no corpus at %s; run build_corpus.py first (skipping)." % args.corpus)
         return ExitCode.SUCCESS

@@ -3,7 +3,7 @@
 title: Build corpus job
 kind: script
 layer: n/a
-summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index).
+summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index). An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-corpus
@@ -55,6 +55,7 @@ from corpus_level import (  # noqa: E402
     split_frontmatter,
 )
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 # A backticked span that is a repository path, not a phrase: slashes or a code
 # or doc suffix, no spaces. `docs/guides/x.md`, `scripts/`, `src/thing.py`.
@@ -726,6 +727,7 @@ def main(argv=None) -> int:
         help="output path (default: wiki/corpus.json)",
     )
     args = ap.parse_args(argv)
+    args.root = os.path.abspath(args.root)
     try:
         corpus = build_corpus(args.root)
     except config_loader.ConfigError as exc:
@@ -747,6 +749,16 @@ def main(argv=None) -> int:
             "give each its own id, then build again; nothing was written",
         )
     out = args.out if os.path.isabs(args.out) else os.path.join(args.root, args.out)
+    try:
+        boundary = os.path.dirname(out) if os.path.isabs(args.out) else args.root
+        out = confined_path(boundary, out)
+    except PathEscape as exc:
+        return report(
+            ExitCode.USAGE,
+            "build_corpus: output escapes its root",
+            config_loader.shown(str(exc), bare=True),
+            "keep relative --out inside --root or choose an explicit absolute output",
+        )
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(corpus, fh, indent=2, sort_keys=True)

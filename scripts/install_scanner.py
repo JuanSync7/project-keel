@@ -307,8 +307,8 @@ def _run(root, cfg, inst):
                 "link under it into the checkout",
             )
     try:
-        for path in (program, kept):
-            git_tree.confined_path(install_root, path)
+        program = git_tree.confined_path(install_root, program)
+        kept = git_tree.confined_path(install_root, kept)
         git_tree.confined_path(root, os.path.join(root, cfg["record_file"]))
     except git_tree.PathEscape as exc:
         return report(

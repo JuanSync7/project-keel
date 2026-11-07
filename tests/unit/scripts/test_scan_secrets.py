@@ -586,3 +586,33 @@ def test_no_mode_or_two_modes_is_usage(project):
     assert project.run() == ExitCode.USAGE
     assert project.run("--history", "--staged") == ExitCode.USAGE
     assert project.run("--staged", "--staged-or-history") == ExitCode.USAGE
+
+
+def test_record_uses_resolved_destination(tmp_path, monkeypatch):
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    real = root / "real"
+    real.mkdir()
+    link = root / "linked"
+    link.symlink_to(real, target_is_directory=True)
+    sentinel = outside / "record.json"
+    sentinel.write_bytes(b"external sentinel")
+    program = root / "program"
+    program.write_bytes(b"program")
+    original = scan_secrets.git_tree.confined_path
+
+    def checked(boundary, path):
+        result = original(boundary, path)
+        link.unlink()
+        link.symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(scan_secrets.git_tree, "confined_path", checked)
+    scan_secrets.write_record(
+        str(root),
+        {"name": "scanner", "rev": "v1", "record_file": "linked/record.json"},
+        str(program),
+    )
+    assert sentinel.read_bytes() == b"external sentinel"
+    assert (real / "record.json").is_file()

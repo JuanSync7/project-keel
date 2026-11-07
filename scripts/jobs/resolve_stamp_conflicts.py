@@ -3,7 +3,7 @@
 title: resolve_stamp_conflicts — resolves a copier conflict whose only hunk is a document's updated: stamp
 kind: script
 layer: n/a
-summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted, and before importing review_docs it asks scripts/jobs/conflict_guard.py whether a module it imports, or a fixed project file those modules declare reading (child_env's config/project.json), holds a hunk: if one does, it names the files and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2.
+summary: Copier's `after` migration on update, run after every other migration but before the restamp, which stays last. copier's inline update leaves a document conflicted when the project and the template both moved its frontmatter `updated:` value since the project's `_commit` (projects generated before every render was fresh on arrival, and renders that straddled midnight with no SOURCE_DATE_EPOCH: 95 of bedrock-platform's 111 conflicts, measured). `updated:` means touched and both sides touched it, so such a conflict has one right answer: the later date. This job reads `git ls-files -u` (through review_docs' `git_argv`) and, for each unmerged `*.md` path that is a regular file with a project stage (2) and a template stage (3), hands its bytes to `resolve_stamp_conflict`. That resolves only when copier's markers (read with any label) make exactly one hunk, each side of it is one line, that line is the frontmatter `updated:` value on both sides as review_docs' `updated_span` reads it, the two sides differ in nothing else, and both values are real calendar dates; the diff3 base section is ignored. The file is then written atomically (mode kept) as the project's text with the later date, and one `git update-index --index-info` puts its index entry back to stage 0 at stage 2's mode and sha, so it shows as a cleanly merged ` M` file. Every other unmerged path keeps its bytes and its stages and is named on stderr with a reason from the closed vocabulary `REASONS`; a file that is not unmerged is never opened. Exit 0 when every unmerged path was resolved or left with a reason, 2 on a git or write failure. It does not import check_structure, whose copy in a project mid-update may itself be conflicted, and before importing review_docs it asks scripts/jobs/conflict_guard.py whether a module it imports, or a fixed project file those modules declare reading (child_env's config/project.json), holds a hunk: if one does, it names the files and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2. Outputs are confined to the project root; an escape exits USAGE before mutation. Internal links and missing targets are allowed. Checks judge paths at call time, not a link swapped before writing.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_stamp_conflicts.py
@@ -55,6 +55,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 # The closed vocabulary of outcomes. RESOLVED is the only one that writes.
 RESOLVED = "resolved"
@@ -298,12 +299,22 @@ def run(root):
     read."""
     resolved, left, failed = [], [], []
     staged = []
-    for rel, stages in sorted(unmerged(root).items()):
+    work = sorted(unmerged(root).items())
+    destinations = {}
+    for rel, _stages in work:
+        full = os.path.join(root, *rel.split("/"))
+        parent = confined_path(root, os.path.dirname(full))
+        destinations[rel] = (
+            os.path.join(parent, os.path.basename(full))
+            if os.path.islink(full)
+            else confined_path(root, full)
+        )
+    for rel, stages in work:
         reason = _skip(root, rel, stages)
         if reason is not None:
             left.append((rel, reason))
             continue
-        full = os.path.join(root, *rel.split("/"))
+        full = destinations[rel]
         try:
             with open(full, "rb") as fh:
                 data = fh.read()
@@ -364,7 +375,7 @@ def main(argv=None):
     root = os.path.abspath(args.root or os.getcwd())
     try:
         resolved, left, failed = run(root)
-    except JobError as e:
+    except (JobError, PathEscape) as e:
         refusal = config_loader.refusal_cause(e)
         if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
             return report(

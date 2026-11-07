@@ -3,7 +3,7 @@
 title: Build llms.txt job
 kind: script
 layer: n/a
-summary: Deterministically write wiki/llms.txt + wiki/llms-full.txt from the corpus; a refused manifest writes neither, exiting 2 for a hunk and 14 otherwise.
+summary: Deterministically write wiki/llms.txt + wiki/llms-full.txt from the corpus; a refused manifest writes neither, exiting 2 for a hunk and 14 otherwise. An explicit absolute --out-dir authorizes that directory; relative outputs are confined to --root. Escapes exit USAGE before either file is written. Internal links and missing targets are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -47,6 +48,7 @@ def main(argv=None) -> int:
         help="absolute site base for links (default: relative)",
     )
     args = ap.parse_args(argv)
+    args.root = os.path.abspath(args.root)
 
     try:
         from backend.showcase import load_showcase
@@ -78,12 +80,26 @@ def main(argv=None) -> int:
         if os.path.isabs(args.out_dir)
         else os.path.join(args.root, args.out_dir)
     )
-    os.makedirs(out_dir, exist_ok=True)
+    boundary = out_dir if os.path.isabs(args.out_dir) else args.root
+    try:
+        outputs = [
+            confined_path(boundary, os.path.join(out_dir, name))
+            for name in ("llms.txt", "llms-full.txt")
+        ]
+    except PathEscape as exc:
+        return report(
+            ExitCode.USAGE,
+            "build_llms_txt: output escapes its root",
+            config_loader.shown(str(exc), bare=True),
+            "keep relative outputs inside --root or choose an explicit absolute --out-dir",
+        )
+    for path in outputs:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
 
     index = sc.llms_index(args.base_url)
     full = sc.llms_full()
-    for name, text in (("llms.txt", index), ("llms-full.txt", full)):
-        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as fh:
+    for path, text in zip(outputs, (index, full), strict=True):
+        with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
     rel = os.path.relpath(out_dir, args.root)
     print(

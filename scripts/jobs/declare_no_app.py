@@ -3,7 +3,7 @@
 title: declare_no_app — a project whose composition root is gone stays green across copier update
 kind: script
 layer: n/a
-summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that holds a conflict hunk is refused with conflict_guard's line, exit 2, and any other unusable manifest is refused with exit CONFIG (14); an absent manifest is left untouched; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
+summary: A copier `after` migration on `copier update`. A project generated before config/project.json carried `layers.app`, and that deleted src/app as the template then advised, receives `"app": {"path": "src/app", ...}` from the update, and check_H errors on a path that does not exist. When the declared path is absent from the tree and the pre-update manifest (`git cat-file blob HEAD:config/project.json`, read-only, through review_docs' `git_argv` and the allowlisted environment) had no `layers.app`, this job makes the three edits src/app/README.md names for a project with no composition root: `layers.app` becomes null; each bare marker of the smoke test that needs the composition root (tests/smoke/test_app_runs.py `pytestmark`) is declared in `make_targets.empty_test_selections`; each Makefile target whose recipe runs scripts/run_app.py is added to `make_targets.effect_proof_skip`. It names what it did on stderr. config/project.json is edited as text, so no other byte moves, and an edit that does not parse back to exactly the intended manifest is refused: nothing is written, the edits are named on stderr, exit 1. A project that declared `layers.app` itself is left to check_H. A manifest that holds a conflict hunk is refused with conflict_guard's line, exit 2, and any other unusable manifest is refused with exit CONFIG (14); an absent manifest is left untouched; a git failure exits 2. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read. Outputs are confined to the project root; an escape exits USAGE before mutation. Internal links and missing targets are allowed. Checks judge paths at call time, not a link swapped before writing.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_update_without_app.py
@@ -54,6 +54,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 MANIFEST = os.path.join("config", "project.json")
 # The runner `make run` calls and the test that needs a composition root: the
@@ -340,7 +341,16 @@ def main(argv=None):
             % (markers or "no marker", targets or "no target"),
         )
     if out != text:
-        with open(os.path.join(root, MANIFEST), "w", encoding="utf-8") as fh:
+        try:
+            destination = confined_path(root, os.path.join(root, MANIFEST))
+        except PathEscape as exc:
+            return report(
+                ExitCode.USAGE,
+                "declare_no_app: manifest escapes its root",
+                config_loader.shown(str(exc), bare=True),
+                "keep config/project.json inside the project without escaping links",
+            )
+        with open(destination, "w", encoding="utf-8") as fh:
             fh.write(out)
         _say(
             "%s is absent and this update introduced layers.app: set it null, "

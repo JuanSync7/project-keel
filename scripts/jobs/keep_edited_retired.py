@@ -3,7 +3,7 @@
 title: keep_edited_retired — puts back a file the template retired but the project edited
 kind: script
 layer: n/a
-summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME (or that it is not a regular file), why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. Which adapters the old render held is read from the `--answer-key` value in HEAD's answers file (copier commits nothing before the migrations run, so HEAD holds the old answer; `--answer-all` names the value that chose every adapter): a path copier did not delete whose adapter that value did not choose is the project's own file and is neither removed nor named, even byte-equal to keel's; the kept line says the answer "no longer chooses" NAME only when copier deleted the path or the old value chose it, and "does not choose" it when the answers cannot say. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read.
+summary: Copier's first `after` migration on update. copier's `_remove_old_files` deletes every file the old render had and the new one lacks before any migration runs, whether the project edited it or not (measured on copier 9.17), so an edit to a file the template retired or moved -- an ADR that became docs/adr/keel/K-NNNN-<slug>.md -- would be lost without a word. This job lists the files the update deleted (`git diff-index --name-only --diff-filter=D HEAD` in the project, read-only: plumbing that writes no index, `--no-optional-locks`, filters off through review_docs' `git_argv`) and compares each one's HEAD bytes with the template's blob at `--from` (the commit the project was generated from). `is_edited` calls a copy unedited only when the two differ in nothing but the frontmatter `updated:` value, read through review_docs' `updated_span`; an edited copy is put back from HEAD with HEAD's mode (an executable, a symlink) and named on stderr with its successor in the template where a rename says so. A file the template renders from `<path>.jinja` is judged against that twin rendered (jinja2's sandbox, strict undefined) with the answers file HEAD holds (`--answers`); one that will not render is put back and named, and so is a path the template does not hold at `--from`. Each `--retire NAME:PATH` is a CI adapter the `ci_pipeline` answer declines, judged in the same run by the same verdict, so one file never gets two: removed when it is byte-equal to keel's render, else kept with one stderr line that says whether it carries the `--marker` line filled with NAME (or that it is not a regular file), why it is kept, and that CI runs it beside the chosen adapter until `git rm PATH`. Which adapters the old render held is read from the `--answer-key` value in HEAD's answers file (copier commits nothing before the migrations run, so HEAD holds the old answer; `--answer-all` names the value that chose every adapter): a path copier did not delete whose adapter that value did not choose is the project's own file and is neither removed nor named, even byte-equal to keel's; the kept line says the answer "no longer chooses" NAME only when copier deleted the path or the old value chose it, and "does not choose" it when the answers cannot say. The index is never written. An unresolvable `--from` or a git failure puts back every deleted file and exits 2, because without a base nothing may stay deleted. scripts/audit_project.py's `retired` group imports `is_edited`, so the guard and the audit cannot disagree. It runs before the other answer-driven `rm` migrations, which still win, and before the restamp, which stays last. Run as a script, it first asks scripts/jobs/conflict_guard.py whether a module it imports from the project, or a fixed project file those modules declare reading in `PROJECT_READS`, holds a conflict hunk, and if one does it names each file and the rerun command (run as a migration with `--finish-with`, the command that finishes the update) and exits 2 instead of dying on the import or the read. Outputs are confined to the project root; an escape exits USAGE before mutation. Internal links and missing targets are allowed. Checks judge paths at call time, not a link swapped before writing.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_edited_retired_files.py
@@ -53,6 +53,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 # git tree modes this job can put back. Any other mode (a submodule, 160000)
 # is not a file the template ships, so it is a stated failure, never a guess.
@@ -198,8 +199,10 @@ def _restore(project, rel, mode, data):
     """Put *rel* back with HEAD's *data* and *mode*. Writes through a temporary
     file and os.replace, so a reader never sees half a file."""
     full = os.path.join(project, *rel.split("/"))
+    confined_path(project, os.path.dirname(full))
     if os.path.lexists(full):
         raise GuardError("cannot put back %s: the path is taken" % rel)
+    full = confined_path(project, full)
     if mode not in _RESTORABLE:
         raise GuardError("cannot put back %s: git mode %s" % (rel, mode))
     parent = os.path.dirname(full)
@@ -261,6 +264,11 @@ def judge(
     path still missing is put back first, then GuardError is raised."""
     retire = retire or {}
     paths = deleted_paths(project)
+    for rel in sorted(set(paths) | set(retire)):
+        full = os.path.join(project, *rel.split("/"))
+        confined_path(project, os.path.dirname(full))
+        if not os.path.islink(full):
+            confined_path(project, full)
     on_disk = [
         p
         for p in sorted(retire)
@@ -433,6 +441,12 @@ def _judge(project, src, ref, paths, on_disk, retire, marker, answers_rel, choic
     kept, gone, failed = [], [], []
     for rel in worklist:
         full = os.path.join(project, *rel.split("/"))
+        parent = confined_path(project, os.path.dirname(full))
+        full = (
+            os.path.join(parent, os.path.basename(full))
+            if os.path.islink(full)
+            else confined_path(project, full)
+        )
         if rel in on_disk:
             # Still on disk (copier did not delete it), so its own bytes are
             # what a removal would lose.
@@ -597,7 +611,7 @@ def main(argv=None):
             args.answer_key,
             args.answer_all,
         )
-    except GuardError as e:
+    except (GuardError, PathEscape) as e:
         refusal = config_loader.refusal_cause(e)
         if refusal is not None and not isinstance(refusal, config_loader.ConfigAbsent):
             return report(
