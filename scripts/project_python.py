@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: Project interpreter — run a script with the current or main checkout's venv
-summary: Selects this tree's .venv/bin/python, then the main checkout's through git's common directory. Missing venvs and bare or unusual fallback layouts refuse with USAGE; exec preserves arguments, stdin and the script's status under the child environment allowlist. Stdlib-only and Python 3.6-safe.
+summary: Selects this tree's .venv/bin/python, then the main checkout's through git's common directory. Missing venvs, bare or unusual fallback layouts and a config/project.json an update left conflicted refuse with USAGE, and any other refused manifest with CONFIG; exec preserves arguments, stdin and the script's status under the child environment allowlist. Stdlib-only and Python 3.6-safe.
 effect: read-only
 """
 
@@ -14,6 +14,7 @@ import sys
 from typing import List, Optional
 
 # Running by path puts scripts/ on sys.path; mypy's configured path is src/ only.
+import config_loader  # type: ignore[import-not-found]
 from child_env import ChildEnvError, build_child_env  # type: ignore[import-not-found]
 from exit_codes import ExitCode, finish, report  # type: ignore[import-not-found]
 
@@ -99,10 +100,12 @@ def main(argv: Optional[List[str]] = None) -> ExitCode:
         os.execve(interpreter, [interpreter] + args, env=build_child_env())
     except ChildEnvError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE
+            if config_loader.is_conflict(exc.__cause__ or exc)
+            else ExitCode.CONFIG,
             "project_python: child environment refused",
             str(exc),
-            "correct the child environment policy and run again",
+            "repair config/project.json, resolving any hunk, then run again",
         )
     except (OSError, subprocess.CalledProcessError) as exc:
         return report(

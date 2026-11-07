@@ -542,6 +542,18 @@ _READERS = (
         ),
     ),
     (
+        "scripts/project_python.py",
+        "allowlist",
+        ("script.py",),
+        (
+            14,
+            "",
+            "project_python: child environment refused: config/project.json does not exist, so no "
+            "child may start without an allowlist; repair config/project.json, resolving any hunk, "
+            "then run again\n",
+        ),
+    ),
+    (
         "scripts/record_gate_baseline.py",
         "policy",
         (),
