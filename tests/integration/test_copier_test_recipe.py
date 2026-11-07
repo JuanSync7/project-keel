@@ -38,7 +38,8 @@ def test_nested_suite_delegates_to_the_shipped_worker_recipe():
         re.MULTILINE,
     )
     assert len(recipes) == 1, "expected one shipped test recipe"
-    assert re.search(r"\$\(PY\) -m pytest\s+-n\s+auto\b", recipes[0]), recipes[0]
+    # Other options (the full-gate flag) may sit between pytest and -n auto.
+    assert re.search(r"\$\(PY\) -m pytest\b[^\n]*\s-n\s+auto\b", recipes[0]), recipes[0]
 
     source = _ROOT / "tests/integration/test_copier_generation.py"
     tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
