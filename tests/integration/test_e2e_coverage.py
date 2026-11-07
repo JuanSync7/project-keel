@@ -2,7 +2,7 @@
 title: Integration — every endpoint an enabled transport serves is named by an e2e scenario or exempt with a reason
 kind: tests
 layer: n/a
-summary: The CONVENTIONS section 17 end-to-end gate. It derives each enabled transport's endpoints from the code, never from a list - the REST app's OpenAPI paths (written by the transport's exporter as a child), each MCP server's tools (asked over its real stdio), each gRPC service's rpcs (read from its .proto files) - and fails when one is neither named by a scenario under config/project.json `e2e.scenario_dir` with `@pytest.mark.<e2e.marker>("<id>")` nor exempt in `e2e.exempt` with a reason. It fails closed: a route the app serves that its OpenAPI document cannot list (an allowlist over a child's walk of the routes the app loads, plus a syntax pass that points at the line), a marker it cannot read or that applies to no test pytest collects, an unknown source kind, a stale marker, a stale, redundant or reasonless exemption, and a deriver that finds nothing are each red. Each fault-injection twin plants one fault and asserts exactly one more finding. The REST half skips, naming the `transport` extra, without FastAPI; the MCP and proto halves still judge.
+summary: The CONVENTIONS section 17 end-to-end gate. It derives each enabled transport's endpoints from the code, never from a list - the REST app's OpenAPI paths (written by the transport's exporter as a child), each MCP server's tools (asked over its real stdio), each gRPC service's rpcs (read from its .proto files) - and fails when one is neither named by a scenario under config/project.json `e2e.scenario_dir` with `@pytest.mark.<e2e.marker>("<id>")` nor exempt in `e2e.exempt` with a reason. It fails closed: a route the app serves that its OpenAPI document cannot list (an allowlist over a child's walk of the routes the app loads, plus a syntax pass that points at the line), a marker it cannot read or that applies to no test pytest collects, an unknown source kind, a stale marker, a stale, redundant or reasonless exemption, and a deriver that finds nothing are each red. Unreadable files below directories pytest skips warn with their path and reason instead of stopping the scan; readable markers there name no endpoint and remain findings. Each fault-injection twin plants one fault and asserts exactly one more finding; the unreadable-file case asserts one warning for its one planted file. The REST half skips, naming the `transport` extra, without FastAPI; the MCP and proto halves still judge.
 """
 
 import ast
@@ -13,11 +13,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
 from scripts.child_env import build_child_env
-from scripts.pytest_markers import attached_markers, collection_rule
+from scripts.pytest_markers import attached_markers, dir_recursed, full_rule
 from scripts.pytest_markers import is_marker as _is_marker
 
 import bounded_cache
@@ -479,10 +480,23 @@ def id_errors(endpoint, e2e, transports):
     return []
 
 
+def _skipped_directory(root, path, rule):
+    """The first ancestor pytest skips, or None when every ancestor is entered."""
+    for parent in path.relative_to(root).parents:
+        if parent == Path("."):
+            break
+        rel = parent.as_posix()
+        if not dir_recursed(str(root / parent), rel, rule[3]):
+            return rel
+    return None
+
+
 def scan_markers(root, rule):
     """(named, errors): every `pytest.mark.<marker>("<id>")` under tests/ that
     applies to a test *rule* collects, as {id: [path:line, ...]}, and every
-    marker the gate cannot read or that applies to no collected test."""
+    marker the gate cannot read or that applies to no collected test.
+    Unreadable files below skipped directories warn with their path and reason;
+    failures reading collected files propagate."""
     root = Path(root)
     e2e, transports = load_config(root)
     marker = _expect(e2e.get("marker"), str, "e2e.marker")
@@ -490,13 +504,33 @@ def scan_markers(root, rule):
     named, errors = {}, []
     for path in _py_files(root / _TESTS_DIR):
         rel = _rel(root, path)
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        skipped = _skipped_directory(root, path, rule)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
+            if skipped is None:
+                raise
+            # These files cannot contribute coverage, but hiding a failed read
+            # would make the explanation look complete when it is not.
+            warnings.warn(
+                "%s: unreadable (%s: %s); below %s, a directory pytest skips"
+                % (rel, type(exc).__name__, exc, skipped),
+                UserWarning,
+                stacklevel=2,
+            )
+            continue
         called = set()
-        attached = attached_markers(tree, marker, rule)
+        attached = attached_markers(tree, marker, rule[:2])
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and _is_marker(node.func, marker):
                 called.add(id(node.func))
                 where = "%s:%d" % (rel, node.lineno)
+                if skipped is not None:
+                    errors.append(
+                        "%s: an `%s` marker below %s, a directory pytest skips, "
+                        "names nothing" % (where, marker, skipped)
+                    )
+                    continue
                 if not rel.startswith(scenario_dir + "/"):
                     errors.append(
                         "%s: an `%s` marker outside %s (`e2e.scenario_dir`)"
@@ -680,7 +714,7 @@ def test_no_marker_or_exemption_names_an_endpoint_that_does_not_exist(collect_ru
 @pytest.fixture(scope="module")
 def collect_rule(pytestconfig):
     """This session's test-collection rule, which a marker must sit under."""
-    return collection_rule(pytestconfig)
+    return full_rule(pytestconfig)
 
 
 def _rest_endpoints():
@@ -1176,3 +1210,53 @@ def test_mcp_derivation_asks_each_server_over_stdio_and_times_out_closed(tmp_pat
     )
     with pytest.raises(GateError, match="not JSON-RPC"):
         derive_mcp(root, servers, e2e)
+
+
+@pytest.mark.parametrize(
+    "content, reason",
+    [(b"\xff\n", "UnicodeDecodeError"), (b"def broken(:\n", "SyntaxError")],
+    ids=["non-utf8", "syntax-error"],
+)
+def test_an_unreadable_file_below_a_skipped_directory_is_explained(
+    tmp_path, pytestconfig, content, reason
+):
+    root, scenarios = _copy_scenarios(tmp_path)
+    rule = full_rule(pytestconfig)._replace(norecurse=("aaa_skipped",))
+    skipped = scenarios / "aaa_skipped" / "nested"
+    skipped.mkdir(parents=True)
+    bad = skipped / "test_bad.py"
+    bad.write_bytes(content)
+    source = (
+        "import pytest\n@pytest.mark.endpoint('rest GET /__skipped__')\n"
+        "def test_one(): pass\n"
+    )
+    (skipped / "test_good.py").write_text(source, encoding="utf-8")
+    (scenarios / "test_readable.py").write_text(
+        source.replace("/__skipped__", "/__collected__"), encoding="utf-8"
+    )
+    assert len(list(skipped.glob("*.py"))) == 2
+    with pytest.warns(UserWarning, match="unreadable") as explanation:
+        named, errors = scan_markers(root, rule)
+    assert len(explanation) == 1
+    message = str(explanation[0].message)
+    assert bad.relative_to(root).as_posix() in message, message
+    assert reason in message, message
+    assert "pytest skips" in message, message
+    assert len(named["rest GET /__collected__"]) == 1, named
+    assert "rest GET /__skipped__" not in named, named
+    assert len(errors) == 1, errors
+    assert "aaa_skipped/nested/test_good.py:2" in errors[0], errors
+    assert "pytest skips" in errors[0], errors
+
+    (skipped / "test_good.py").unlink()
+    with pytest.warns(UserWarning, match="unreadable"):
+        covered = named_endpoints(root, rule)
+    assert len(covered["rest GET /__collected__"]) == 1, covered
+    collected = scenarios / "test_readable.py"
+    collected.write_bytes(content)
+    with (
+        pytest.warns(UserWarning, match="unreadable"),
+        pytest.raises((UnicodeDecodeError, SyntaxError)) as caught,
+    ):
+        scan_markers(root, rule)
+    assert type(caught.value).__name__ == reason

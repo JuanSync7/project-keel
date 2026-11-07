@@ -14,6 +14,11 @@ template improvements. Keel's own changelog is not this project's history.
 
 ## [Unreleased]
 
+- **An unreadable file below a directory pytest skips no longer stops the e2e
+  coverage gate (KEEL-MARKATTACH-2).**
+  A file there that does not decode or parse is named in a warning with its
+  path and reason, and the scan goes on; a readable endpoint marker there is
+  still a finding, and a collected file that fails to parse still raises.
 - **The exit gate sees a status bound to an attribute, subscript or augmented
   target (KEEL-EXITDROP-2).**
   `ns.status = main()`, `d["s"] = main()` and `s += main()` in an entry block
