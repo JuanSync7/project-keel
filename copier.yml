@@ -84,19 +84,9 @@ _exclude:
   # in a project generated from it. Anchored at the root, as .gitignore's `/tmp/`
   # is: a bare `tmp` would also leave out a `tmp` directory deeper in the tree.
   - "/tmp"
-  # Same rule, for prose that is not scratch: the hardening plan is keel's worklist
-  # — passes, measurements and deferrals about THIS repo, `status: draft`. Shipped
-  # verbatim it lands as a new project's design document. The FILE only: the
-  # directory's labeled README.md is the placeholder a project writes into, and
-  # pruning it would red the project's own check_B.
-  - "docs/design/keel-hardening-plan.md"
-  - "docs/design/documentation-quality.md"
-  - "docs/design/downstream-feedback.md"
-  - "docs/design/make-next-steps.md"
-  # Keel's own run records: one file per unattended run of THIS repo, naming its
-  # campaigns and slices. A generated project declares none of them, so a shipped
-  # record reds its own `make check`. The whole directory: it holds no README.md.
-  - "docs/design/runs"
+  # Keel's own plans and run records name this repo's campaigns and measurements.
+  # Exclude their whole cabinet, keeping the public design README for projects.
+  - "docs/internals"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
@@ -124,7 +114,7 @@ _exclude:
   # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would
   # pair an older doer with a newer template's gates. A generated project keeps the
   # `make audit-project` stub, which names the template checkout to run it from.
-  # Decision: docs/design/downstream-feedback.md, CMP-1.S5. Never shipped, so no
+  # Decision: docs/internals/downstream-feedback.md, CMP-1.S5. Never shipped, so no
   # `_migrations` removal. Its integration test is pruned by the glob above.
   - "scripts/audit_project.py"
   - "tests/unit/scripts/test_audit_project.py"

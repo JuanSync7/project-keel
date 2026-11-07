@@ -8,7 +8,7 @@ tags: [design, make, exit-codes, footer, graph, orphans, gate]
 summary: The design pass for queue item KEEL-NEXT-1. Every annotated make target gets a route for each outcome it can end with, kept in one table in config/project.json `make_targets.next`; a recipe shell that sees each recipe line's real status prints a footer from that table naming the next target or command; a static check holds the table and the recipes to the Makefile and the exit-code list, a walk test drives each declared edge once from the entry targets, a costly, networked or shared-state edge is checked on paper, and a target no entry reaches is an orphan only with a reason. It names the incumbents and where each falls short, records what was measured and what is inferred, answers the hard questions per effect class, and lists the build steps by intent. Nothing here is built.
 id: docs-design-make-next-steps
 created: 2026-10-22
-updated: 2026-10-24
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -21,7 +21,7 @@ gate, not about using a generated project. No code in `scripts/`, `src/`, the
 Makefile or `tests/` changes with it.
 
 The queue row is not on this branch yet. It is row 10 of the queue table in
-`docs/design/downstream-feedback.md` on the keel-plan-intake branch (commit
+`docs/internals/downstream-feedback.md` on the keel-plan-intake branch (commit
 409243c), and it reads:
 
 > A `make` target's next step is prose: a failure's `report()` line says what

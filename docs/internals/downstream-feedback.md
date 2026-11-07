@@ -2452,9 +2452,9 @@ The slices touch shared files, so their order is fixed:
   measurement before it starts. keel-lint-pre-rebase is a backup of
   keel-lint and edits the same files; it never merges, and no slice waits
   for it. Every unmerged branch except keel-lint and its backup edits
-  `docs/design/downstream-feedback.md`. Every other unmerged branch except
+  `docs/internals/downstream-feedback.md`. Every other unmerged branch except
   keel-vis edits `scripts/config_loader.py`. keel-exit, keel-goals and
-  keel-xdist also edit `docs/design/make-next-steps.md`.
+  keel-xdist also edit `docs/internals/make-next-steps.md`.
 - CMP-7.S1, CMP-7.S2 and CMP-7.S3 each edit `scripts/check_structure.py` (the
   reader, the kind sets, the README rules). They run in series, S1 then S2
   then S3.
@@ -2478,9 +2478,9 @@ beside it in the same module, and names the one it chose (item 5).
 
 - Done when: the gate test is red on one fixture per rule DT-2 to DT-6 and
   green on one that keeps them all; a hand mutation of each rule's comparison
-  turns the suite red; `docs/design/downstream-feedback.md`,
-  `docs/design/keel-hardening-plan.md`, `docs/design/documentation-quality.md`,
-  `docs/design/make-next-steps.md` and `docs/specs/example-feature.md` pass;
+  turns the suite red; `docs/internals/downstream-feedback.md`,
+  `docs/internals/keel-hardening-plan.md`, `docs/internals/documentation-quality.md`,
+  `docs/internals/make-next-steps.md` and `docs/specs/example-feature.md` pass;
   a case in the gate test, under `scripts/expiring_tier.py` `judge`, shows
   that a generated project's own design document with no record is red while
   the baseline file `expiring_tier.baseline` names does not record it, and
@@ -2492,7 +2492,7 @@ beside it in the same module, and names the one it chose (item 5).
 - Reads a table by the GFM rule: `\|` escapes a pipe, and a fixture holds a
   cell with one. `_pipe_table` in `scripts/check_structure.py` splits on every
   pipe today.
-- `docs/design/make-next-steps.md` already has a
+- `docs/internals/make-next-steps.md` already has a
   `## Defence: the hard questions per effect class` section; S1 turns it into
   the record, so the plan carries one defence section, not two.
 - Not for: judging whether a question is a good one or an answer holds (DT-7;
@@ -2677,7 +2677,7 @@ proposed position the maintainer has not approved, and the state `planned`.
 
 | Candidate | What the tree shows | Outcome |
 |-----------|---------------------|---------|
-| The defence table | No design or spec document has one under that name; `docs/design/make-next-steps.md` has a defence section of its own; `scripts/traceability.py` `read_specs` exists as DT-3 says | CMP-7.S1 |
+| The defence table | No design or spec document has one under that name; `docs/internals/make-next-steps.md` has a defence section of its own; `scripts/traceability.py` `read_specs` exists as DT-3 says | CMP-7.S1 |
 | Kind-to-folder binding | check_A reads one flat `KINDS` set and one flat `STATUSES` set; no key binds a kind to a folder | CMP-7.S2 |
 | Kinds and status lists | as above; a transition check needs git, which check_A does not run (ADR-K-0009) | CMP-7.S2 for membership; transitions queued as KEEL-STATUS-1 |
 | Heading contracts | check_F reads a tool spec's body and check_S a roster README's `## What ships here`; nothing reads another kind's headings; 3 of 27 template ADRs lack `## Alternatives considered` | CMP-7.S3, beside check_S and without the five-W header |
@@ -3381,7 +3381,7 @@ Stop at four green `make verify` slices or a cap.
 | CMP-15.S4 | Child-env pattern faults and launcher load faults exit CONFIG. | implemented |
 
 Unit tests below live in `tests/unit/scripts/`.
-CMP-15.S1 owns `scripts/config_loader.py` and its `summary:`, `test_config_loader.py`, `test_config_get.py`, `tests/integration/test_config_loader_read.py`, `tests/integration/test_conflict_entry_points.py`, loader limits in `docs/guides/limits-and-troubleshooting.md`, and this plan and its queue row in `docs/design/downstream-feedback.md`.
+CMP-15.S1 owns `scripts/config_loader.py` and its `summary:`, `test_config_loader.py`, `test_config_get.py`, `tests/integration/test_config_loader_read.py`, `tests/integration/test_conflict_entry_points.py`, loader limits in `docs/guides/limits-and-troubleshooting.md`, and this plan and its queue row in `docs/internals/downstream-feedback.md`.
 `read` catches decoder RecursionError as ConfigUnreadable naming the file.
 `resolve` catches RecursionError only copying config, raising WrongValue naming source and key.
 A default's copy stays unguarded because the default is code.
@@ -3508,12 +3508,12 @@ The cap is three passes, one per slice, with three review fix rounds each. Stop 
 A `.jinja` reader removes statement, expression and comment tags before reading tables. Tag removal reuses the newline-preserving pattern of `tests/integration/test_doc_drift.py:400` `_strip_jinja`. Helper tests pin normalized line numbers and spans.
 
 CMP-16.S1 owns the helper and its tests. It owns `_pipe_table`, `_roster_table`, `_roster_findings`, `_catalogue_parity_findings` and `_anchors` in `scripts/check_structure.py`. It owns the three check test modules below.
-S1 owns the helper roster rows in `scripts/README.md` and `scripts/README.md.jinja`. It owns grammar and required-cell prose in `docs/guides/doc-style.md` and `docs/guides/deterministic-checks.md`. It owns the plan, queue row, CMP-7.S1 escaped-pipe prose and defence row in `docs/design/downstream-feedback.md`, at CMP-11's campaign location if moved. S1 corrects the split comment in `scripts/exit_code_table.py:100`. `tests/unit/scripts/test_exit_code_table.py` preserves `_CELL_BREAKERS`' refusal of pipes and line breaks in enum text.
+S1 owns the helper roster rows in `scripts/README.md` and `scripts/README.md.jinja`. It owns grammar and required-cell prose in `docs/guides/doc-style.md` and `docs/guides/deterministic-checks.md`. It owns the plan, queue row, CMP-7.S1 escaped-pipe prose and defence row in `docs/internals/downstream-feedback.md`, at CMP-11's campaign location if moved. S1 corrects the split comment in `scripts/exit_code_table.py:100`. `tests/unit/scripts/test_exit_code_table.py` preserves `_CELL_BREAKERS`' refusal of pipes and line breaks in enum text.
 
 Helper tests pin escaped headers, optional borders, all accepted indents, invalid delimiters, unequal header widths, body termination and body width normalization. Base `_pipe_table` uses `scripts/check_structure.py:3850–3861`. Its `Name` followed by `---` regression yields an h2 and no table.
 `tests/unit/scripts/test_check_s.py` pins three roster cells for `routing \| sibling`. The base split at 3861 returns four. Its `_find` gives Purpose `a \| b` and Not for `—` one empty-Not-for error. The base check at 4183 passes the row. A borderless `Name | Purpose | Not for` header gets one "must be 'Member'" error. Base 3850 skips that header, so 4135–4139 report "no table follows it". `_roster_findings` takes iterator headers to avoid the IndexError at 4141–4150 after widening `_pipe_table`. It keeps its cases for a matching roster, an empty Not for cell and a duplicate member green.
 `tests/unit/scripts/test_check_r.py` pins a first cell `A \| B` without shifting the Script cell. The base misreads Script at 3951. A written empty Interpreter yields one finding naming Interpreter. Base 3942 accepts it. A row with several empty columns gets one finding naming each column and no further judgment. Its `test_a_row_with_too_few_cells_is_an_error_not_a_skip` at 219–225 stays at one finding naming all padded columns.
-`tests/unit/scripts/test_check_q.py` pins no anchor for a borderless table body followed by `---`. The base `_anchors` at 3629 invents one. It keeps `test_a_setext_heading_is_an_anchor` and `test_a_frontmatter_closer_is_not_a_setext_heading` green. Helper tests read list-item tables at `docs/adr/keel/K-0011-make-target-effect-labels.md:55` and `docs/design/keel-hardening-plan.md:793`.
+`tests/unit/scripts/test_check_q.py` pins no anchor for a borderless table body followed by `---`. The base `_anchors` at 3629 invents one. It keeps `test_a_setext_heading_is_an_anchor` and `test_a_frontmatter_closer_is_not_a_setext_heading` green. Helper tests read list-item tables at `docs/adr/keel/K-0011-make-target-effect-labels.md:55` and `docs/internals/keel-hardening-plan.md:793`.
 
 `check_E` gates helper exports in `__all__`. `tests/integration/test_import_layers_gate.py` gates bare imports against `config/project.json` `import_layers`. `tests/integration/test_gate_scope.py:797` `_local_imports` gates helper hook compatibility. `tests/integration/test_copier_job_conflict_refusal.py` pins that the file-free helper adds no read closure to `scripts/jobs/conflict_guard.py`. S1 runs its named unit and integration tests, `tests/integration/test_reference_drift.py`, `tests/integration/test_copier_generation.py` and `tests/integration/test_copier_shipping.py` before its `make verify` gate.
 
@@ -3562,7 +3562,7 @@ KEEL-ERR-2: three agents read a tool report that does not parse as an empty one.
 
 `scripts/tool_reports.py` imports nothing of the project: it raises and never ends the process. It registers under `tool_reports` and `scripts.tool_reports`, following `scripts/config_loader.py:2364-2365` and `_bind_to_package:2387,2390`. The mirror asserts one error in both import orders. All four agents' `_brain.py` modules use `from scripts import tool_reports`; `scripts/refactor_practice.py` uses bare `import tool_reports` after module lines 23-26. Doc-reviewer re-exports the error to its CLI and hook. CMP-17 adds no config key.
 
-CMP-17.S1 owns `scripts/tool_reports.py`, `tests/unit/scripts/test_tool_reports.py`, `agents/doc_reviewer/_brain.py`, `agents/doc_reviewer/__init__.py`, `tests/integration/test_doc_reviewer.py`, `agents/doc_reviewer/README.md`, `scripts/doc_review.py`, `scripts/hooks/on_stop_doc_review.py`, `scripts/AGENT.md`, `config/project.json`, `config/project.json.jinja`, `CONVENTIONS.md`, `scripts/README.md`, `scripts/README.md.jinja`, `docs/reference/features.md`, `docs/reference/settings.md`, `CHANGELOG.md` and `docs/design/downstream-feedback.md`.
+CMP-17.S1 owns `scripts/tool_reports.py`, `tests/unit/scripts/test_tool_reports.py`, `agents/doc_reviewer/_brain.py`, `agents/doc_reviewer/__init__.py`, `tests/integration/test_doc_reviewer.py`, `agents/doc_reviewer/README.md`, `scripts/doc_review.py`, `scripts/hooks/on_stop_doc_review.py`, `scripts/AGENT.md`, `config/project.json`, `config/project.json.jinja`, `CONVENTIONS.md`, `scripts/README.md`, `scripts/README.md.jinja`, `docs/reference/features.md`, `docs/reference/settings.md`, `CHANGELOG.md` and `docs/internals/downstream-feedback.md`.
 
 Extract the reader, delete doc-reviewer's `_report` and preserve its re-export together. S1's first red is `test_tool_report_error_export_is_shared`, which imports `scripts.tool_reports` inside its body, so the module still collects on the base; `test_nested_review_report_is_unreadable` follows it. Keep index's `_report(state)`. Accountability stays in S2 because S1 exceeds about 15 files.
 
@@ -3581,7 +3581,7 @@ S1 works test-first:
 
 Acceptance runs these cases and `make verify`, including `check_S` and `test_reference_drift.py` for rosters and the shared-script row.
 
-CMP-17.S2 owns `agents/index_enforcer/_brain.py`, `tests/unit/agents/test_index_enforcer_step.py`, `tests/integration/test_index_enforcer_durability.py`, `agents/practice_refactor/_brain.py`, `tests/unit/agents/test_practice_refactor_step.py`, `tests/integration/test_practice_refactor.py`, `scripts/refactor_practice.py`, `scripts/accountability_report.py`, `tests/unit/scripts/test_corpus_owner.py`, `agents/index_enforcer/README.md`, `agents/practice_refactor/README.md`, `agents/tools/accountability_report.tool.md`, `scripts/README.md`, `scripts/README.md.jinja`, `docs/reference/features.md`, `CHANGELOG.md` and `docs/design/downstream-feedback.md`.
+CMP-17.S2 owns `agents/index_enforcer/_brain.py`, `tests/unit/agents/test_index_enforcer_step.py`, `tests/integration/test_index_enforcer_durability.py`, `agents/practice_refactor/_brain.py`, `tests/unit/agents/test_practice_refactor_step.py`, `tests/integration/test_practice_refactor.py`, `scripts/refactor_practice.py`, `scripts/accountability_report.py`, `tests/unit/scripts/test_corpus_owner.py`, `agents/index_enforcer/README.md`, `agents/practice_refactor/README.md`, `agents/tools/accountability_report.tool.md`, `scripts/README.md`, `scripts/README.md.jinja`, `docs/reference/features.md`, `CHANGELOG.md` and `docs/internals/downstream-feedback.md`.
 
 S2 converts index `_report` and practice `_walk`, `_baseline` and `_apply`, correcting their docs. Index rejects nonzero owner status first. Accountability's absent-corpus `--json` emits stdout `[]` and a stderr notice; text keeps its notice and SUCCESS. Extend existing suites; only the reader gets a mirror. The CLI reports the shared error as FAILURE with its parts; WalkRefused keeps USAGE. S2 completes only row 64's first KEEL-VIS-6 leftover.
 
@@ -3598,7 +3598,7 @@ Public tests check error parts in both modes with approved budgets. Recordings f
 
 `tests/integration/test_agent_runtime_equivalence.py:26-32` keeps both engines equal with or without a corpus. Give `scripts/accountability_report.py` a nonexistent absolute `--corpus` path (`main:115-117`). Its real output feeds a corpus-free scratch index dry run; keep `owner_gaps == ()` without writes (base `_load_corpus:69-70`, `_report:156-157`). Acceptance runs these cases and `make verify`.
 
-CMP-17.S3 owns `agents/wiki_navigator/_brain.py`, `tests/unit/agents/test_wiki_navigator_step.py`, `tests/integration/test_mcp_servers.py`, `agents/wiki_navigator/README.md`, `docs/reference/features.md`, `CHANGELOG.md` and `docs/design/downstream-feedback.md`.
+CMP-17.S3 owns `agents/wiki_navigator/_brain.py`, `tests/unit/agents/test_wiki_navigator_step.py`, `tests/integration/test_mcp_servers.py`, `agents/wiki_navigator/README.md`, `docs/reference/features.md`, `CHANGELOG.md` and `docs/internals/downstream-feedback.md`.
 
 Public `answer` tests in both modes require ToolReportUnreadable before backend construction. Base non-JSON becomes no hits (`_retrieve:118-119`); whitespace and `{}` reach empty synthesis (`_retrieve:117`, `_visible:73`, `_plan:174`). `[1]` raises AttributeError through `_visible:73` at `config_loader.is_served:2245`; deep output raises RecursionError (`_retrieve:117`). With approved budgets, MCP reports the error, tool and root with `isError=true` and no model call (`mcp/protocol.py` `ToolServer.call_tool:92`, `_error_result:106`). Controls keep empty `[]`, served citations (`_retrieve:121`) and nonzero-query RuntimeError (`_retrieve:115`). S3 updates its docs, runs these cases and `make verify`.
 
@@ -3606,7 +3606,7 @@ The whole-tree `noqa: DROP001` search finds five KEEL-ERR-2 excuses: index `_rep
 
 Will not do in CMP-17: validate individual fields or their truth. A list whose nodes state no level reads as no hits; KEEL-VIS-5 owns the shape check before the model sees it. Index build and link statuses and the root mismatch stay with KEEL-VIS-3; a retrieval of `[]` that still reaches the model stays with KEEL-VIS-5. Wiki's nonzero retrieval keeps its plain RuntimeError (`_retrieve:115`), which every caller already reports: the MCP server catches it (`mcp/protocol.py:92`) and `answer` documents it; naming it is left to KEEL-VIS-5. `scripts/scan_secrets.py` `_findings:224-225` and `scripts/audit_dependencies.py` `_report_of:915-916` do not read an agent's tool report. Both remain KEEL-CFGCRASH-2 sites: ValueError is refused (`_verdict:245`, `_report_of:920`), but deep output raises RecursionError.
 
-keel-cmp12 and keel-cmp13 each stack on keel-cmp10. keel-cmp12's `56456e2` changes `scripts/check_structure.py`, `scripts/jobs/review_docs.py`, `CONVENTIONS.md`, `CHANGELOG.md` and `docs/design/downstream-feedback.md`, and keel-cmp13's slices change `scripts/config_loader.py` `KEYS` and `config/project.json` `test_quality`. keel-cmp10 changes `agents/doc_reviewer/_brain.py`, `tests/integration/test_doc_reviewer.py`, `scripts/refactor_practice.py`, both manifests, `CONVENTIONS.md`, `docs/reference/features.md` and `docs/reference/settings.md`, all of which a CMP-17 slice also changes. So CMP-17.S1 starts from main after all three land and rebases on them. Every line cited here is at `0796377`, the keel-cmp13 tip that carries keel-cmp10's code. The required diff confirms each overlap; S1 re-checks every cited line at its start, because keel-cmp10's fix commit, `56456e2` and keel-cmp13's `KEYS` rows land first. The coordinator assigns queue positions. If keel-cmp11 lands first, changelog and feature rows become entry files and this section moves to `docs/design/campaigns/`. S3 completes row 73 after green; `tests/integration/test_work_trailers.py` checks trailers.
+keel-cmp12 and keel-cmp13 each stack on keel-cmp10. keel-cmp12's `56456e2` changes `scripts/check_structure.py`, `scripts/jobs/review_docs.py`, `CONVENTIONS.md`, `CHANGELOG.md` and `docs/internals/downstream-feedback.md`, and keel-cmp13's slices change `scripts/config_loader.py` `KEYS` and `config/project.json` `test_quality`. keel-cmp10 changes `agents/doc_reviewer/_brain.py`, `tests/integration/test_doc_reviewer.py`, `scripts/refactor_practice.py`, both manifests, `CONVENTIONS.md`, `docs/reference/features.md` and `docs/reference/settings.md`, all of which a CMP-17 slice also changes. So CMP-17.S1 starts from main after all three land and rebases on them. Every line cited here is at `0796377`, the keel-cmp13 tip that carries keel-cmp10's code. The required diff confirms each overlap; S1 re-checks every cited line at its start, because keel-cmp10's fix commit, `56456e2` and keel-cmp13's `KEYS` rows land first. The coordinator assigns queue positions. If keel-cmp11 lands first, changelog and feature rows become entry files and this section moves to `docs/design/campaigns/`. S3 completes row 73 after green; `tests/integration/test_work_trailers.py` checks trailers.
 
 ## CMP-18 — one excluded cabinet and a reachable index for shipped documents
 
@@ -4358,7 +4358,7 @@ The maintainer answered the parked decisions on 2026-11-06.
 
 Every leftover the two plan documents recorded (the residual, queued, "left
 by" and cut lists here, and the deferred, non-goal and release lists in
-`docs/design/keel-hardening-plan.md`) was checked against the tree at
+`docs/internals/keel-hardening-plan.md`) was checked against the tree at
 `55ded1d`. A read-only audit found 143 distinct items: 108 open, 5 unknown,
 25 closed and 5 superseded. A closed or superseded item is not repeated; its
 commit is the record. The two high items "make -i defeats the write guard"
@@ -4476,7 +4476,7 @@ so.
 | 105 | The vault's frontend backlog items | feature | unknown | outside this repo |
 | 106 | jarvis ingest and registration | feature | unknown | outside this repo |
 | 107 | bedrock-platform's known failures list | defect | unknown | outside this repo |
-| 108 | The documentation-quality system, phases 4 to 8 | feature | unknown | `docs/design/documentation-quality.md` not read |
+| 108 | The documentation-quality system, phases 4 to 8 | feature | unknown | `docs/internals/documentation-quality.md` not read |
 | 109 | Whether a release tag is on the remote | decision | unknown | not checked over the network |
 | 110 | `scripts/audit_project.py` exits 1 when it judged zero files, the code it uses for a finding, not `ExitCode.NOTHING_JUDGED` | defect | low | left unchanged in CMP-5.S4 |
 | 111 | The launcher does not refuse a configured farm status equal to an `ExitCode` member, so a farm's "not allocated" could read as a script's own code | missing-check | low | `scripts/launch.py` refuses only its reserved statuses; `tests/unit/scripts/test_exit_codes.py` holds 13 alone apart from the configured ones |
@@ -4486,7 +4486,7 @@ Contradictions the audit found, each settled here or listed above:
 
 - The CMP-5.S2 row named the `sys.exit` rewrite, which is not built. The row
   now says so.
-- The grace-tier wording differed: `docs/design/keel-hardening-plan.md` and
+- The grace-tier wording differed: `docs/internals/keel-hardening-plan.md` and
   K-0008/K-0009 say "warn one release", CMP-5.S1 and S2 kept the failure, and
   KEEL-DOC-1 says "warn, then fail". The ruling is warn, then fail after a set
   date (B1 above).

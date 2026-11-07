@@ -8,7 +8,7 @@ tags: [plan, template, copier, upgrade, gate, environment, convergence]
 summary: The bounded-convergence record for keel's template-as-product hardening: eight numbered passes plus four unnumbered units, all merged to main as 956b7da, with the still-open release blockers for v0.1.0 and every deferral's measurement and trigger. The status table and the release-readiness section are authoritative; the per-pass narratives below them are historical and carry inline corrections where they went stale.
 id: docs-design-keel-hardening-plan
 created: 2026-08-04
-updated: 2026-10-15
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -29,7 +29,7 @@ skipped, exit 0**; `make advise` clean; `check_structure` 0 errors and 5
 exactly (`0ab1bbf`).
 
 **Released.** Tags `v0.1.0` to `v0.3.0` exist. What is still open from this
-file is listed in `docs/design/downstream-feedback.md`, section "Open items".
+file is listed in `docs/internals/downstream-feedback.md`, section "Open items".
 
 | Pass | Subject | Status |
 |---|---|---|
@@ -48,7 +48,7 @@ file is listed in `docs/design/downstream-feedback.md`, section "Open items".
 | — | Exact pins for the gate's own toolchain (`0ab1bbf`) | done |
 | — | The optional-surface questions (`wiki` / `evals` / `containers`) | **not started** |
 | — | ADR-0005 slice 1: `config/environment.json` + its check letter (the next free one; `P` went to help parity on 2026-09-02) | **not started** |
-| — | The documentation-quality system (checks P–S, rosters, the tool-spec body; phases 4–8 open) | in progress — its own record is `docs/design/documentation-quality.md` |
+| — | The documentation-quality system (checks P–S, rosters, the tool-spec body; phases 4–8 open) | in progress — its own record is `docs/internals/documentation-quality.md` |
 
 **The pass narratives below are historical.** They were written before the work
 landed, and several of their "remaining" and "not closed" notes went stale as it

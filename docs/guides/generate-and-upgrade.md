@@ -107,11 +107,7 @@ exactly the files this judgment says arrive.
 | `.svn` | never | another tool's metadata |
 | `.venv` | never | the template's own interpreter |
 | `/tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project, and a `tmp` directory deeper in the tree still ships |
-| `docs/design/keel-hardening-plan.md` | never | the template's own plan |
-| `docs/design/documentation-quality.md` | never | the template's own design note |
-| `docs/design/downstream-feedback.md` | never | the template's own design note |
-| `docs/design/make-next-steps.md` | never | the template's own design note |
-| `docs/design/runs` | never | the template's own run records, which name campaigns a new project does not declare |
+| `docs/internals` | never | one exclusion omits the template's own plans and run records, which name campaigns a new project does not declare |
 | `wiki/corpus.json` | absent; `make site-data` builds it | a generated view of the tree |
 | `wiki/llms.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
 | `wiki/llms-full.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |
@@ -659,7 +655,7 @@ brings back a file a step removed, as long as you committed it first.
 | `rm -f api/rest_fastapi/showcase_api.py` `scripts/jobs/export_showcase_static.py` `scripts/jobs/build_llms_txt.py` `tests/unit/backend/test_showcase.py` `tests/integration/test_showcase_repo.py` `tests/integration/test_showcase_api.py` `tests/unit/scripts/test_export_showcase_static.py` `tests/unit/scripts/test_build_llms_txt.py` `tests/e2e/test_showcase_journey.py` `docs/guides/showcase-site.md` | `showcase` is off | removes the showcase's files | none | `git checkout -- <path>` |
 | `rm -f wiki/llms.txt` `wiki/llms-full.txt` | `showcase` is off | removes the agent front door | none | `make site-data` |
 | `rm -f tests/integration/test_copier_generation.py` `tests/integration/test_copier_generator_contract.py` `tests/integration/test_copier_update.py` | every update | removes tests of the template a project generated before they were excluded still has | none | none needed |
-| `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it | none | none needed |
+| `rm -f docs/design/keel-hardening-plan.md` | every update | removes the template's plan from a project that still has it at its original path | none | none needed |
 | `scripts/jobs/declare_no_app.py` | every update | when the update introduces `layers.app` for a composition root the project removed, sets it to `null` and declares the smoke marker and run target that need it | 0, 1, 2, 14 | on 1, make the edits its message names by hand; on 2 over a conflicted file, resolve each file it names, then run the command it prints, which finishes the update; on 2 otherwise, git could not read the pre-update manifest; on 14, repair config/project.json and rerun |
 | `scripts/jobs/resolve_stamp_conflicts.py` | every update | settles a conflict whose only difference is a document's `updated:` date, taking the later one, and names every other conflict on stderr | 0, 2, 14 | on 0, resolve each conflict it names; on 2, resolve each file it names, then run the command it prints, which finishes the update; on 14, repair config/project.json and rerun |
 | `scripts/jobs/restamp_docs.py` | every update | restamps the documents the update changed | 0, 1, 2, 14 | on 1, fix each stamp it names, then `make restamp-docs`; on 2, resolve each file it names, then run the command it prints, which finishes the update; on 14, repair config/project.json and rerun |

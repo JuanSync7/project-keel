@@ -8,7 +8,7 @@ tags: [run, autonomous]
 summary: The record of the unattended night run of 2026-10-23 to 2026-10-24 — what landed on main, what each lane holds, every ruling with its cost if wrong, and the decisions parked for the maintainer.
 id: docs-design-runs-2026-10-24-autonomous
 created: 2026-10-24
-updated: 2026-10-26
+updated: 2026-11-07
 visibility: internal
 canonical: true
 type: run

@@ -453,21 +453,55 @@ def test_generated_project_does_not_inherit_keels_template_twins(tmp_path, gener
         )
 
 
+def test_cabinet_exclusion_omits_planted_descendants(clean_template, tmp_path):
+    """A real render omits cabinet descendants and keeps public prefix siblings."""
+    template = tmp_path / "template"
+    shutil.copytree(clean_template, template, ignore=shutil.ignore_patterns(".git"))
+    private = (
+        Path("docs/internals/planted.md"),
+        Path("docs/internals/one/two/planted.md"),
+    )
+    sibling = Path("docs/internals-public.md")
+    planted = (*private, sibling)
+    for relative in planted:
+        source = template / relative
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("A planted document.\n", encoding="utf-8")
+    assert len(planted) == 3
+    assert sum((template / relative).is_file() for relative in planted) == len(planted)
+    public = (sibling, Path("docs/design/README.md"))
+    assert sum((template / relative).is_file() for relative in public) == 2
+
+    dest = tmp_path / "project"
+    copier.run_copy(
+        str(template),
+        str(dest),
+        data={"project_name": "demo_proj", "frontend_stack": "none"},
+        defaults=True,
+        unsafe=True,
+        quiet=True,
+    )
+    omitted = [relative for relative in private if not (dest / relative).exists()]
+    kept = [relative for relative in public if (dest / relative).is_file()]
+    assert len(omitted) == len(private) == 2, omitted
+    assert len(kept) == len(public) == 2, kept
+
+
 def test_generated_project_does_not_ship_keels_own_hardening_plan(tmp_path, generate):
-    """Same rule as the meta-tests, for prose: `docs/design/keel-hardening-plan.md`
+    """Same rule as the meta-tests, for prose: `docs/internals/keel-hardening-plan.md`
     is keel's in-flight worklist — passes, measurements and deferrals about THIS
     repo, `status: draft`, `owner: TBD`. Shipped verbatim it arrives as a new
     project's design document, describing work its authors never did and citing
     files that exist only here.
 
-    The prune is the single FILE, never `docs/design` — the directory's labeled
+    The cabinet exclusion keeps `docs/design` — the directory's labeled
     `README.md` is the placeholder a project writes its own design notes into, and
     removing it would red the project's own check_B."""
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", frontend_stack="none")
 
     for keel_only in ("keel-hardening-plan.md", "documentation-quality.md"):
-        assert not (dest / "docs" / "design" / keel_only).exists(), (
+        assert not (dest / "docs" / "internals" / keel_only).exists(), (
             "keel's own design record %s shipped into the generated project" % keel_only
         )
     assert (dest / "docs" / "design" / "README.md").is_file(), (
@@ -494,13 +528,13 @@ def test_generated_project_judges_work_naming(tmp_path, generate):
     data = json.loads((dest / "config" / "project.json").read_text())
     keel = json.loads((_ROOT / "config" / "project.json").read_text())
     assert data["work_naming"] == keel["work_naming"]
-    assert not (dest / "docs" / "design" / "downstream-feedback.md").exists()
+    assert not (dest / "docs" / "internals" / "downstream-feedback.md").exists()
     # The shipped real-tree test in tests/unit/scripts/test_check_z.py skips
     # where no plan doc declares a slice, as here; keel's own plan doc is what
     # keeps that test from being a skip in keel.
     keel_rows = re.findall(
         r"^\|\s*(CMP-[0-9]+\.S[0-9]+)\s*\|",
-        (_ROOT / "docs" / "design" / "downstream-feedback.md").read_text(
+        (_ROOT / "docs" / "internals" / "downstream-feedback.md").read_text(
             encoding="utf-8"
         ),
         re.MULTILINE,
@@ -526,11 +560,11 @@ def test_generated_project_judges_work_naming(tmp_path, generate):
 
 
 def test_gitignore_twin_stays_pinned_to_keels_own(tmp_path, generate):
-    """`.gitignore.jinja` is a DIVERGENCE twin: unlike the project.json/pyproject/
-    README twins it must NOT reproduce keel's file, because keel is the template
+    """`.gitignore.jinja` is a DIVERGENCE twin: it must not reproduce keel's file,
+    because keel is the template
     and a generated project is not. Its one licensed difference is the
     copier-answers block. Nothing else may drift — and no gate knows the twins
-    exist yet (see docs/design/keel-hardening-plan.md, pass 5), so pin it here."""
+    exist yet (see docs/internals/keel-hardening-plan.md, pass 5), so pin it here."""
     keel_text = (_ROOT / ".gitignore").read_text()
     twin_text = (_ROOT / ".gitignore.jinja").read_text()
 

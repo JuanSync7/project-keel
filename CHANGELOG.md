@@ -45,6 +45,7 @@ version rather than a bare commit:
   The document-drift gate reads all shipped text sources with Copier's matcher,
   including history, tables and fences, and counts NUL-containing binaries.
   Only test modules with the copier-absent module skip guard are exempt.
+  Keel-only records now sit in `docs/internals/`, which one Copier exclusion leaves out.
 
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying
@@ -835,7 +836,7 @@ version rather than a bare commit:
   `make verify #` (at any length, any word an item) or names most of
   verify's goals elsewhere (a backticked word an item whether or not a target
   has its name). An accepted, superseded or deprecated ADR is not read; a
-  proposed one is. docs/design/make-next-steps.md no longer spells the goals
+  proposed one is. docs/internals/make-next-steps.md no longer spells the goals
   its counts predate.
 - **The evidence writer's roster row names every `make verify` goal.** The
   `gate_evidence.py` row of scripts/README.md and its template twin quoted
@@ -2594,7 +2595,7 @@ upgrade channel into a hard error.
   turn into copier's own clear message. Second time this line has been wrong for
   the same reason, so `_FEATURE_FLOORS` now carries both features and the floor
   each one needs.
-- Keel's own hardening plan (`docs/design/keel-hardening-plan.md`) no longer ships
+- Keel's own hardening plan (`docs/internals/keel-hardening-plan.md`) no longer ships
   into generated projects. It is this repo's in-flight worklist — passes,
   measurements, deferrals, `status: draft` — and verbatim it arrived as a new
   project's design document describing work its authors never did. Pruned as a
@@ -3009,7 +3010,7 @@ that was never cut. It ships here, in the one release it was ever part of.
 #### Added
 - ADR-0005 (proposed): declare the external environment in
   `config/environment.json` — the parts a container cannot reach.
-- `docs/design/keel-hardening-plan.md` — the bounded convergence plan.
+- `docs/internals/keel-hardening-plan.md` — the bounded convergence plan.
 
 ## Template foundations (pre-0.1.0)
 - Initial template.

@@ -8,7 +8,7 @@ tags: [plan, documentation, checks, corpus, rosters, citations, convergence]
 summary: The bounded-convergence record for keel's documentation-quality system: which documentation rules are decidable by a machine and are now gated (checks P–S, the tool-spec body, supersession), which are judgment and belong to a guide and an agent, what each pass measured and decided, and what remains. The status table is authoritative; the per-pass notes below it are historical.
 id: docs-design-documentation-quality
 created: 2026-09-02
-updated: 2026-09-09
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -119,7 +119,7 @@ real-tree run flagged the example citation in its own comment, and the review
 round's wider grammar found ADR-0003.
 
 Two descendant defects surfaced with it. ADR-0009 hyperlinked
-`docs/design/keel-hardening-plan.md`, which copier prunes from every generated
+`docs/internals/keel-hardening-plan.md`, which copier prunes from every generated
 project — now a plain citation that says why. And the README's remedy for
 deleting `models/` was incomplete once links are held: two guides link into it,
 so both README twins now say the second `make check` lists every doc still
