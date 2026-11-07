@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-11-06
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -3608,6 +3608,51 @@ Will not do in CMP-17: validate individual fields or their truth. A list whose n
 
 keel-cmp12 and keel-cmp13 each stack on keel-cmp10. keel-cmp12's `56456e2` changes `scripts/check_structure.py`, `scripts/jobs/review_docs.py`, `CONVENTIONS.md`, `CHANGELOG.md` and `docs/design/downstream-feedback.md`, and keel-cmp13's slices change `scripts/config_loader.py` `KEYS` and `config/project.json` `test_quality`. keel-cmp10 changes `agents/doc_reviewer/_brain.py`, `tests/integration/test_doc_reviewer.py`, `scripts/refactor_practice.py`, both manifests, `CONVENTIONS.md`, `docs/reference/features.md` and `docs/reference/settings.md`, all of which a CMP-17 slice also changes. So CMP-17.S1 starts from main after all three land and rebases on them. Every line cited here is at `0796377`, the keel-cmp13 tip that carries keel-cmp10's code. The required diff confirms each overlap; S1 re-checks every cited line at its start, because keel-cmp10's fix commit, `56456e2` and keel-cmp13's `KEYS` rows land first. The coordinator assigns queue positions. If keel-cmp11 lands first, changelog and feature rows become entry files and this section moves to `docs/design/campaigns/`. S3 completes row 73 after green; `tests/integration/test_work_trailers.py` checks trailers.
 
+## CMP-18 — one excluded cabinet and a reachable index for shipped documents
+
+KEEL-CABINET-1 gives Copier adopters a shipped tree that names no path in an unconditionally excluded cabinet, enforced by the document-drift gate.
+The cap is three slices, one pass each and three review fix rounds each under CONVENTIONS §17.
+Stop at CMP-18.S3 green or the cap.
+The gate lands at today's paths before the cabinet move.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-18.S1 | Extend the existing gate to shipped source text and repair its findings. | planned |
+| CMP-18.S2 | Move keel-only records, add one cabinet exclusion and assert real render absence. | planned |
+| CMP-18.S3 | Give every shipped document a reachable index. | planned |
+
+CMP-18.S1 owns `tests/integration/test_doc_drift.py`, its temporary-tree regressions, the shipped files its extended scan flags, the gate-contract sentences in `CONVENTIONS.md`, `docs/guides/doc-style.md`, `docs/guides/deterministic-checks.md` and `docs/guides/limits-and-troubleshooting.md`, the feature row and the changelog row.
+The scan reuses the shipping test's Copier matcher over unconditional exclusions from `copier.yml`.
+Conditional exclusions are outside this gate's class.
+It reads every shipped text source, including Jinja source without rendering answers, and counts and skips files containing a NUL byte.
+A module-level `pytest.mark.skipif` using the copier-absent `_TEMPLATE_ONLY` guard exempts the whole test module.
+No history prefix or table waives a mention.
+Zero shipped files, zero unconditional exclusions or zero directory exclusions fail the gate.
+ADR repairs change one cross-reference clause and restamp the record.
+
+S1 regressions plant existing and nonexistent descendants of a directory exclusion and require two findings.
+Mentions in Python, JSON, a Makefile, Jinja source, an ADR, a table row and a fenced block each require findings.
+Removing the template-only module guard must expose its mention.
+S1 controls retain guarded-module and excluded-source mentions and accept paths outside the exclusion boundary.
+Each regression uses a temporary tree with a small copier configuration.
+S1 reports the real-tree finding count before repairs and zero after repairs.
+
+CMP-18.S2 owns the four design-record moves, the tracked run-directory move, `copier.yml`, the generation and shipping tests, the upgrade-guide inventory, the feature row and the changelog row.
+The records move under `docs/internals/`, which one `_exclude` entry omits.
+The coordinator moves the untracked run file.
+Real renders must omit arbitrary cabinet descendants and retain a public prefix sibling and the design README.
+The S1 gate derives the excluded set again after the move.
+No declared private-path list, config key, Jinja extension or bridge implements the cabinet.
+
+CMP-18.S3 owns `docs/README.md` and its twin, the cabinet README, the index-reachability tests, the index-contract documentation and twin registration, the feature row and the changelog row.
+Its graph starts at the root README and follows index links to every shipped document.
+An orphan, a disconnected cycle and an edge replaced by prose, a fence or a leaf-only mention must fail with positive document, index and edge counts.
+Controls retain linked guides, ADRs and specifications, deduplicate twins and account for conditional absence.
+
+Will not do in CMP-18: move or revise K-0004, K-0005, K-0016, CONTRIBUTING.md's release section, deterministic-checks.md's template-only audit, features.md or settings.md beyond S1's required repairs and gate-contract sentences.
+The maintainer decides each of those documents.
+Extra moves and ADR retirement remain outside this campaign.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3712,7 +3757,7 @@ The CMP-7 opening pass proposes the rows below. Their positions are proposals th
 | 49 | KEEL-STATUS-1 | A document's status can move backward between commits, and no check reads the previous version from git; the transition half of the study's PLC-02, which CMP-7.S2 leaves out; found by the CMP-7 opening pass | planned |
 | 50 | KEEL-COVSCHEMA-1 | The coverage report has no schema keel and pyverdex share; the study's slice 13; found by the CMP-7 opening pass | planned |
 | 51 | KEEL-EVALREC-1 | An eval run leaves no record with its spend basis; the study's slice 15; found by the CMP-7 opening pass | planned |
-| 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned: keel-only documents move to one folder, `docs/internals/`. Copier leaves out the whole folder. A gate fails a shipped file naming a path inside it. This uses no declared list or copier extension |
+| 52 | KEEL-CABINET-1 | There is no `docs/internal/` cabinet and no document index, and moving files there needs its own export check; the study's slice 16 and its decision 2; found by the CMP-7 opening pass | planned: CMP-18 moves keel-only documents to one folder, `docs/internals/`. Copier leaves out the whole folder. A gate fails a shipped file naming a path inside it. This uses no declared list or copier extension |
 
 ### Build lanes ahead of the merge line
 
