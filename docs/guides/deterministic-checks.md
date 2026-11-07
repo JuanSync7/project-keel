@@ -127,8 +127,13 @@ print but never fail the build.
   defining `__all__`.
 - **D. `__init__` is the API** — no absolute import of another package's
   `_private` module, and no `from pkg import _sub` of a private submodule or
-  subpackage from outside `pkg/`; a relative import that climbs out of the
-  package is judged as its absolute twin would be. A `.py` file that any check
+  subpackage from outside `pkg/`, including attribute chains such as `pkg._sub`
+  after `import pkg` (also aliases and dotted imports). The attribute root is
+  resolved by its import binding; a shadowing local or parameter is not the
+  package. For attribute chains, only a private `.py` submodule or directory
+  on disk counts, so private attributes alone are outside this rule. A relative
+  import that climbs out of the package is judged as its absolute twin would
+  be. A `.py` file that any check
   reading Python cannot parse is one error, naming the file, however many
   checks read it. The one exception is a `SyntaxError` under an interpreter
   older than the floor of `config/project.json` `layers.backend.python`, as the

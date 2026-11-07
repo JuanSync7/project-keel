@@ -59,6 +59,11 @@ version rather than a bare commit:
   including history, tables and fences, and counts NUL-containing binaries.
   Only test modules with the copier-absent module skip guard are exempt.
   Keel-only records now sit in `docs/internals/`, which one Copier exclusion leaves out.
+- **Private submodule attribute access fails check_D (KEEL-PRIVATTR-1).**
+  Imported chains such as `pkg._sub`, including aliases and dotted imports,
+  respect the package boundary. Binding resolution excludes shadowing locals
+  and parameters; private attributes without a submodule on disk and a
+  package's own access remain allowed.
 
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying

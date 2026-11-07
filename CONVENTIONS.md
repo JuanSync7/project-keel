@@ -362,7 +362,8 @@ from myproj.backend._impl import do_thing  # ❌ reaching inside
   contract, not the concrete class.
 - A private submodule is no less private when it is imported by name:
   `from pkg import _sub` from outside `pkg/` reaches inside just as
-  `from pkg._sub import x` does, and check_D fails both. A private
+  `from pkg._sub import x` does, and check_D fails both, including attribute
+  chains such as `pkg._sub` after `import pkg`. A private
   function of a public module (`from pkg.mod import _helper`) is not a
   submodule, and check_D leaves it to review.
 - **Imports flow up one layer order.** `config/project.json`
@@ -441,7 +442,7 @@ pre-commit hook) fails the build if the conventions above drift:
 | Corpus lifecycle | `status: deprecated` and `status: superseded` both require `superseded_by` |
 | Closed taxonomy (§2) | every non-hidden top-level directory is a §2 row or declared in `config/project.json` `structure.extra_toplevel`; a declared name exists and is not already a row; every top-level directory and every directory directly under `agents/` (each `agents/<name>/` and `agents/tools/`) has both `README.md` and `CLAUDE.md`; an undeclared symlinked directory warns; `structure.project_checks` is absent, null or a declared name, and a declared project-checks directory holds at least one module |
 | Package boundary (§3) | every `src/` dir with `.py` has an `__init__.py` that defines `__all__` |
-| `__init__` is the API (§3) | no absolute import of another package's `_private` module, and no `from pkg import _sub` of a private submodule or subpackage from outside `pkg/` (a relative import that climbs out of the package is judged the same) |
+| `__init__` is the API (§3) | no absolute import of another package's `_private` module, no `from pkg import _sub`, and no imported `pkg._sub` attribute chain of a private submodule or subpackage from outside `pkg/` (a relative import that climbs out of the package is judged the same) |
 | Unparseable source (error) | a `.py` file a check reads but cannot parse is one error naming it; a `SyntaxError` under an interpreter older than `config/project.json` `layers.backend.python`'s floor is instead one warning per run that counts the files and names both versions, and `make check-all` and `make verify`, which reach `check-python` first, judge them |
 | Import layer order (§3) | not a `check_structure.py` letter: `tests/integration/test_import_layers_gate.py` (`make test`) resolves every import through `import_layers.search_roots` and fails one that points into a higher layer of `import_layers.order`, a file no prefix places, a prefix on disk that places no file, a malformed block and a walk with no edge. It cannot see an import made through `importlib`, `__import__` or a `sys.path` entry no search root names |
 | Swallowed errors (`docs/guides/python-style.md`) | not a `check_structure.py` letter: `tests/integration/test_swallowed_error_gate.py` (`make test`) fails a bare `except:`, and an `except Exception` or `except BaseException` with no `raise` whose body only passes, continues, breaks, or returns or assigns a fixed value such as `None`, `-1` or `[]`, unless a `# noqa: BLE001` or `# noqa: E722` on its clause gives a reason; it also fails every such suppression with a blank reason. Through `scripts/expiring_tier.py` it fails a narrow `except` that only passes, continues or breaks, or only returns or assigns a fixed value, `None` included, in place of the error, a `contextlib.suppress(...)` call and an `ignore_errors=True` argument, unless a `# noqa: DROP001`, `DROP002` or `DROP003` gives a reason. It cannot see a handler that does work but never looks at the error |

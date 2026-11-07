@@ -18,8 +18,9 @@ Checks:
      module
   C. Each src/ directory containing *.py is a package: __init__.py with __all__
   D. The __init__ boundary: no absolute import of another package's _private module,
-     and no `from pkg import _sub` of a private submodule from outside pkg. A
-     .py file any check cannot parse is one ERR, unless this interpreter is
+     no `from pkg import _sub`, and no imported `pkg._sub` attribute chain of a
+     private submodule from outside pkg. A .py file any check cannot parse is
+     one ERR, unless this interpreter is
      older than layers.backend.python's floor: then the run prints one WARN
      counting the files `make check` judges instead
   E. Authored coverage (ERR): every __all__-exported symbol defined in-file
@@ -1024,17 +1025,23 @@ def _private_name(name):
     return name.startswith("_") and not name.startswith("__")
 
 
+def _absolute_package_dir(dotted):
+    """The directory a dotted package names under ROOT or ROOT/src, else None."""
+    if dotted:
+        for base in (ROOT, os.path.join(ROOT, "src")):
+            candidate = os.path.join(base, *dotted.split("."))
+            if os.path.isdir(candidate):
+                return candidate
+    return None
+
+
 def _from_package_dir(full, node):
     """The directory a `from ... import` names as its package: a dotted module
     under ROOT or ROOT/src for an absolute import, else the importer's own
     package climbed `level - 1` times. None when nothing on disk holds it."""
     parts = node.module.split(".") if node.module else []
     if node.level == 0:
-        for base in (ROOT, os.path.join(ROOT, "src")):
-            candidate = os.path.join(base, *parts) if parts else None
-            if candidate and os.path.isdir(candidate):
-                return candidate
-        return None
+        return _absolute_package_dir(node.module)
     package = os.path.dirname(full)
     for _ in range(node.level - 1):
         package = os.path.dirname(package)
@@ -1075,6 +1082,23 @@ def _private_submodule_findings(full, node):
     return out
 
 
+def _private_attribute_finding(full, node, module):
+    """A private submodule accessed through an imported package, else None."""
+    dotted = module.dotted(node.value)
+    package = _absolute_package_dir(dotted)
+    if package is None or full.startswith(package + os.sep):
+        return None
+    as_file = os.path.join(package, node.attr + ".py")
+    as_directory = os.path.join(package, node.attr)
+    if os.path.isfile(as_file) or os.path.isdir(as_directory):
+        return (
+            "%s:%d: accesses the private submodule %s.%s from outside its "
+            "package; import the name the package's __init__.py exports"
+            % (rel(full), node.lineno, dotted, node.attr)
+        )
+    return None
+
+
 def check_D():
     for croot in CODE_ROOTS:
         base = os.path.join(ROOT, croot)
@@ -1089,6 +1113,7 @@ def check_D():
                 if parsed is None:
                     continue
                 tree = parsed[1]
+                module = None
                 for node in ast.walk(tree):
                     if isinstance(node, ast.ImportFrom):
                         for finding in _private_submodule_findings(full, node):
@@ -1108,6 +1133,12 @@ def check_D():
                                     "crosses a package boundary"
                                     % (rel(full), node.lineno, alias.name)
                                 )
+                    elif isinstance(node, ast.Attribute) and _private_name(node.attr):
+                        if module is None:
+                            module = _Module(tree)
+                        finding = _private_attribute_finding(full, node, module)
+                        if finding:
+                            err(finding)
 
 
 def _exported_names(tree):
@@ -6477,7 +6508,7 @@ class _Scope(object):
 
 
 class _Module(object):
-    """A parsed module whose names check_X resolves per scope, as Python does:
+    """A parsed module whose names checks D and X resolve per scope, as Python does:
     a name bound anywhere in a function is that function's, a class body is
     skipped by the scopes nested in it, and `global`/`nonlocal` redirect a
     binding. A name bound by an import AND another way in one scope is

@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-11-02
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -94,7 +94,8 @@ of truth for labeling and the directory taxonomy. Each directory's own
   `docs/adr/keel/K-0022-one-config-loader.md` is the accepted decision.
 - **Respect the `__init__.py` boundary.** Import a package's public
   symbols from the package, never from its private (`_*`) submodules,
-  `from pkg import _sub` included (check_D).
+  `from pkg import _sub` and attribute chains such as `pkg._sub` after
+  `import pkg` included (check_D).
   When you add a public symbol, add it to `__all__` and re-export it.
   Imports flow up `config/project.json` `import_layers.order`: a lower
   layer never imports a higher one
