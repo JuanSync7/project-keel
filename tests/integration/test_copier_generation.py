@@ -3036,7 +3036,12 @@ def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     for key in ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES"):
         run_env.pop(key, None)
     # Forward pytest's selection as a make variable: the child allowlist does
-    # not copy PYTEST_ADDOPTS from the driver's environment.
+    # not copy PYTEST_ADDOPTS from the driver's environment. Make splits words
+    # on spaces, so the backslash keeps the selector and --junitxml in one value.
+    # This shipped case must stay in the unit goal's selection; renaming it
+    # makes pytest select nothing and exit loudly.
+    # The JUnit path mirrors the writer's layout so a layout change fails
+    # loudly with a missing report rather than silently losing the counts.
     run_env["MAKEFLAGS"] = (
         " -- PYTEST_ADDOPTS="
         r"tests/unit/scripts/test_gate_evidence.py::test_render_is_canonical\ "
@@ -3067,7 +3072,9 @@ def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     assert seen[0] and seen[0] == seen[1]
     rec = json.loads(seen[0].decode("utf-8"))
     assert rec["result"] == "pass" and rec["source"]["commit"] == head, rec
-    assert rec["source"]["dirty"] is False and rec["tests"]["passed"] > 0, rec
+    assert rec["source"]["dirty"] is False, rec
+    assert rec["tests"]["passed"] == 1, rec
+    assert rec["tests"]["failed"] == 0 and rec["tests"]["errors"] == 0, rec
     jsonschema = optional_deps.importorskip("jsonschema", extra="dev")
     schema = json.loads((dest / evidence["schema"]).read_text())
     jsonschema.Draft202012Validator(schema).validate(rec)
