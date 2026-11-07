@@ -3716,6 +3716,20 @@ The campaign was planned under a working label and took the next free label when
 | CMP-21.S1 | Durable application, replay and caller recovery. | done |
 | CMP-21.S2 | Explicit recovery, human discard and process-kill proof. | planned |
 
+## CMP-22 — writers confine mutations to their authorized tree
+
+KEEL-PATH-CONTAIN-1 protects Copier engineers through resolved-path checks before a writer mutates the tree.
+The cap is three slices, one pass each and three review fix rounds each under CONVENTIONS §17.
+Stop at CMP-22.S3 green or the cap.
+The campaign was planned under a working label and took the next free label when it landed, because check_Z refuses a gap in declared campaign numbers.
+CMP-22.S2 also writes to the path the guard returns rather than the spelling it was given, and states or tests how an absolute export directory treats an internal link.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-22.S1 | The shared guard, and the scanner installer, scanner record and static export writers. | done |
+| CMP-22.S2 | The remaining writers. | planned |
+| CMP-22.S3 | Verify-time refusal of an escaping frontend root. | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
