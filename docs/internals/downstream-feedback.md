@@ -3730,6 +3730,22 @@ CMP-22.S2 also writes to the path the guard returns rather than the spelling it 
 | CMP-22.S2 | The remaining writers. | planned |
 | CMP-22.S3 | Verify-time refusal of an escaping frontend root. | planned |
 
+## CMP-23 — a generated project learns what the template fixed, and its test loop is quick without standing in for the gate
+
+KEEL-DRIFT-1, KEEL-TESTLOOP-1, KEEL-SLOWTEST-1 and KEEL-CICACHE-1 come from project-jarvis, a keel-generated project, on 2026-11-07.
+The headline is template drift: keel added the pytest retention keys (`tmp_path_retention_policy`, `tmp_path_retention_count`) to `pyproject.toml` and its `.jinja` twin, and the project, whose `.copier-answers.yml` `_commit` is hundreds of commits behind, never took them; it measured 26 leftover pytest runs, 1.8 GB, in RAM-backed scratch.
+The cap is four slices, one pass each and three review fix rounds each under CONVENTIONS §17.
+Stop at CMP-23.S4 green or the cap.
+A narrowed or changed-only run never counts as the gate: KEEL-TESTSEL-1 (row 86) makes a full gate refuse narrowing, and every target this campaign adds is labelled as outside `make verify`.
+Will not do in CMP-23: CI path filters, because a documentation-only change still feeds checks that read documentation, and a filter is safe only when it is derived from what each check reads and is itself tested; and pytest-testmon as a default, because it is a new install the maintainer has not approved and it skips tests from a coverage map.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-23.S1 | `make audit-project DEST=` reports the template commit DEST records, how many template commits it is behind, and which template test and build settings it lacks, starting with the two pytest retention keys; a structure check fails when either key leaves `pyproject.toml` or its `.jinja` twin. | planned |
+| CMP-23.S2 | A changed-tests target reruns failures first (`--lf`/`--ff`) with the pytest cache on and its `cache_dir` inside the checkout and ignored by git, so the cache goes when the checkout goes and no cleanup step exists to forget; a configured path is relative to the checkout root, and the structure check refuses an absolute path or one outside the checkout; the target refuses by name when the cache plugin is off instead of running the whole suite, and is labelled never the gate. | planned |
+| CMP-23.S3 | `make test` reports the slowest tests with `--durations` sized from config, and a `slow` marker lets `make unit` skip a test that the full gate still runs. | planned |
+| CMP-23.S4 | CI caches pip downloads keyed on the dependency files, in the keel workflow and the template workflow. | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3821,6 +3837,10 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 89 | KEEL-ROLLBACK-2 | `scripts/apply_refactor.py` applies a change set file by file. A crash between files leaves a half-applied tree. A journalled transaction makes the change set all or nothing: write the journal, apply, gate, then commit or replay the journal back. This takes its own campaign after row 87 lands | S1 implemented; validation pending; S2 planned |
 | 90 | KEEL-HOOKVENV-1 | The project Stop hook in `.claude/settings.json` runs `.venv/bin/python scripts/hooks/on_stop_doc_review.py -` relative to the session's directory. It exits 127 in a tree with no `.venv`, including every fresh git worktree. A neutral launcher in `scripts/` finds the worktree's own `.venv` first, then the main checkout's through `git rev-parse --git-common-dir`. It refuses with a named exit when neither exists. Each harness's hook config calls the launcher as a thin adapter (CONVENTIONS §7) | planned |
 | 91 | KEEL-VERIFYTIME-1 | A full `make verify` takes about 2 h 30 min on a 32-core host. The junit record of one run puts 82 of the suite's 207 summed minutes in six nested runs of a generated project's suite. `tests/integration/test_copier_generation.py` `_test_gate` runs that suite in one process. Its docstring says it runs "exactly as its shipped make test recipe". That recipe passes the configured workers. The docstring says "in ~4s". Each call takes about 15 minutes. The levers run in this order: (L1) run the nested suite as the shipped recipe does, with its workers; (L2) run the full nested gate once on one defaults project and move the record-idempotence half to a keel unit test; (L4) share test_copier_audit's old-tag renders across its tests; then measure why four workers give about 1.4 times one. Each lever lands only with a before-and-after junit measurement. This is not a build-system change | planned |
+| 92 | KEEL-DRIFT-1 | A generated project can sit hundreds of template commits behind with nothing telling it: project-jarvis never took the pytest retention keys keel added, and leftovers of passed runs filled RAM-backed scratch. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S1 |
+| 93 | KEEL-TESTLOOP-1 | No target reruns only failed or changed tests while iterating, and `--lf`/`--ff` need the pytest cache plugin that lane briefs turn off with `-p no:cacheprovider`. pytest-testmon waits on the maintainer's install decision. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S2 |
+| 94 | KEEL-SLOWTEST-1 | There is no `slow` marker and no `--durations` report, so a slow test is found only by timing a whole run. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S3 |
+| 95 | KEEL-CICACHE-1 | CI runs setup-python with no pip cache, so every run installs everything; path filters are left out until each is derived from what a check reads. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S4 |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's.
 
