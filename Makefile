@@ -191,7 +191,7 @@ verify: ## [local] Run all gates (all checks + secret scan + lint + types + test
 # `-n auto` runs the suite on pytest-xdist workers, as many as
 # config/project.json tests.workers says (tests/conftest.py answers xdist's
 # count with it; 0 keeps one process). Only this target asks for workers: a
-# tier target, a direct pytest and a nested session stay in one process.
+# tier target and a direct pytest invocation stay in one process.
 # The preflight refuses malformed PYTEST_ADDOPTS before pytest parses it;
 # the CLI flag also checks the actual invocation, without leaking to children.
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers

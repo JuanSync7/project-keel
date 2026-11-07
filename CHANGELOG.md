@@ -69,6 +69,11 @@ version rather than a bare commit:
   and parameters; private attributes without a submodule on disk and a
   package's own access remain allowed.
 
+- **Generated-suite checks use the shipped workers (KEEL-VERIFYTIME-1, L1).**
+  The nested test gate runs the generated project's own `make test` with its
+  caller's interpreter, keeping the worker policy in the shipped recipe, and
+  drops an outer make's flags, level and junit path first, so an outer
+  `make -i` cannot turn a red generated suite into exit 0.
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying
   a configured value names its source and key as WrongValue. Rendering uses

@@ -1112,19 +1112,33 @@ def _on_arrival(env):
     return dict(env, **{optional_deps.ENV_VAR: ",".join(kept)})
 
 
-def _test_gate(project):
-    """Run the generated project's OWN test suite, exactly as its shipped `make
-    test` recipe does (PYTHONPATH=src:.); return the CompletedProcess.
+# What an outer make hands its recipe's children: its flags (an outer -i would
+# turn a red nested suite into exit 0), its level, its command-line variables
+# and the junit path its own test recipe writes.
+_OUTER_MAKE = (
+    "MAKEFLAGS",
+    "MFLAGS",
+    "MAKELEVEL",
+    "MAKEOVERRIDES",
+    "MAKEFILES",
+    "JUNIT_XML",
+)
 
-    check_structure is only the STRUCTURAL half of a project's gate — it never
+
+def _test_gate(project):
+    """Run the generated project's own `make test` with this interpreter,
+    PYTHONPATH=src:. and no outer make's variables; return the CompletedProcess.
+
+    check_structure is only the structural half of a project's gate: it never
     executes a test, so "the generated project is green" asserted through it
-    alone is a claim about layout, not behaviour. Measured cost of the real
-    thing: the full suite of a freshly generated project runs in ~4s, which is
-    cheaper than the class of defect it catches."""
+    alone is a claim about layout, not behaviour."""
+    env = _on_arrival(dict(os.environ, PYTHONPATH="src:."))
+    for key in _OUTER_MAKE:
+        env.pop(key, None)
     return subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+        ["make", "test", "PY=" + sys.executable],
         cwd=str(project),
-        env=_on_arrival(dict(os.environ, PYTHONPATH="src:.")),
+        env=env,
         capture_output=True,
         text=True,
     )
