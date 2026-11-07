@@ -57,6 +57,13 @@ own limits, is a row of the [feature catalogue](../reference/features.md).
   output to the project and allows an explicit absolute output directory.
   An explicit absolute corpus or README index output file authorizes its
   parent directory. Relative file outputs stay under the project root. Writers use the resolved destination returned by the guard.
+  Baseline recording confines the configured file to the project root before
+  running checks. Snapshots preflight copied destinations against the snapshot
+  root; audit copies and conflict resolutions use the copy root. Canary run
+  paths and answer-set outputs stay inside `canary.scratch_root`, with an
+  escape refused as CONFIG before replacing a run. AAD schema generation
+  confines relative outputs to the project; an explicit absolute output
+  authorizes its parent directory and an escape exits USAGE.
   Internal symlinks and absent targets are allowed. Configured escapes exit 14;
   an escaping relative `--out-dir` exits 2. An explicit absolute `--out-dir`
   authorizes its output root. A link swapped between check and write is not
@@ -507,7 +514,7 @@ and holds their conflict and duplicate-key paths to this contract.
 | Script | Exit |
 |--------|------|
 | `api/rest_fastapi/export_openapi.py` | 0, 1 |
-| `scripts/agent_surface/generate_aad_schema.py` | 0, 1 |
+| `scripts/agent_surface/generate_aad_schema.py` | 0, 1, 2 |
 | `scripts/cdmon_sync.py` | 0, 2, 14, passes through |
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2, 14 |
@@ -679,7 +686,7 @@ says when each script returns each code.
 | Script | When |
 |--------|------|
 | `api/rest_fastapi/export_openapi.py` | 0: the committed `openapi.json` matches the app, or FastAPI is absent. 1: it is stale or unreadable |
-| `scripts/agent_surface/generate_aad_schema.py` | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable |
+| `scripts/agent_surface/generate_aad_schema.py` | 0: the committed schema matches the model, or pydantic is absent. 1: it is stale or unreadable. 2: the output escapes its authorized root |
 | `scripts/cdmon_sync.py` | 0: cdmon or its config is absent. Otherwise cdmon's own code passes through |
 | `scripts/check_python_version.py` | 0: the interpreter meets `requires-python`. 1: it does not, and the message names the floor |
 | `scripts/check_venv.py` | 0: every requirement of `pyproject.toml`'s core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is installed at a version its specifier allows. 1: one is absent, outside its specifier or has an unparsable version, or `packaging` or a TOML reader (`tomllib`, or `tomli` before Python 3.11) is not importable; the message names each package and the `pip install -e ".[<extras>]"` command. 2: `pyproject.toml` cannot be read or has no `[project]` name. 13 (`NOTHING_JUDGED`): the core and the extras hold no requirement for this interpreter. 14 (`CONFIG`): a `venv` or `transports` value is wrong, or names an extra `pyproject.toml` does not declare, or `pyproject.toml` holds a requirement `packaging` cannot parse or an extra naming the project asks for an extra it does not declare; extra names compare case- and separator-blind (PEP 685) |
@@ -933,6 +940,7 @@ kept on purpose, such as a test fixture, with its reason.
 | `make canary` ends with exit 14 and `the canary settings are refused`, `an answer set is not a plain name mapped to an object of answers` or `the run date is refused` | a `canary` key, or `evidence.run_date`, in config/project.json is missing or wrong, or a set name is not one plain segment of letters, digits, `.`, `_` or `-` | fix the key the message names; config/project.json's `canary._comment` says what each key holds |
 | `make canary` ends with exit 14 and `an answer set names a question copier.yml does not ask`, each `<set>.<key>` | a key of a config/project.json `canary.answer_sets` set is not a question copier.yml asks, as with a misspelt name; copier would ignore it and render that question's default | spell the key as copier.yml names its question, or drop it from the set |
 | `make canary` ends with exit 1 and `the template's copier.yml could not be read` | PyYAML, which copier brings, is not installed for the interpreter `make` runs, or copier.yml does not parse to a mapping | install the template extra with `pip install -e '.[template]'`, or fix copier.yml as the message says |
+| `make canary` ends with exit 14 and `a canary run path escapes its scratch root` or `the canary scratch outputs are refused` | a run directory, answer-set output or scratch environment file resolves outside `canary.scratch_root`, loops or has an unreadable ancestor | replace the escaping link or path with a destination inside the configured scratch root, then rerun. |
 | `make canary` ends with exit 14 and `the canary's scratch root is refused` | config/project.json `canary.scratch_root`, or `KEEL_CANARY_SCRATCH` when it is set, is under the system temporary directory, or is inside the checkout and git tracks a file in it or does not ignore it | point it at a directory of the checkout that `.gitignore` names, or at local disk outside the system temporary directory |
 | `make canary` ends with exit 1 and `git could not answer about the template checkout` or `the template checkout could not be snapshotted` | the canary was run outside a keel git checkout, or git failed while it cloned the checkout and committed its uncommitted files | run it from a keel git checkout whose `git status` succeeds; the message says which git step failed and quotes its last output lines |
 | `scripts/launch.py` ends with exit 12 and `the farm did not start the command within launcher.farm.wait_seconds` | the farm had no free slot within the wait, and the load per cpu of the host it was called on was over `launcher.spare.max_load_per_cpu` or unknown, so nothing ran | run it again later, or raise config/project.json `launcher.farm.wait_seconds` |

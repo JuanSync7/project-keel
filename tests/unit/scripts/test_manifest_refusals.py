@@ -184,6 +184,12 @@ _READERS = (
         (0, "wrote <root>/openapi.json\n", ""),
     ),
     (
+        "scripts/agent_surface/generate_aad_schema.py",
+        "no-read",
+        ("--out", "schema.json"),
+        (0, "wrote schema.json\n", ""),
+    ),
+    (
         "scripts/check_toolchain.py",
         "settings",
         ("versions",),
@@ -772,7 +778,8 @@ def _manifest_readers():
     This conservatively includes callbacks referenced by reachable functions;
     importing a module just for constants does not make all its functions live.
     References overestimate callbacks and registry construction: the no-read
-    rows for make_help and export_openapi assert that read is never called.
+    rows for make_help, export_openapi and generate_aad_schema assert that read
+    is never called.
     No handler name participates in discovery.
     """
     paths = {
@@ -950,7 +957,7 @@ def _prepare_reader(tmp_path, monkeypatch, module, route):
     if not (_ROOT / module).is_file():
         pytest.skip("this generated project does not ship %s" % module)
     name = Path(module).stem
-    if module.startswith(("api/", "mcp/")):
+    if module.startswith(("api/", "mcp/", "scripts/agent_surface/")):
         if module == "api/grpc/server.py":
             # Only import-time types are needed: no transport starts on refusal.
             monkeypatch.setitem(sys.modules, "grpc", SimpleNamespace())
@@ -1019,6 +1026,8 @@ def _prepare_reader(tmp_path, monkeypatch, module, route):
         config.write_text("# probe\n", encoding="utf-8")
     if name == "export_openapi":
         monkeypatch.setattr(reader, "_OUT", str(tmp_path / "openapi.json"))
+    if name == "generate_aad_schema":
+        monkeypatch.syspath_prepend(str(_ROOT / "api/rest_fastapi"))
     if name == "child_exec":
         (tmp_path / "probe.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     if name == "check_practices":

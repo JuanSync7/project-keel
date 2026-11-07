@@ -3,6 +3,7 @@ title: template_snapshot — the template's working tree, committed in a scratch
 kind: script
 layer: n/a
 summary: The one way a keel doer renders from the checkout as it stands, uncommitted edits and untracked files included, without copier's own handling of a dirty local template, which runs a plain `git status` in the checkout and rewrites its index. `snapshot_working_tree(template, scratch, extra)` clones *template* into `<scratch>/template` (`git clone --no-hardlinks`), copies each modified and untracked path over the clone, and commits them there with `git add -A` and one commit; it returns the clone's path and a not-checked list naming what it left out: an untracked symlink (a local convenience, such as the link keel's own root carries to a sibling tree) and nothing else. A path under *skip*, root-relative, is never copied: the canary passes its scratch root, which a snapshot that copied it would copy into itself. The template is only read: the clone, scripts/jobs/review_docs.py `modified_paths` (`git --no-optional-locks status`) and `ls-files`. `scratch_env(scratch, today)` is what every child of such a run gets on top of the allowlist: a git config of its own (no user or system config, no hooks, no excludes file, no fsmonitor, no background gc), commit dates and SOURCE_DATE_EPOCH pinned to *today* at midnight UTC, so two snapshots of one tree on one day commit the same sha, and copier's settings, cache and temporary files inside *scratch*. Every child runs with `child_env.build_child_env(extra=...)`. A child that fails raises SnapshotError naming the step and the tail of its output; nothing here ends the process. Imported by scripts/audit_project.py and scripts/canary.py; keel-only, excluded from generated projects with both.
+Scratch outputs and copied destinations are confined to their scratch and snapshot roots before writes. Checks judge paths at call time; a link swapped before the write is not caught.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_template_snapshot.py
@@ -23,6 +24,7 @@ for _dir in (_SCRIPTS, os.path.join(_SCRIPTS, "jobs")):
 
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 __all__ = ["GITCONFIG", "SnapshotError", "scratch_env", "snapshot_working_tree"]
 
@@ -55,9 +57,13 @@ def scratch_env(scratch, today):
     """The variables every child of a run under *scratch* gets on top of the
     allowlist (`extra=` of `child_env.build_child_env`), writing the git config
     and copier settings they name and creating `<scratch>/tmp`."""
-    gitconfig = os.path.join(scratch, "gitconfig")
-    settings = os.path.join(scratch, "copier-settings.yml")
-    tmp = os.path.join(scratch, "tmp")
+    try:
+        gitconfig, settings, tmp = [
+            confined_path(scratch, name)
+            for name in ("gitconfig", "copier-settings.yml", "tmp")
+        ]
+    except PathEscape as exc:
+        raise SnapshotError(str(exc)) from exc
     os.mkdir(tmp)
     with open(gitconfig, "w", encoding="utf-8") as fh:
         fh.write(GITCONFIG)
@@ -127,7 +133,10 @@ def snapshot_working_tree(template, scratch, extra, skip=(), label="snapshot"):
     its uncommitted state committed on top under the message
     `<label>: checkout state`, and what it left out. *extra* is scratch_env's
     result; a root-relative path in *skip* is never copied."""
-    snap = os.path.join(scratch, "template")
+    try:
+        snap = confined_path(scratch, "template")
+    except PathEscape as exc:
+        raise SnapshotError(str(exc)) from exc
     not_checked = []
     _child(
         ["git", "clone", "-q", "--no-hardlinks", template, snap],
@@ -139,13 +148,24 @@ def snapshot_working_tree(template, scratch, extra, skip=(), label="snapshot"):
     if dirty is None:
         raise SnapshotError("git refused to list the template checkout's changes")
     untracked = _untracked(template)
+    destinations = {}
+    try:
+        for rel in sorted(dirty | untracked):
+            if _skipped(rel, skip):
+                continue
+            if rel in untracked and os.path.islink(os.path.join(template, rel)):
+                continue
+            destinations[rel] = confined_path(snap, rel)
+    except PathEscape as exc:
+        raise SnapshotError(str(exc)) from exc
     for rel in sorted(dirty | untracked):
         if _skipped(rel, skip):
             continue
-        src, dst = os.path.join(template, rel), os.path.join(snap, rel)
+        src = os.path.join(template, rel)
         if rel in untracked and os.path.islink(src):
             not_checked.append({"item": rel, "reason": _SYMLINK_REASON})
             continue
+        dst = destinations[rel]
         if os.path.lexists(dst) and not os.path.isdir(dst):
             os.remove(dst)
         if os.path.islink(src):

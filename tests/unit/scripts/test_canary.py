@@ -532,3 +532,66 @@ def test_git_error_text_naming_the_scratch_root_is_hidden(root, capsys, monkeypa
     assert canary.main([], runner=_runner()) == ExitCode.FAILURE
     err = capsys.readouterr().err
     assert "SENTINEL" not in err and _HIDDEN in err and "git could not answer" in err
+
+
+@pytest.mark.parametrize(
+    "entry", ["run", "alpha.yml", "alpha-fresh.log", "alpha-fresh", "cache"]
+)
+def test_external_output_preserved(root, tmp_path, entry):
+    _config(root)
+    scratch = root / ".canary"
+    run = scratch / "all-fresh"
+    run.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"sentinel")
+    if entry == "run":
+        run.rmdir()
+        run.symlink_to(outside, target_is_directory=True)
+    else:
+        target = outside if entry == "alpha-fresh" else sentinel
+        (run / entry).symlink_to(target, target_is_directory=entry == "alpha-fresh")
+    caught = None
+    code = None
+    try:
+        code = canary.main(["--path", "fresh"], runner=_runner())
+    except OSError as exc:
+        caught = exc
+    assert sentinel.read_bytes() == b"sentinel"
+    assert code == ExitCode.CONFIG, caught
+    link = run / entry if entry != "run" else run
+    assert link.is_symlink()
+
+
+def test_internal_scratch_parent_link_and_missing_run(root):
+    (root / "actual").mkdir()
+    (root / ".canary").symlink_to("actual", target_is_directory=True)
+    _config(root)
+    runner = _runner(git=FakeGit(ignored=("actual/",)))
+    assert canary.main(["--path", "fresh"], runner=runner) == ExitCode.SUCCESS
+    assert (root / "actual/all-fresh/alpha.yml").is_file()
+
+
+def test_cleanup_external_output_preserved(root, tmp_path, monkeypatch):
+    _config(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"sentinel")
+    original = canary.snapshot_working_tree
+
+    def snapshot(template, scratch, extra, **kwargs):
+        result = original(template, scratch, extra, **kwargs)
+        (Path(scratch) / "cache").symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(canary, "snapshot_working_tree", snapshot)
+    code = None
+    caught = None
+    try:
+        code = canary.main(["--path", "fresh"], runner=_runner())
+    except OSError as exc:
+        caught = exc
+    assert sentinel.read_bytes() == b"sentinel"
+    assert code == ExitCode.CONFIG, caught

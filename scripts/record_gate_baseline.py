@@ -3,6 +3,7 @@ title: record_gate_baseline — write a generated project's gate baseline from w
 kind: script
 layer: n/a
 summary: `make gate-baseline`, run in a generated project once after `copier update`. It runs the gate test of every check scripts/expiring_tier_data.py `CHECKS` registers under pytest, as a child process with an allowlisted environment (scripts/child_env.py `build_child_env`) killed after config/project.json `tests.child_timeout_seconds`, with tests/conftest.py's `--expiring-tier-record` option, so each check's findings come from the gate itself and never from a second reading of the tree. Each finding becomes its identity (scripts/expiring_tier.py `identity`), and the file config/project.json `expiring_tier.baseline` names is rewritten as `{"checks": {<check id>: [<identity>, ...]}, "commit": <_commit>}`, every registered check present and a retired one dropped. When the file already records the commit .copier-answers.yml `_commit` names, the new record may only shrink: an entry over the old count is refused by name and nothing is written, because the file grows only when an update brought new keel code. With no baseline file it first asks git (scripts/git_tree.py `tracked` and `in_head`): a baseline the index or HEAD still holds was deleted, and rewriting it would lift the only-shrinks rule, so the writer refuses and says to restore it with `git checkout -- <file>`; with no git to ask it refuses too, failing closed, because it cannot tell a first baseline from a deleted one. Exit 0 when it wrote the file or found it current; 1 (FAILURE) for refused growth or a deleted committed baseline; 2 (USAGE) in the template repository, which holds copier.yml and has no tier, when .copier-answers.yml has no single `_commit`, or when git cannot answer for a first write; 13 (NOTHING_JUDGED) when the run wrote no record or left out a registered check, so a gate test that stopped before it judged never records an empty baseline; 14 (CONFIG) for an `expiring_tier` block or a baseline scripts/expiring_tier.py refuses; any other pytest status is handed through. It does not stop a hand edit of the file, which review holds (docs/adr/keel/K-0027-a-project-s-own-code-warns-until-a-hard-date.md).
+The configured baseline is confined to the project root; the config loader refuses an absolute value. Checks judge paths at call time; a link swapped before the write is not caught.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_record_gate_baseline.py
@@ -165,7 +166,7 @@ def main(argv=None, root=None, runner=run_checks, known=known_to_git):
         description="Record a generated project's gate findings in its "
         "expiring_tier.baseline after `copier update`"
     ).parse_args(argv)
-    root = ROOT if root is None else str(root)
+    root = os.path.realpath(ROOT if root is None else str(root))
     if os.path.isfile(os.path.join(root, expiring_tier.TEMPLATE_MARK)):
         return report(
             ExitCode.USAGE,
@@ -185,7 +186,15 @@ def main(argv=None, root=None, runner=run_checks, known=known_to_git):
         )
     try:
         policy = expiring_tier.load_policy(root)
-        old = expiring_tier.read_baseline(root, policy.baseline)
+        path = git_tree.confined_path(root, policy.baseline)
+        old = expiring_tier.read_baseline(root, os.path.relpath(path, root))
+    except git_tree.PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the baseline path escapes the project root",
+            config_loader.shown(str(exc), bare=True),
+            "keep expiring_tier.baseline inside the project root",
+        )
     except expiring_tier.TierError as exc:
         return report(
             ExitCode.USAGE
@@ -263,7 +272,6 @@ def main(argv=None, root=None, runner=run_checks, known=known_to_git):
             policy.baseline,
             "fix them; the file grows only after `copier update` moves `_commit`",
         )
-    path = os.path.join(root, policy.baseline)
     text = render(doc)
     if old is not None and render(old) == text:
         print("gate baseline unchanged: %s" % policy.baseline)

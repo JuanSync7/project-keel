@@ -3,6 +3,7 @@ title: Generate the AAD JSON Schema
 kind: script
 layer: backend
 summary: Emit config/agent_surface/aad-v1.0.schema.json from the AadDescriptor model (one source of truth).
+An explicit absolute --out authorizes its parent directory; relative outputs are confined to the project root and escapes return USAGE. Checks judge paths at call time; a link swapped before the write is not caught.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-aad
@@ -20,7 +21,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__
 _OUT = os.path.join("config", "agent_surface", "aad-v1.0.schema.json")
 sys.path.insert(0, os.path.join(_ROOT, "scripts"))
 
+import config_loader  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 
 # The ONLY reasons this check may no-op: the host interpreter cannot parse the
 # adapter (SyntaxError — the documented old pre-commit `python3`), or pydantic /
@@ -93,7 +96,16 @@ def main(argv=None) -> int:
             "%s: %s" % (type(exc).__name__, exc),
             "fix the model in api/rest_fastapi/aad; do not edit the schema",
         )
-    path = os.path.join(_ROOT, opts.out)
+    try:
+        boundary = os.path.dirname(opts.out) if os.path.isabs(opts.out) else _ROOT
+        path = confined_path(boundary, opts.out)
+    except PathEscape as exc:
+        return report(
+            ExitCode.USAGE,
+            "the schema output escapes its root",
+            config_loader.shown(str(exc), bare=True),
+            "keep relative --out inside the project or choose an explicit absolute output",
+        )
     if opts.check:
         try:
             with open(path, encoding="utf-8") as fh:

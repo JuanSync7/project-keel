@@ -268,3 +268,51 @@ def test_a_deleted_committed_baseline_is_refused_by_the_real_git_check(
     git("rm", "-q", "--cached", _BASELINE)
     assert rgb.main([], root=str(root), runner=runner) == ExitCode.FAILURE
     assert not (root / _BASELINE).exists()
+
+
+def test_external_output_preserved(tmp_path):
+    root = _project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "baseline.json"
+    sentinel.write_text(rgb.render({"checks": _record(), "commit": "old"}))
+    before = sentinel.read_bytes()
+    (root / "linked").symlink_to(outside, target_is_directory=True)
+    config = root / "config/project.json"
+    doc = json.loads(config.read_text())
+    doc["expiring_tier"]["baseline"] = "linked/baseline.json"
+    config.write_text(json.dumps(doc))
+    calls = []
+
+    def run(*args):
+        calls.append(args)
+        return _runner(_record([_A]))(*args)
+
+    code = _main(root, run)
+    assert sentinel.read_bytes() == before
+    assert code == ExitCode.CONFIG
+    assert calls == []
+
+
+def test_internal_parent_link(tmp_path):
+    root = _project(tmp_path)
+    (root / "actual").mkdir()
+    (root / "config/linked").symlink_to("../actual", target_is_directory=True)
+    config = root / "config/project.json"
+    doc = json.loads(config.read_text())
+    doc["expiring_tier"]["baseline"] = "config/linked/baseline.json"
+    config.write_text(json.dumps(doc))
+    assert _main(root, _runner(_record([_A]))) == ExitCode.SUCCESS
+    assert (root / "actual/baseline.json").is_file()
+
+
+def test_absolute_configured_baseline_is_refused(tmp_path):
+    root = _project(tmp_path)
+    out = tmp_path / "operator.json"
+    out.write_bytes(b"sentinel")
+    config = root / "config/project.json"
+    doc = json.loads(config.read_text())
+    doc["expiring_tier"]["baseline"] = str(out)
+    config.write_text(json.dumps(doc))
+    assert _main(root, _runner(_record([_A]))) == ExitCode.CONFIG
+    assert out.read_bytes() == b"sentinel"

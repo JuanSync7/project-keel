@@ -1632,3 +1632,45 @@ def test_retired_group_flags_only_an_edited_copy_the_update_deletes(
     assert (code, report["exit"]) == (1, 1), err
     _c, text, _e = _run([str(dest), "--today", TODAY], capsys)
     assert "the update deletes docs/edited.md, which the project edited" in text
+
+
+@pytest.mark.parametrize("operation", ["copy", "resolve"])
+def test_external_output_preserved(tmp_path, monkeypatch, operation):
+    root = tmp_path / "copy"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "a.txt"
+    sentinel.write_bytes(
+        b"<<<<<<< before updating\nours\n=======\ntheirs\n>>>>>>> after updating\n"
+    )
+    before = sentinel.read_bytes()
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    src = tmp_path / "source"
+    (src / "link").mkdir(parents=True)
+    (src / "link/a.txt").write_bytes(b"replacement")
+    monkeypatch.setattr(ap.check_structure, "run_checks", lambda *args, **kwargs: [])
+    caught = None
+    try:
+        if operation == "copy":
+            ap._copy_entry(str(src), "link/a.txt", str(root), [])
+        else:
+            ap._judge_resolutions(str(root), ["link/a.txt"])
+    except ap.AuditError as exc:
+        caught = exc
+    assert sentinel.read_bytes() == before
+    assert caught is not None
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_internal_parent_link_and_missing_target(tmp_path, linked):
+    src = tmp_path / "source"
+    (src / "docs").mkdir(parents=True)
+    (src / "docs/new.txt").write_bytes(b"copied")
+    root = tmp_path / "copy"
+    root.mkdir()
+    if linked:
+        (root / "actual").mkdir()
+        (root / "docs").symlink_to("actual", target_is_directory=True)
+    ap._copy_entry(str(src), "docs/new.txt", str(root), [])
+    assert (root / "docs/new.txt").read_bytes() == b"copied"

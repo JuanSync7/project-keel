@@ -105,3 +105,36 @@ def test_check_passes_on_a_fresh_committed_schema(monkeypatch, tmp_path):
     monkeypatch.setattr(gas, "_ROOT", str(tmp_path))
     gas.main(["--out", "s.json"])
     assert gas.main(["--check", "--out", "s.json"]) == 0
+
+
+@pytest.mark.parametrize("spelling", ["link/s.json", "../outside/s.json"])
+def test_external_output_preserved(tmp_path, monkeypatch, spelling):
+    root = tmp_path / "root"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "s.json"
+    sentinel.write_text("sentinel")
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(gas, "_ROOT", str(root))
+    monkeypatch.setattr(gas, "_schema", lambda: {"title": "fresh"})
+    code = gas.main(["--out", spelling])
+    assert sentinel.read_text() == "sentinel"
+    assert code == 2
+
+
+def test_explicit_absolute_output_is_allowed(tmp_path, monkeypatch):
+    monkeypatch.setattr(gas, "_ROOT", str(tmp_path / "root"))
+    monkeypatch.setattr(gas, "_schema", lambda: {"title": "fresh"})
+    out = tmp_path / "operator/s.json"
+    assert gas.main(["--out", str(out)]) == 0
+    assert out.is_file()
+
+
+def test_internal_parent_link_and_missing_target(tmp_path, monkeypatch):
+    (tmp_path / "actual").mkdir()
+    (tmp_path / "link").symlink_to("actual", target_is_directory=True)
+    monkeypatch.setattr(gas, "_ROOT", str(tmp_path))
+    monkeypatch.setattr(gas, "_schema", lambda: {"title": "fresh"})
+    assert gas.main(["--out", "link/new/s.json"]) == 0
+    assert (tmp_path / "actual/new/s.json").is_file()

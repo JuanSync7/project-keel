@@ -35,7 +35,8 @@ version rather than a bare commit:
 
 - **Writer destinations stay inside their authorized root (KEEL-PATH-CONTAIN-1).**
   Scanner installation, scanner records, static export, docs migrations and
-  corpus/index jobs refuse resolved escapes and symlink loops before mutation.
+  corpus/index jobs, baseline recording, snapshots, audit copies, canary runs
+  and AAD schema generation refuse resolved escapes and symlink loops before mutation.
   Batch stamp jobs preflight every destination; retirement guards restoration
   and deletion. Writers use the checked destination. Internal links remain usable;
   an explicit absolute export directory remains allowed. Checks apply at call

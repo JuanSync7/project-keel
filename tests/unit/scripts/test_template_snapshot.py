@@ -160,3 +160,70 @@ def test_a_failed_clone_raises_naming_the_step(tmp_path):
             str(tmp_path / "absent"), str(scratch), ts.scratch_env(str(scratch), _DAY)
         )
     assert "git clone" in str(caught.value)
+
+
+@pytest.mark.parametrize("name", ["gitconfig", "copier-settings.yml", "tmp"])
+def test_external_output_preserved(tmp_path, name):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"sentinel")
+    target = outside if name == "tmp" else sentinel
+    (scratch / name).symlink_to(target, target_is_directory=name == "tmp")
+    caught = None
+    try:
+        ts.scratch_env(str(scratch), _DAY)
+    except (ts.SnapshotError, OSError) as exc:
+        caught = exc
+    assert sentinel.read_bytes() == b"sentinel"
+    assert isinstance(caught, ts.SnapshotError)
+    if name != "gitconfig":
+        assert not (scratch / "gitconfig").exists()
+
+
+def test_escape_aborts_run_before_any_write(template, tmp_path, monkeypatch):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    snap = scratch / "template"
+    snap.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "kept.md"
+    sentinel.write_bytes(b"sentinel")
+    (snap / "docs").symlink_to(outside, target_is_directory=True)
+    earlier = snap / "a.txt"
+    earlier.write_bytes(b"before")
+    (template / "a.txt").write_bytes(b"after")
+    monkeypatch.setattr(ts, "_child", lambda *args: "")
+    monkeypatch.setattr(
+        ts.review_docs, "modified_paths", lambda _: {"a.txt", "docs/kept.md"}
+    )
+    monkeypatch.setattr(ts, "_untracked", lambda _: set())
+    caught = None
+    try:
+        ts.snapshot_working_tree(str(template), str(scratch), {})
+    except ts.SnapshotError as exc:
+        caught = exc
+    assert sentinel.read_bytes() == b"sentinel"
+    assert earlier.read_bytes() == b"before"
+    assert caught is not None
+
+
+@pytest.mark.parametrize("linked", [False, True])
+def test_internal_parent_link_and_missing_target(
+    template, tmp_path, monkeypatch, linked
+):
+    scratch = tmp_path / "scratch"
+    snap = scratch / "template"
+    snap.mkdir(parents=True)
+    if linked:
+        (snap / "actual").mkdir()
+        (snap / "docs").symlink_to("actual", target_is_directory=True)
+    monkeypatch.setattr(ts, "_child", lambda *args: "")
+    monkeypatch.setattr(ts.review_docs, "modified_paths", lambda _: {"docs/kept.md"})
+    monkeypatch.setattr(ts, "_untracked", lambda _: set())
+    result, skipped = ts.snapshot_working_tree(str(template), str(scratch), {})
+    assert Path(result) == snap and not skipped
+    assert (snap / "docs/kept.md").read_bytes() == b"committed\n"

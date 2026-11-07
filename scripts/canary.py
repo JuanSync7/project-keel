@@ -4,6 +4,7 @@ title: canary — each configured answer set rendered fresh and as an update, th
 kind: script
 layer: n/a
 summary: Answers "does a project keel generates today pass its own gate, and does one generated from the last release still pass after `copier update`?" for each config/project.json `canary.answer_sets` set, before a release is pushed. A set key that is not a question copier.yml asks is refused with CONFIG before anything renders, because copier would ignore it and render the default. The update path needs the previous release first: the newest dated `## [X.Y.Z] — YYYY-MM-DD` heading of CHANGELOG.md whose tag (`vX.Y.Z`, else `X.Y.Z`) exists and is a strict ancestor of HEAD, so a run on the release commit updates from the release before; with none it refuses with USAGE before anything renders, and `--path fresh` needs no tag. The checkout as it stands, uncommitted edits included, is snapshotted once with scripts/template_snapshot.py into `<canary.scratch_root>/<run-id>/template`; each set and path then renders into `<run-id>/<set>-<path>` in a pool of `canary.workers`, every future waited on and no set skipped after a red one. The fresh path is `copier copy --vcs-ref HEAD` and a commit; the update path is `copier copy --vcs-ref <tag>`, a commit, `copier update --data-file <the set> --vcs-ref HEAD --conflict inline`, the set given again so a question the tag did not ask takes the set's answer, which fails the step `update` when git lists an unmerged path or a file holds a conflict hunk (scripts/jobs/conflict_guard.py `has_conflict`), and a commit. Both then run `make fe-install` and `make fe-browsers`, which exit 0 when the project's Makefile `FE_APPS` names no frontend app, `make secrets-install`, which records the pinned secret scanner the history scan in verify needs, then `make verify`, each step killed past `canary.step_timeout_minutes`. Each set and path prints `<set> <path> <last step reached> <pass|fail> <log> <elapsed>s`; a passing project is deleted and a failing one kept and named on stderr, with its log beside it. The scratch root is refused (CONFIG) under the system temporary directory, and inside the checkout unless git ignores it and tracks nothing in it. `--set NAME` (repeatable) and `--path` choose the work, so the farm can run one job per set. Every child runs with `child_env.build_child_env(extra=...)` and the hermetic git `template_snapshot.scratch_env` writes. A refusal hides an answer-set name, an answer key, the scratch root, or git's error text that holds an `@` (scripts/config_loader.py `shown`), and an answer-set name ending in a newline is not a plain name. Keel-only: copier.yml excludes it, and a generated project's `make canary` is a stub naming the template checkout.
+Run paths and answer-set-derived outputs are confined to canary.scratch_root before any run is replaced. Checks judge paths at call time; a link swapped before the write is not caught.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/scripts/test_canary.py
@@ -38,6 +39,7 @@ import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
 import run_date  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
+from git_tree import PathEscape, confined_path  # noqa: E402
 from template_snapshot import (  # noqa: E402
     SnapshotError,
     scratch_env,
@@ -259,12 +261,13 @@ def _marked(dest):
 class _Pair(object):
     """One set and path: its steps, run in order until one fails."""
 
-    def __init__(self, name, path, run, snap, answers, tag, tools, lock):
+    def __init__(self, name, path, run, snap, answers, tag, tools, lock, boundary):
         self.name, self.path, self.run = name, path, run
         self.snap, self.answers, self.tag = snap, answers, tag
         self.tools, self.lock = tools, lock
-        self.dest = os.path.join(run, "%s-%s" % (name, path))
-        self.log = self.dest + ".log"
+        self.boundary = boundary
+        self.dest = confined_path(boundary, os.path.join(run, "%s-%s" % (name, path)))
+        self.log = confined_path(boundary, self.dest + ".log")
         self.step = None
 
     def _call(self, tool, step, args, cwd):
@@ -329,7 +332,7 @@ class _Pair(object):
         )
         if not ok:
             return False
-        unmerged = self.dest + ".unmerged"
+        unmerged = confined_path(self.boundary, self.dest + ".unmerged")
         with open(unmerged, "w", encoding="utf-8"):
             pass
         status, _ = self.tools.git(["ls-files", "-u", "-z"], self.dest, unmerged)
@@ -554,12 +557,37 @@ def main(argv=None, runner=None):
             "fix config/project.json evidence.run_date or the variable it names",
         )
     run_id = "%s-%s" % ("+".join(chosen) if args.sets else "all", args.path)
-    run = os.path.join(scratch, run_id)
+    try:
+        run = confined_path(scratch, run_id)
+        for name in ("template", "cache", "tmp", "gitconfig", "copier-settings.yml"):
+            confined_path(scratch, os.path.join(run, name))
+        outputs = {}
+        for name in chosen:
+            outputs[name] = confined_path(scratch, os.path.join(run, "%s.yml" % name))
+            for path in paths:
+                dest = os.path.join(run, "%s-%s" % (name, path))
+                for target in (dest, dest + ".log", dest + ".unmerged"):
+                    confined_path(scratch, target)
+    except PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "a canary run path escapes its scratch root",
+            config_loader.shown(str(exc), bare=True),
+            "keep run directories and answer-set outputs inside canary.scratch_root",
+        )
     # A run replaces its own directory, so a second run leaves the same tree.
     if os.path.lexists(run):
         shutil.rmtree(run)
     os.makedirs(run)
-    extra = scratch_env(run, today)
+    try:
+        extra = scratch_env(run, today)
+    except SnapshotError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the canary scratch outputs are refused",
+            config_loader.shown(str(exc), bare=True),
+            "keep scratch outputs inside canary.scratch_root",
+        )
     tools = _bound(runner or Runner(), extra, timeout)
     inside = _under(scratch, os.path.realpath(ROOT))
     try:
@@ -584,12 +612,13 @@ def main(argv=None, runner=None):
 
     pairs = []
     for name in chosen:
-        answers = os.path.join(run, "%s.yml" % name)
+        answers = outputs[name]
         # JSON is YAML, so copier reads the answers with no YAML writer here.
         with open(answers, "w", encoding="utf-8") as fh:
             fh.write(json.dumps(sets[name], sort_keys=True) + "\n")
         pairs.extend(
-            _Pair(name, path, run, snap, answers, tag, tools, lock) for path in paths
+            _Pair(name, path, run, snap, answers, tag, tools, lock, scratch)
+            for path in paths
         )
     with concurrent.futures.ThreadPoolExecutor(max_workers=settings["workers"]) as pool:
         futures = [pool.submit(pair) for pair in pairs]
@@ -615,9 +644,21 @@ def main(argv=None, runner=None):
             "read each log beside its kept project, fix keel, and rerun with "
             "CANARY_FLAGS='--set NAME --path PATH'",
         )
-    for left in ("template", "cache", "tmp"):
-        if os.path.lexists(os.path.join(run, left)):
-            shutil.rmtree(os.path.join(run, left))
+    try:
+        cleanup = [
+            confined_path(scratch, os.path.join(run, left))
+            for left in ("template", "cache", "tmp")
+        ]
+    except PathEscape as exc:
+        return report(
+            ExitCode.CONFIG,
+            "a canary run path escapes its scratch root",
+            config_loader.shown(str(exc), bare=True),
+            "keep cleanup destinations inside canary.scratch_root",
+        )
+    for left in cleanup:
+        if os.path.lexists(left):
+            shutil.rmtree(left)
     return ExitCode.SUCCESS
 
 
