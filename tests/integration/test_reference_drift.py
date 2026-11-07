@@ -919,6 +919,40 @@ def cli_readers(flags):
     return {key: {key.split(" ", 1)[0]} for key in flags}
 
 
+# --- mypy ratchet reader -------------------------------------------------
+
+
+def mypy_ratchet_reference_findings(doc, rows):
+    """The ratchet rows describe recorded costs and required exit conditions,
+    without promising a gate that measures the backlog."""
+    prefix = "rulesets.mypy.ratchet.<root>."
+    keyed = {row["key"]: row for row in rows}
+    findings = []
+    for field, claims in (
+        ("errors", ("recorded measurement", "no gate measures")),
+        ("removed_when", ("exit condition", "non-empty", "nothing checks")),
+    ):
+        key = prefix + field
+        row = keyed.get(key)
+        if row is None:
+            findings.append("%s: missing row `%s`" % (doc, key))
+            continue
+        effect = row["What changing it does"].lower()
+        wrong = ["missing %r" % claim for claim in claims if claim not in effect]
+        if "the test fails when it holds more" in effect:
+            wrong.append("promises a measuring test")
+        if "tests/integration/test_gate_scope.py" not in row["Read by"]:
+            wrong.append("`Read by` does not name tests/integration/test_gate_scope.py")
+        if field == "errors" and ">= 1" not in row["Valid values"]:
+            wrong.append("`Valid values` does not say >= 1")
+        if wrong:
+            findings.append(
+                "%s: row `%s` overstates what test_gate_scope enforces "
+                "(it does not measure mypy errors): %s" % (doc, key, "; ".join(wrong))
+            )
+    return findings
+
+
 # --- registry defaults ----------------------------------------------------
 
 
@@ -1907,6 +1941,56 @@ def test_settings_rows_list_every_cli_flag(settings, sections, inventory):
 
 
 # --- registry defaults ----------------------------------------------------
+
+
+def test_mypy_ratchet_reference_matches_reader(settings, sections, monkeypatch):
+    """The cost reader accepts any positive recorded count without running a
+    measurement, and the reference states exactly that limit."""
+    gate_scope = importlib.import_module("test_gate_scope")
+    reader = gate_scope.test_every_mypy_ratchet_entry_states_its_cost_and_its_exit
+    entry = {"errors": 1, "removed_when": "the root joins scope"}
+    monkeypatch.setattr(
+        gate_scope,
+        "_practices",
+        lambda: {"rulesets": {"mypy": {"ratchet": {"scripts": entry}}}},
+    )
+
+    def refuse_measurement(*args, **kwargs):
+        pytest.fail("the ratchet field reader started a measuring subprocess")
+
+    monkeypatch.setattr(gate_scope.subprocess, "run", refuse_measurement)
+    for count in (1, 10**9):
+        entry["errors"] = count
+        reader()
+    for invalid in (0, -1, "1"):
+        entry["errors"] = invalid
+        with pytest.raises(AssertionError, match="count >= 1"):
+            reader()
+    entry["errors"] = 1
+    entry["removed_when"] = " "
+    with pytest.raises(AssertionError, match="needs `removed_when`"):
+        reader()
+
+    doc, _text = settings
+    rows, findings = section_rows(doc, sections, "config/practices.json")
+    findings += mypy_ratchet_reference_findings(doc, rows)
+    assert not findings, "\n".join(findings)
+    # Each false claim is one finding, including the original measuring promise.
+    key = "rulesets.mypy.ratchet.<root>.errors"
+    for column, wrong in (
+        ("What changing it does", "the test fails when it holds more"),
+        ("Valid values", "a non-negative integer"),
+    ):
+        broken = [dict(r, **{column: wrong}) if r["key"] == key else r for r in rows]
+        assert len(mypy_ratchet_reference_findings(doc, broken)) == 1
+    exit_key = "rulesets.mypy.ratchet.<root>.removed_when"
+    broken = [
+        dict(r, **{"What changing it does": "States an exit condition."})
+        if r["key"] == exit_key
+        else r
+        for r in rows
+    ]
+    assert len(mypy_ratchet_reference_findings(doc, broken)) == 1
 
 
 def test_registry_defaults_are_stated_against_the_manifest(

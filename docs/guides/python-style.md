@@ -241,11 +241,12 @@ failure so the reader can rerun it by hand.
   logger.info("resolved %s to %s", name, version)   # yes
   logger.info(f"resolved {name} to {version}")      # fails the gate (G004)
   ```
-- **Types are documentation that cannot rot.** mypy runs `strict` over the
-  ratcheted scope (gated): `src/` fully, leaf roots under declared, costed
-  relaxations listed in `config/practices.json` `rulesets.mypy` — every one
-  with its exit condition. Annotate as you write, not after; a precise
-  signature is the cheapest docstring there is.
+- **Types are documentation that cannot rot.** mypy runs `strict` over
+  `config/practices.json` `rulesets.mypy.scope`, with declared relaxations in
+  `rulesets.mypy.overrides`. Code roots outside `rulesets.mypy.scope`, recorded
+  in `rulesets.mypy.ratchet`, are not type-checked by the gate.
+  Annotate as you write, not after; a precise signature is the cheapest
+  docstring there is.
 
 ## 5. How a code agent works here
 

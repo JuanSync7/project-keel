@@ -226,7 +226,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # runtimes/ is NOT in `files`; it is declared pending in
-# config/practices.json rulesets.mypy.ratchet (87 errors). It is dragged in anyway
+# config/practices.json rulesets.mypy.ratchet. It is dragged in anyway
 # because agents/ imports it, so without this every agents/ run would report a
 # backlog nobody is committed to this pass. Scoped to this one root, alongside a
 # declared cost and exit condition — not a blanket suppression.

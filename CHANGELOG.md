@@ -33,6 +33,11 @@ version rather than a bare commit:
   `ns.status = main()`, `d["s"] = main()` and `s += main()` in an entry block
   are a dropped status unless that same target is handed to `finish`; targets
   are compared by syntax tree, and the finding keeps its wording.
+- **Mypy ratchet records match their enforcement (KEEL-RATCHET-DOC-1).**
+  Re-measure the pending roots and record their costs. The settings reference
+  states the positive-integer and exit-condition checks and the absence of a
+  measuring gate; the Python style guide names the configured type-check scope.
+  A reader-backed drift test rejects the former measuring-test claim.
 - **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
   The Python 3.6-safe `scripts/project_python.py` launcher uses the current
   tree's venv, then the main checkout's, preserving arguments, stdin and the
