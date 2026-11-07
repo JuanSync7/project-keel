@@ -45,6 +45,15 @@ def test_a_roster_that_matches_its_directory_passes():
     assert _find() == []
 
 
+@pytest.mark.parametrize("start", ["<details>", "<x-panel>"])
+def test_a_roster_after_blank_line_html_is_checked(start):
+    text = _README.replace("| linking it (that is `link_corpus.py`) |", "| |")
+    assert len(_MEMBERS) == 3
+    errs = _find(start + "\n```\n\n" + text)
+    assert len(errs) == 1, errs
+    assert "build_corpus.py" in errs[0] and "Not for" in errs[0], errs
+
+
 def test_a_readme_without_the_heading_is_not_a_roster():
     """Opt-in: a README that never claims to list its directory is not held to it."""
     assert _find("# Scripts\n\nProse only.\n") == []

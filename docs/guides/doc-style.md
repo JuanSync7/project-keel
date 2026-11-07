@@ -142,14 +142,18 @@ same character, at least as many times, followed only by spaces or tabs.
 A triple-backtick inline span is read as a check-name citation.
 The scanner follows list content columns, blockquote prefixes and paragraph
 interruption; a container's end closes its fence.
-HTML block types 1 to 5 hide every line they hold.
+HTML block types 1 to 7 hide every line they hold.
+Type 6 may interrupt a paragraph; type 7 may not.
+Types 6 and 7 end before a blank line, including spaces or tabs alone.
+A quote line holding only `>` is blank within that quote.
+Closing tags and fence-looking lines do not end these blank-ended blocks;
+container loss ends every HTML block. Type-6 tag names are fixed grammar data
+in `scripts/markdown_html_data.py`, not project policy (CONVENTIONS §18).
 Complete inline comments are blanked within one paragraph, while comments inside
 fences stay code. These rules are pinned by
 `tests/unit/scripts/test_check_structure_fences.py` and the check-name cases in
 `tests/integration/test_doc_drift.py`
 (`test_check_citations_follow_shared_fence_boundaries`).
-HTML block types 6 and 7 are a gap: a fence line directly inside a `<div>`,
-`<details>` or whole-tag block is still read as a fence (KEEL-FENCE-HTML-1).
 A `<!--` inside a code span still opens a comment for this grammar, although
 CommonMark section 6.1 gives the code span precedence. If that comment closes
 later in the same paragraph, the intervening text after the code span is not

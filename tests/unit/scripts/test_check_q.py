@@ -157,6 +157,15 @@ def test_a_link_inside_a_fenced_code_block_is_an_illustration():
     assert _find(files) == []
 
 
+@pytest.mark.parametrize("start", ["<details>", "<x-panel>"])
+def test_a_link_after_blank_line_html_is_checked(start):
+    files = {"a.md": start + "\n```\n\n[x](gone.md)"}
+    assert len(files) == 1
+    errs = _find(files)
+    assert len(errs) == 1, errs
+    assert "a.md:4" in errs[0] and "gone.md" in errs[0], errs
+
+
 def test_a_link_inside_an_inline_code_span_is_an_illustration():
     assert _find({"a.md": "write `[text](path.md)` to link\n"}) == []
 

@@ -19,6 +19,12 @@ version rather than a bare commit:
   index links guides, decisions, specifications and repository labels from the
   root README. Its template twin omits maintainer records and answer-pruned
   documents; a reachability gate rejects orphans and empty graphs.
+
+- **Blank-line HTML blocks cannot open or hide code fences (KEEL-FENCE-HTML-1).**
+  Both Markdown scanners recognize CommonMark HTML block types 6 and 7, end
+  them before a blank line, and preserve their paragraph interruption rules.
+  One data module holds the fixed type-6 tag names; grammar copies stay pinned.
+
 - **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
   Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
   the twin is the generated project's own history, so the document-drift gate

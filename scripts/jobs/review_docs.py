@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+from typing import Tuple
 
 _SCRIPTS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SCRIPTS not in sys.path:
@@ -23,6 +24,7 @@ if _SCRIPTS not in sys.path:
 
 import child_env  # noqa: E402
 import config_loader  # noqa: E402
+import markdown_html_data  # noqa: E402
 import run_date  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
@@ -427,14 +429,27 @@ _OPENING_MARKUP = "*_[(\"' "
 _SPAN_WORD = "CODE"
 
 
+# CommonMark 6.6 permits > inside quoted values; a whole tag ends type 7's start.
+# Type-1 open names are excluded even when self-closing; closing names qualify.
+HTML_BLOCK_TYPE_7 = re.compile(
+    r"^ {0,3}(?:"
+    r"<(?!(?:script|pre|style|textarea)(?:[ \t\f\r/>]))[a-z][a-z0-9-]*"
+    r"(?:[ \t\f\r]+[a-z_:][a-z0-9_.:-]*"
+    r"(?:[ \t\f\r]*=[ \t\f\r]*(?:[^ \t\f\r\"'=<>`]+|\"[^\"]*\"|'[^']*'))?)*"
+    r"[ \t\f\r]*/?>|</[a-z][a-z0-9-]*[ \t\f\r]*>)[ \t]*$",
+    re.IGNORECASE | re.ASCII,
+)
+HTML_BLOCK_TYPE_6_TAGS = markdown_html_data.HTML_BLOCK_TYPE_6_TAGS
+
+
 def unfenced_lines(text):
-    """The document's lines with fenced code and HTML blocks of types 1 to 5
+    """The document's lines with fenced code and HTML blocks of types 1 to 7
     blanked, preserving line numbers and prose prefixes. CommonMark containers
     set fence content columns and end their blocks; only paragraph text may
     continue lazily. Complete inline comments are blanked within one paragraph."""
 
     def scan(text):
-        """Return (lines, 1-based EOF opener or 0), blanking fences, HTML 1-5 and inline comments within one cmark-gfm paragraph. Does not model HTML block types 6 and 7 or inline code spans hiding a comment opener."""
+        """Return (lines, 1-based EOF opener or 0), blanking fences, HTML 1-7 and inline comments within one cmark-gfm paragraph. Does not model inline code spans hiding a comment opener."""
 
         def leading(line):
             """The number of leading spaces in a tab-expanded line."""
@@ -494,8 +509,8 @@ def unfenced_lines(text):
                 end += 1
             return (body[:end], body[end:]) if end >= 3 else ("", "")
 
-        def html_end(line):
-            """The terminators of a CommonMark type 1 to 5 HTML block, or ()."""
+        def html_end(line, *, interrupt=False):
+            """HTML terminators, ("",) for blank-ended types 6/7, or ()."""
             if leading(line) > 3:
                 return ()
             body = line.lstrip(" ")
@@ -517,6 +532,11 @@ def unfenced_lines(text):
                 "A" <= body[2:3] <= "Z" or "a" <= body[2:3] <= "z"
             ):
                 return (">",)
+            tag_match = re.match(r"</?([A-Za-z][A-Za-z0-9-]*)(?=[ \t\f\r>]|/>|$)", body)
+            if tag_match and tag_match.group(1).lower() in HTML_BLOCK_TYPE_6_TAGS:
+                return ("",)
+            if not interrupt and HTML_BLOCK_TYPE_7.fullmatch(line):
+                return ("",)
             return ()
 
         def interrupts(line):
@@ -536,7 +556,7 @@ def unfenced_lines(text):
                 or heading(body)
                 or thematic(body)
                 or quote_prefix(line)
-                or html_end(line)
+                or html_end(line, interrupt=True)
                 or column
             )
 
@@ -544,7 +564,8 @@ def unfenced_lines(text):
         # drop its descendants, even when their absolute indentation still fits.
         containers = []
         boundaries = [0]
-        out, fence, opened, html, paragraph = [], "", 0, (), False
+        out, fence, opened, paragraph = [], "", 0, False
+        html: Tuple[str, ...] = ()
         for number, raw in enumerate(text.split("\n"), 1):
             line = raw.expandtabs(4).rstrip("\r")
             matched = 0
@@ -583,11 +604,14 @@ def unfenced_lines(text):
                     fence, opened = "", 0
                 out.append("")
                 continue
+            # A blank belongs to the following block, unlike a marker end line.
+            if html == ("",) and not line.strip(" "):
+                html = ()
             if html:
                 boundaries.append(len(out))
                 # Type-1 end tags are case-insensitive HTML, unlike the literal
                 # terminators of types 2 to 5; each still hides its entire end line.
-                if any(
+                if html != ("",) and any(
                     end in line.lower() if end.startswith("</") else end in line
                     for end in html
                 ):
@@ -615,12 +639,12 @@ def unfenced_lines(text):
                 line = line[width:]
                 paragraph = False
 
-            html = html_end(line)
+            html = html_end(line, interrupt=paragraph)
             if html:
                 boundaries.append(len(out))
                 # HTML blocks can end on their start line, so a complete comment
                 # must hide that line's trailing text without consuming later prose.
-                if any(
+                if html != ("",) and any(
                     end in line.lower() if end.startswith("</") else end in line
                     for end in html
                 ):

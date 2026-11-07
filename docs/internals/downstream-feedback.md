@@ -3182,12 +3182,12 @@ imports read, and importing `scripts/check_structure.py` would stop
 reads no file would remove that reason, but the pin already fails a drift
 between the copies on its shared texts, so the move buys no correctness there.
 A full CommonMark parser is also out. The grammar models containers, fences
-and HTML blocks of types 1 to 5, which end at a marker of their own. It does
-not model inline syntax beyond an inline comment, or tables. It does not
-model HTML blocks of types 6 and 7, which end at a blank line: a `<div>` or
-`<details>` line, and a line that is one whole tag. A fence line directly
-inside one of those is still read as a fence. KEEL-FENCE-HTML-1 queues that
-gap, and the doc-style sentence states it.
+and HTML blocks of types 1 to 7. Types 1 to 5 end at a marker of their own;
+types 6 and 7 end before a blank line. It does not model inline syntax beyond
+an inline comment, or tables. KEEL-FENCE-HTML-1 closes the blank-line HTML gap:
+a `<div>` or `<details>` line, or a whole-tag block, hides its fence-looking
+lines until a blank line or container end. Type 6 may interrupt a paragraph;
+type 7 may not. The doc-style guide states that contract.
 
 CMP-12 builds on `keel-cmp11`, whose plan declares CMP-11, because the
 campaign naming check refuses a CMP-12 with no CMP-11 before it. `keel-cmp11`

@@ -185,6 +185,7 @@ def test_the_fence_grammar_has_the_same_syntax_tree():
     copied.name = "_fence_scan"
     assert ast.dump(original) == ast.dump(copied)
     assert review_docs.INLINE_CODE.pattern == cs._INLINE_CODE.pattern
+    assert review_docs.HTML_BLOCK_TYPE_7.pattern == cs.HTML_BLOCK_TYPE_7.pattern
 
 
 def test_the_fence_grammar_has_the_same_output():
@@ -220,8 +221,30 @@ def test_the_fence_grammar_has_the_same_output():
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     ]
     assert regression_texts, "a pin over zero regression texts"
-    for label, text in tree_texts + regression_texts:
+    from test_check_structure_fences import blank_html_cases
+
+    generated = [(label, text) for label, text, _lines, _opened in blank_html_cases()]
+    assert generated, "a pin over zero generated tag cases"
+    markers = [
+        ("<pre>", "</pre>"),
+        ("<!--", "-->"),
+        ("<?target", "?>"),
+        ("<!DOCTYPE", ">"),
+        ("<![CDATA[", "]]>"),
+    ]
+    assert len(markers) == 5
+    generated.extend(
+        (start, start + "\n\n```\n" + end + "\nafter") for start, end in markers
+    )
+    for label, text in tree_texts + regression_texts + generated:
         assert review_docs.unfenced_lines(text) == cs._unfenced_lines(text), label
+
+
+@pytest.mark.parametrize("start", ["<details>", "<x-panel>"])
+def test_blank_line_html_cannot_hide_following_prose(start):
+    lines = review_docs.unfenced_lines(start + "\n```\n\nNow review this.")
+    assert len(lines) == 4
+    assert lines == ["", "", "", "Now review this."]
 
 
 @pytest.mark.parametrize(

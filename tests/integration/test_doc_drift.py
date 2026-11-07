@@ -1346,6 +1346,15 @@ def test_check_citations_follow_shared_fence_boundaries(text, citations):
         assert finding.startswith("guide.md:%d: cites %s," % (line, name)), finding
 
 
+@pytest.mark.parametrize("start", ["<details>", "<x-panel>"])
+def test_check_citations_follow_blank_line_html_boundaries(start):
+    documents = [("guide.md", start + "\ncheck_missing\n```\n\ncheck_other")]
+    assert len(documents) == 1
+    findings = check_citation_findings(documents, set(), set())
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("guide.md:5: cites check_other,"), findings
+
+
 def _assert_check_name_sentence(text):
     sentences = re.findall(r"^For check-name citations, (.+)$", text, re.MULTILINE)
     assert len(sentences) == 1, "the guide must state one check-name sentence"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 5; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -181,7 +181,7 @@ import re
 import shlex
 import sys
 import tokenize
-from typing import Dict
+from typing import Dict, Tuple
 from urllib.parse import unquote
 
 # The allowlist's owner is scripts/child_env.py, beside this file; reading its
@@ -194,6 +194,7 @@ import child_env  # noqa: E402
 import child_exec  # noqa: E402
 import config_loader  # noqa: E402
 import exit_codes  # noqa: E402
+import markdown_html_data  # noqa: E402
 import run_date  # noqa: E402
 import shell_gate  # noqa: E402
 from corpus_level import (  # noqa: E402,F401 - re-exported for check_A's readers
@@ -3627,8 +3628,21 @@ def _frontmatter_end(lines):
     return 0
 
 
+# CommonMark 6.6 permits > inside quoted values; a whole tag ends type 7's start.
+# Type-1 open names are excluded even when self-closing; closing names qualify.
+HTML_BLOCK_TYPE_7 = re.compile(
+    r"^ {0,3}(?:"
+    r"<(?!(?:script|pre|style|textarea)(?:[ \t\f\r/>]))[a-z][a-z0-9-]*"
+    r"(?:[ \t\f\r]+[a-z_:][a-z0-9_.:-]*"
+    r"(?:[ \t\f\r]*=[ \t\f\r]*(?:[^ \t\f\r\"'=<>`]+|\"[^\"]*\"|'[^']*'))?)*"
+    r"[ \t\f\r]*/?>|</[a-z][a-z0-9-]*[ \t\f\r]*>)[ \t]*$",
+    re.IGNORECASE | re.ASCII,
+)
+HTML_BLOCK_TYPE_6_TAGS = markdown_html_data.HTML_BLOCK_TYPE_6_TAGS
+
+
 def _fence_scan(text):
-    """Return (lines, 1-based EOF opener or 0), blanking fences, HTML 1-5 and inline comments within one cmark-gfm paragraph. Does not model HTML block types 6 and 7 or inline code spans hiding a comment opener."""
+    """Return (lines, 1-based EOF opener or 0), blanking fences, HTML 1-7 and inline comments within one cmark-gfm paragraph. Does not model inline code spans hiding a comment opener."""
 
     def leading(line):
         """The number of leading spaces in a tab-expanded line."""
@@ -3688,8 +3702,8 @@ def _fence_scan(text):
             end += 1
         return (body[:end], body[end:]) if end >= 3 else ("", "")
 
-    def html_end(line):
-        """The terminators of a CommonMark type 1 to 5 HTML block, or ()."""
+    def html_end(line, *, interrupt=False):
+        """HTML terminators, ("",) for blank-ended types 6/7, or ()."""
         if leading(line) > 3:
             return ()
         body = line.lstrip(" ")
@@ -3711,6 +3725,11 @@ def _fence_scan(text):
             "A" <= body[2:3] <= "Z" or "a" <= body[2:3] <= "z"
         ):
             return (">",)
+        tag_match = re.match(r"</?([A-Za-z][A-Za-z0-9-]*)(?=[ \t\f\r>]|/>|$)", body)
+        if tag_match and tag_match.group(1).lower() in HTML_BLOCK_TYPE_6_TAGS:
+            return ("",)
+        if not interrupt and HTML_BLOCK_TYPE_7.fullmatch(line):
+            return ("",)
         return ()
 
     def interrupts(line):
@@ -3730,7 +3749,7 @@ def _fence_scan(text):
             or heading(body)
             or thematic(body)
             or quote_prefix(line)
-            or html_end(line)
+            or html_end(line, interrupt=True)
             or column
         )
 
@@ -3738,7 +3757,8 @@ def _fence_scan(text):
     # drop its descendants, even when their absolute indentation still fits.
     containers = []
     boundaries = [0]
-    out, fence, opened, html, paragraph = [], "", 0, (), False
+    out, fence, opened, paragraph = [], "", 0, False
+    html: Tuple[str, ...] = ()
     for number, raw in enumerate(text.split("\n"), 1):
         line = raw.expandtabs(4).rstrip("\r")
         matched = 0
@@ -3777,11 +3797,14 @@ def _fence_scan(text):
                 fence, opened = "", 0
             out.append("")
             continue
+        # A blank belongs to the following block, unlike a marker end line.
+        if html == ("",) and not line.strip(" "):
+            html = ()
         if html:
             boundaries.append(len(out))
             # Type-1 end tags are case-insensitive HTML, unlike the literal
             # terminators of types 2 to 5; each still hides its entire end line.
-            if any(
+            if html != ("",) and any(
                 end in line.lower() if end.startswith("</") else end in line
                 for end in html
             ):
@@ -3809,12 +3832,12 @@ def _fence_scan(text):
             line = line[width:]
             paragraph = False
 
-        html = html_end(line)
+        html = html_end(line, interrupt=paragraph)
         if html:
             boundaries.append(len(out))
             # HTML blocks can end on their start line, so a complete comment
             # must hide that line's trailing text without consuming later prose.
-            if any(
+            if html != ("",) and any(
                 end in line.lower() if end.startswith("</") else end in line
                 for end in html
             ):
@@ -3861,7 +3884,7 @@ def _fence_scan(text):
 
 def _unfenced_lines(text):
     """The document's lines with container-aware fences, HTML blocks of types
-    1 to 5 and closed inline comments blanked, numbering kept (_fence_scan)."""
+    1 to 7 and closed inline comments blanked, numbering kept (_fence_scan)."""
     return _fence_scan(text)[0]
 
 
