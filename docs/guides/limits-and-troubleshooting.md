@@ -356,7 +356,7 @@ decision in the tree, so a reviewer sees it.
 | `structure.extra_toplevel` | `config/project.json` | check_B for a top-level directory the project adds |
 | `structure.project_checks` | `config/project.json` | nothing: it adds the project's own checks |
 | `work_naming.adoption_boundary` | `config/project.json` | check of commit trailers before the named commit |
-| `doc_drift.history_paths` | `config/project.json` | every rule of `tests/integration/test_doc_drift.py` for a Markdown file under a listed prefix |
+| `doc_drift.history_paths` | `config/project.json` | the prose rules of `tests/integration/test_doc_drift.py` for Markdown under a listed prefix; the excluded-path rule scans every shipped text source for paths under unconditional `docs/` exclusions only, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), and exempts only a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` |
 | `exempt` | `config/project.json` `e2e` | lets one named endpoint through `tests/integration/test_e2e_coverage.py` with no scenario, with the reason; a stale, redundant or reasonless entry is red |
 | `gaps` | `config/project.json` `traceability` | lets one named unit, a criterion or a requirement that has none, through `make trace` with no test, with the reason; an entry for a covered, undefined or malformed id is red, and a blank reason is refused |
 | `no_requirements` | `config/project.json` `traceability` | lets a project with zero requirements through `make trace`, with the reason; red once a requirement or a `req` marker exists |

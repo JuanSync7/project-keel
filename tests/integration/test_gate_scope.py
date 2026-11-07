@@ -1105,7 +1105,7 @@ def _floor_report():
 def test_every_target_that_needs_the_project_interpreter_checks_it_first():
     """`make audit-project` under the default PY (a host python3 3.6) died on a
     SyntaxError in scripts/audit_project.py instead of check-python's message
-    naming requires-python (bedrock-platform, docs/design/downstream-feedback.md).
+    naming requires-python (bedrock-platform).
     A target that runs a module or script the old interpreter cannot run must
     reach the floor first: as a prerequisite, or as an earlier recipe line where a
     prerequisite would run before the recipe's own usage checks. Derived from the
@@ -1570,9 +1570,8 @@ def test_ci_installs_the_scanner_then_scans():
 # writing them in the matched form would make this file its own first finding.) The range is DERIVABLE from check_structure.py, so nothing
 # here is a judgment call.
 #
-# CHANGELOG.md and docs/design/ are excluded on purpose: a changelog entry and a
-# design narrative record what was true at a point in time, and rewriting history
-# to match today is the opposite of the property this asserts.
+# A changelog records what was true at a point in time; other sources are
+# selected by Copier so an excluded cabinet cannot supply a shipped claim.
 # Two spellings, because only one of them was matched and the other went stale in
 # silence: the guides roster described what check_structure.py proves as a "list"
 # ending at S — with no leading "checks", so the narrower pattern never saw it —
@@ -1582,7 +1581,7 @@ def test_ci_installs_the_scanner_then_scans():
 _CLAIMED_RANGE = re.compile(
     r"checks\s+A[\u2013-]([A-Z])\b|\bA[\u2013-]([A-Z])\s+(?:list|set|range)\b"
 )
-_HISTORICAL = ("CHANGELOG.md", "docs/design/")
+_HISTORICAL = ("CHANGELOG.md",)
 
 
 def _highest_check_letter():
@@ -1597,28 +1596,60 @@ def test_every_shipped_description_of_the_gate_names_the_real_check_range():
     the reader believes it, and here so does every descendant project."""
     highest = _highest_check_letter()
     wrong = []
-    # check_structure's own walk, NOT `git ls-files`: this test ships verbatim into
-    # every generated project, and a generated project is not a git repository
-    # until its author runs `git init` — so the git form failed on arrival there,
-    # which is precisely the defect class this file exists to catch. (Caught by the
-    # answer-matrix guard in test_copier_generation.py, within one run of adding it.)
-    for dirpath, _dirnames, filenames in cs.walk(str(_ROOT)):
-        for filename in filenames:
-            if not filename.endswith((".md", ".py")):
-                continue
-            path = Path(dirpath) / filename
-            rel = str(path.relative_to(_ROOT))
-            if rel.startswith(_HISTORICAL):
-                continue
-            wrong.extend(
-                "%s claims checks A-%s" % (rel, claimed)
-                for match in _CLAIMED_RANGE.findall(
-                    path.read_text(encoding="utf-8", errors="replace")
-                )
-                for claimed in [next(g for g in match if g)]
-                if claimed != highest
-            )
+    from test_doc_drift import shipped_sources
+
+    if (_ROOT / "copier.yml").is_file():
+        texts, _binaries = shipped_sources(_ROOT)
+    else:
+        # A generated project may have no git repository yet.
+        texts = [
+            (str(path.relative_to(_ROOT)), path.read_text(encoding="utf-8"))
+            for dirpath, _dirs, files in cs.walk(str(_ROOT))
+            for name in files
+            if name.endswith((".md", ".py"))
+            for path in [Path(dirpath) / name]
+        ]
+    for rel, text in texts:
+        if not rel.removesuffix(".jinja").endswith((".md", ".py")):
+            continue
+        if rel.startswith(_HISTORICAL):
+            continue
+        wrong.extend(
+            "%s claims checks A-%s" % (rel, claimed)
+            for match in _CLAIMED_RANGE.findall(text)
+            for claimed in [next(g for g in match if g)]
+            if claimed != highest
+        )
     assert not wrong, (
         "check_structure.py defines checks through %s, but these shipped files "
         "describe a different gate: %s" % (highest, wrong)
     )
+
+
+def test_check_range_selection_respects_copier_exclusions(tmp_path, monkeypatch):
+    import test_doc_drift
+
+    if not (_ROOT / "copier.yml").is_file():
+        pytest.skip(test_doc_drift._TEMPLATE_ONLY)
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", tmp_path)
+    monkeypatch.setattr(
+        test_doc_drift,
+        "_git_listed",
+        lambda root: [
+            p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()
+        ],
+    )
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "check_structure.py").write_text("def check_Z(): pass\n")
+    private = tmp_path / "docs" / "private"
+    private.mkdir(parents=True)
+    record = private / "record.md"
+    record.write_text("checks A" + "-M\n")
+    config = tmp_path / "copier.yml"
+    config.write_text('_exclude: ["docs/private/"]\n')
+    assert record.is_file()
+    test_every_shipped_description_of_the_gate_names_the_real_check_range()
+    config.write_text('_exclude: ["scripts/"]\n')
+    with pytest.raises(AssertionError, match="record.md"):
+        test_every_shipped_description_of_the_gate_names_the_real_check_range()

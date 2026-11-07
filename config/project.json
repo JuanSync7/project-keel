@@ -12,6 +12,7 @@
     "scripts/README.md": "parity",
       ".gitignore": "divergence",
       "CHANGELOG.md": "divergence",
+      "docs/guides/generate-and-upgrade.md": "divergence",
       ".copier-answers.yml": "generated",
       ".gitlab-ci.yml": "generated"
     }

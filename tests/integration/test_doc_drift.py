@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites no document copier.yml `_exclude`s unconditionally, and cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. The excluded-path rule instead reads every shipped text source, with no history, table or fence waiver, using Copier's own matcher for unconditional exclusions under docs/ only; other exclusions (Copier defaults, generated views and template-only tools) and conditional exclusions are outside its class. It exempts a whole test module only when its module-level pytest.mark.skipif uses the copier-absent guard and the _TEMPLATE_ONLY reason. NUL-containing files are counted as binary and skipped. Jinja sources are read without rendering answers. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
 """
 
 import ast
@@ -504,68 +504,145 @@ def moment_and_host_findings(docs, policy, mention, port_root):
     return sorted(findings)
 
 
-def never_shipped_docs(root):
-    """The `.md` paths copier.yml `_exclude`s unconditionally -- documents no
-    generated project ever has. None when *root* is not the template."""
+def _unconditional_exclusions(root):
+    """Read unconditional Copier patterns, or None outside the template."""
     copier_yml = Path(root) / "copier.yml"
     if not copier_yml.is_file():
         return None
     yaml = optional_deps.importorskip("yaml", extra="template")
     cfg = yaml.safe_load(copier_yml.read_text(encoding="utf-8"))
     entries = cfg.get("_exclude") if isinstance(cfg, dict) else None
-    if not isinstance(entries, list):
-        raise DocDriftConfigError("copier.yml: `_exclude` is missing or not a list")
-    return sorted(
-        e for e in entries if isinstance(e, str) and "{%" not in e and e.endswith(".md")
-    )
+    if not isinstance(entries, list) or not all(
+        isinstance(e, str) and e.strip() for e in entries
+    ):
+        raise DocDriftConfigError("copier.yml: `_exclude` must list nonblank strings")
+    return sorted(e for e in entries if "{%" not in e)
 
 
-def _without_tables(text, column_sets):
-    """*text* with the body rows of each pipe table whose header carries one
-    of *column_sets* blanked, so line numbers are kept."""
-    lines = text.split("\n")
-    for columns in column_sets:
-        wanted = [c.lower() for c in columns]
-        for i, line in enumerate(lines):
-            header = [c.strip().lower() for c in line.strip().strip("|").split("|")]
-            if line.startswith("|") and all(c in header for c in wanted):
-                j = i + 2
-                while j < len(lines) and lines[j].startswith("|"):
-                    lines[j] = ""
-                    j += 1
-                break
-    return "\n".join(lines)
+def never_shipped_docs(root):
+    """Unconditional exclusions under docs/ only; None outside the template.
+
+    Copier defaults, generated views, template-only tools and conditional
+    exclusions are outside the citation gate; unreadable docs/ globs fail.
+    """
+    entries = _unconditional_exclusions(root)
+    if entries is None:
+        return None
+    excluded = [e for e in entries if e.strip().lstrip("/").startswith("docs/")]
+    if not excluded:
+        raise DocDriftConfigError("copier.yml: zero unconditional docs/ exclusions")
+    for entry in excluded:
+        path = entry.strip().strip("/")
+        if any(c in path for c in "*?[]\\") or ".." in Path(path).parts:
+            raise DocDriftConfigError(
+                "copier.yml: docs/ exclusion is not a readable path: %r" % entry
+            )
+    if not any((Path(root) / e.strip().strip("/")).is_dir() for e in excluded):
+        raise DocDriftConfigError("copier.yml: zero directory exclusions under docs/")
+    return excluded
 
 
-def citable_docs(docs, entry):
-    """*docs* as the never-shipped citation rule reads them: the upgrade
-    guide's exclusion and checklist tables name what never arrives, true in
-    every generated project, so their rows are left out; its prose is read
-    like any other document's."""
-    return [
-        (
-            p,
-            _without_tables(t, (_EXCLUSION_TABLE, _CHECKLIST_TABLE))
-            if _untwinned(p) == entry["upgrade_guide"]
-            else t,
-        )
-        for p, t in docs
-    ]
+def shipped_sources(root, files=None):
+    """Return shipped source texts and the number of NUL-containing binaries.
+
+    Plain sources replaced by template twins do not ship; twins are read raw.
+    """
+    from test_copier_shipping import _matcher
+
+    files = _git_listed(root) if files is None else files
+    if files is None:
+        raise DocDriftConfigError("cannot list shipped sources with git")
+    excluded = _unconditional_exclusions(root)
+    if excluded is None:
+        raise DocDriftConfigError("copier.yml: cannot derive shipped sources")
+    match = _matcher(excluded)
+    sources = []
+    binary_count = 0
+    shipped_count = 0
+    for path in files:
+        destination = _untwinned(path)
+        if match(destination) or (
+            not path.endswith(_TWIN_SUFFIX) and path + _TWIN_SUFFIX in files
+        ):
+            continue
+        shipped_count += 1
+        data = (Path(root) / path).read_bytes()
+        if b"\0" in data:
+            binary_count += 1
+            continue
+        sources.append((path, data.decode("utf-8")))
+    if not shipped_count:
+        raise DocDriftConfigError("zero shipped files")
+    return sources, binary_count
+
+
+def _template_only_module(relpath, text):
+    """Whether a test module has the copier-absent module skip marker."""
+    if (
+        not relpath.startswith("tests/")
+        or not Path(relpath).name.startswith("test_")
+        or not relpath.endswith(".py")
+    ):
+        return False
+    tree = ast.parse(text, filename=relpath)
+    bindings = {
+        node.targets[0].id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    }
+    marker = bindings.get("pytestmark")
+    markers = marker.elts if isinstance(marker, (ast.List, ast.Tuple)) else [marker]
+    for mark in markers:
+        if not isinstance(mark, ast.Call) or not mark.args:
+            continue
+        if ast.unparse(mark.func) != "pytest.mark.skipif":
+            continue
+        if ast.unparse(mark.args[0]) != "not (_ROOT / 'copier.yml').is_file()":
+            continue
+        reason = next((k.value for k in mark.keywords if k.arg == "reason"), None)
+        if isinstance(reason, ast.Name) and reason.id == "_TEMPLATE_ONLY":
+            reason = bindings.get(reason.id)
+        if isinstance(reason, ast.Constant) and reason.value == _TEMPLATE_ONLY:
+            return True
+    return False
+
+
+# Paths are read in raw source, including comments, tables and fences.
+_SOURCE_PATH = re.compile(
+    r"(?<![\w./-])(?:\.{1,2}/|/)?[\w.~*?\[\]+-]+"
+    r"(?:/[\w.~*?\[\]+-]+)*/?"
+)
 
 
 def excluded_citation_findings(docs, excluded):
-    """A shipped doc that names a never-shipped document, by link or by path,
-    dangles in every generated project."""
-    known = set(excluded)
+    """Find excluded paths at component boundaries in shipped source text."""
+    from test_copier_shipping import _matcher
+
+    match = _matcher(excluded)
     findings = []
     for relpath, text in docs:
-        findings.extend(
-            "%s: cites %s, which copier.yml `_exclude`s, so the citation "
-            "dangles in every generated project" % (relpath, target)
-            for target in sorted(
-                cs._document_references(_untwinned(relpath), text, known)
+        if _template_only_module(relpath, text):
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            targets = set()
+            for token in _SOURCE_PATH.finditer(line):
+                path = token.group().rstrip(".")
+                candidates = (
+                    path.lstrip("/"),
+                    posixpath.normpath(
+                        posixpath.join(posixpath.dirname(relpath), path)
+                    ),
+                )
+                for target in candidates:
+                    if match(target) or match(target.rstrip("/") + "/"):
+                        targets.add(target)
+                        break
+            findings.extend(
+                "%s:%s: names %s, which copier excludes" % (relpath, number, target)
+                for target in sorted(targets)
             )
-        )
     return findings
 
 
@@ -1453,36 +1530,161 @@ def test_a_planted_work_id_host_phrase_or_undeclared_port_reds_the_scan(
         assert scan(source + "\n" + planted + "\n") == []
 
 
-def test_no_shipped_doc_cites_a_document_the_template_never_ships(policy, entry, docs):
+def test_no_shipped_doc_cites_a_document_the_template_never_ships():
     excluded = never_shipped_docs(_ROOT)
     if excluded is None:
         pytest.skip(_TEMPLATE_ONLY)
-    assert excluded, "copier.yml `_exclude` names no unconditional .md -- zero items"
-    # The upgrade guide's inventory tables name what never arrives, as rule
-    # (d) demands; citable_docs leaves those rows out and reads its prose.
-    assert any(_untwinned(p) == entry["upgrade_guide"] for p, _t in docs), (
-        "the upgrade guide is not a shipped doc"
-    )
-    findings = excluded_citation_findings(citable_docs(docs, entry), excluded)
+    sources, _binaries = shipped_sources(_ROOT)
+    findings = excluded_citation_findings(sources, excluded)
     assert not findings, "\n".join(findings)
 
 
-def test_a_planted_citation_of_a_never_shipped_document_reds_the_scan(
-    tmp_path, policy, docs
-):
-    excluded = never_shipped_docs(_ROOT)
-    if excluded is None:
+def test_a_planted_citation_of_a_never_shipped_document_reds_the_scan(exclusion_tree):
+    findings = _planted_exclusion_findings(
+        exclusion_tree, "CONTRIBUTING.md", "See `docs/secret.md` for why.\n"
+    )
+    assert len(findings) == 1 and "docs/secret.md" in findings[0], findings
+
+
+@pytest.fixture
+def exclusion_tree(tmp_path):
+    if not (_ROOT / "copier.yml").is_file():
         pytest.skip(_TEMPLATE_ONLY)
-    assert excluded
-    doc = tmp_path / "CONTRIBUTING.md"
-    doc.write_text(
-        dict(docs)["CONTRIBUTING.md"] + "\nSee `%s` for why.\n" % excluded[0],
+    (tmp_path / "copier.yml").write_text(
+        '_exclude: ["copier.yml", "docs/private/", "docs/secret.md"]\n'
+        '_templates_suffix: ".jinja"\n_answers_file: ".copier-answers.yml"\n',
         encoding="utf-8",
     )
-    findings = excluded_citation_findings(
-        shipped_docs(tmp_path, policy["history_paths"]), excluded
+    cabinet = tmp_path / "docs" / "private"
+    cabinet.mkdir(parents=True)
+    (cabinet / "existing.md").write_text("private\n", encoding="utf-8")
+    return tmp_path
+
+
+def _planted_exclusion_findings(root, path, text):
+    target = root / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    excluded = never_shipped_docs(root)
+    assert excluded is not None
+    return excluded_citation_findings([(path, target.read_text())], excluded)
+
+
+def test_non_docs_exclusions_are_outside_the_citation_gate(exclusion_tree):
+    config = exclusion_tree / "copier.yml"
+    config.write_text(
+        config.read_text().replace(
+            '"docs/secret.md"', '"docs/secret.md", ".venv", "wiki/corpus.json"'
+        ),
+        encoding="utf-8",
     )
-    assert len(findings) == 1 and excluded[0] in findings[0], findings
+    text = "Use .venv and wiki/corpus.json.\n"
+    (exclusion_tree / "guide.md").write_text(text, encoding="utf-8")
+    venv = exclusion_tree / ".venv"
+    venv.mkdir()
+    (venv / "probe.py").write_text("# docs/private/existing.md\n")
+    excluded = never_shipped_docs(exclusion_tree)
+    assert excluded
+    sources, binaries = shipped_sources(exclusion_tree, ["guide.md", ".venv/probe.py"])
+    assert binaries == 0 and sources == [("guide.md", text)]
+    assert excluded_citation_findings(sources, excluded) == []
+
+
+def test_directory_exclusion_catches_existing_and_nonexistent_descendants(
+    exclusion_tree,
+):
+    findings = _planted_exclusion_findings(
+        exclusion_tree,
+        "guide.md",
+        "docs/private/existing.md\ndocs/private/nonexistent/record.md\n",
+    )
+    assert len(findings) == 2, findings
+    assert "existing.md" in findings[0] and "nonexistent/record.md" in findings[1]
+    (exclusion_tree / "probe.bin").write_bytes(b"docs/private/existing.md\0")
+    (exclusion_tree / "plain.md").write_text("docs/private/existing.md\n")
+    (exclusion_tree / "plain.md.jinja").write_text("A public twin.\n")
+    excluded = never_shipped_docs(exclusion_tree)
+    files = [
+        p.relative_to(exclusion_tree).as_posix()
+        for p in exclusion_tree.rglob("*")
+        if p.is_file()
+    ]
+    sources, binaries = shipped_sources(exclusion_tree, files)
+    assert binaries == 1
+    assert {p for p, _text in sources} == {"guide.md", "plain.md.jinja"}
+    assert len(excluded_citation_findings(sources, excluded)) == 2
+    assert (
+        excluded_citation_findings(
+            [("guide.md", "docs/private-sibling/existing.md\n")], excluded
+        )
+        == []
+    )
+    with pytest.raises(DocDriftConfigError, match="zero shipped files"):
+        shipped_sources(exclusion_tree, ["docs/private/existing.md"])
+    for entries, message in (
+        ("[]", "zero unconditional docs/ exclusions"),
+        (
+            '[".venv", "wiki/corpus.json"]',
+            "zero unconditional docs/ exclusions",
+        ),
+        (
+            '["docs/private/", "docs/private/*.md"]',
+            r"docs/private/\*.md",
+        ),
+        (
+            '["{% if enabled %}docs/private/{% endif %}"]',
+            "zero unconditional docs/ exclusions",
+        ),
+        ('["docs/secret.md"]', "zero directory exclusions"),
+    ):
+        (exclusion_tree / "copier.yml").write_text("_exclude: " + entries + "\n")
+        with pytest.raises(DocDriftConfigError, match=message):
+            never_shipped_docs(exclusion_tree)
+
+
+@pytest.mark.parametrize(
+    "path,text",
+    [
+        ("probe.py", "# docs/private/existing.md\n"),
+        ("probe.json", '{"path": "docs/private/existing.md"}\n'),
+        ("Makefile", "# docs/private/existing.md\n"),
+        ("guide.md.jinja", "{% if enabled %}docs/private/existing.md{% endif %}\n"),
+        ("docs/adr/K-0001.md", "[decision](../private/existing.md)\n"),
+        (
+            "guide.md",
+            "| Path | Arrives |\n|---|---|\n| `docs/private/existing.md` | never |\n",
+        ),
+        ("fenced.md", "```text\ndocs/private/existing.md\n```\n"),
+    ],
+)
+def test_excluded_mentions_count_in_every_source_context(exclusion_tree, path, text):
+    findings = _planted_exclusion_findings(exclusion_tree, path, text)
+    assert len(findings) == 1 and "docs/private/existing.md" in findings[0], findings
+    excluded = never_shipped_docs(exclusion_tree)
+    sources, binaries = shipped_sources(exclusion_tree, [path])
+    assert binaries == 0 and sources == [(path, text)]
+    assert excluded_citation_findings(sources, excluded) == findings
+
+
+def test_template_only_module_guard_is_the_whole_file_exemption(exclusion_tree):
+    guard = (
+        "import pytest\nfrom pathlib import Path\n"
+        "_ROOT = Path(__file__).resolve().parents[2]\n"
+        '_TEMPLATE_ONLY = "not a copier template — this is a generated project"\n'
+        "pytestmark = [pytest.mark.integration, pytest.mark.skipif(\n"
+        '    not (_ROOT / "copier.yml").is_file(), reason=_TEMPLATE_ONLY)]\n'
+    )
+    mention = "# docs/secret.md\n"
+    assert (
+        _planted_exclusion_findings(
+            exclusion_tree, "tests/test_probe.py", guard + mention
+        )
+        == []
+    )
+    findings = _planted_exclusion_findings(
+        exclusion_tree, "tests/test_probe.py", mention
+    )
+    assert len(findings) == 1, findings
 
 
 # --- rule (d) is advisory: a change phrase at an opener is review's --------
@@ -1783,11 +1985,9 @@ def test_the_upgrade_guide_names_every_copier_migration_task_and_exclusion(
     assert not findings, "\n".join(findings)
 
 
-@pytest.mark.parametrize(
-    "target", ["docs/design/keel-hardening-plan.md", "wiki/.runtime"]
-)
+@pytest.mark.parametrize("table", ["checklist", "exclusions"])
 def test_removing_a_migration_or_an_exclusion_from_the_upgrade_guide_reds_it(
-    entry, markdown, target
+    entry, markdown, table
 ):
     inventory = copier_inventory(_ROOT)
     if inventory is None:
@@ -1796,9 +1996,13 @@ def test_removing_a_migration_or_an_exclusion_from_the_upgrade_guide_reds_it(
     text = markdown[guide]
     assert upgrade_findings(guide, text, _ROOT, inventory) == []
     lines = text.split("\n")
-    # The row that names *target* in the table rule (d) reads it from: the
-    # checklist for a removed path, the exclusion table for an `_exclude`.
-    is_step = target in inventory["checklist"]
+    assert inventory[table], "the mutation must judge an inventory item"
+    is_step = table == "checklist"
+    target = next(
+        item
+        for item in inventory[table]
+        if not is_step or sum(item in items for _kind, items in inventory["steps"]) == 1
+    )
     columns = _CHECKLIST_TABLE if is_step else _EXCLUSION_TABLE
     header, _rows = cs._pipe_table(text, columns)
     start = next(
@@ -1888,26 +2092,11 @@ def test_removing_the_copier_version_floor_from_the_upgrade_guide_reds_it(
     assert len(findings) == 1 and floor in findings[0], findings
 
 
-def test_a_planted_prose_citation_in_the_upgrade_guide_reds_the_scan(
-    tmp_path, policy, entry, docs
-):
-    # The upgrade guide's inventory tables may name a never-shipped document;
-    # its prose may not, because there the citation dangles downstream.
-    excluded = never_shipped_docs(_ROOT)
-    if excluded is None:
-        pytest.skip(_TEMPLATE_ONLY)
-    assert excluded
-    guide = entry["upgrade_guide"]
-    source = dict(docs)[guide]
-    assert (
-        excluded_citation_findings(citable_docs([(guide, source)], entry), excluded)
-        == []
+def test_a_planted_prose_citation_in_the_upgrade_guide_reds_the_scan(exclusion_tree):
+    findings = _planted_exclusion_findings(
+        exclusion_tree, "docs/guides/upgrade.md", "See `docs/secret.md` for why.\n"
     )
-    planted = source + "\nSee `%s` for why.\n" % excluded[0]
-    findings = excluded_citation_findings(
-        citable_docs([(guide, planted)], entry), excluded
-    )
-    assert len(findings) == 1 and excluded[0] in findings[0], findings
+    assert len(findings) == 1 and "secret.md" in findings[0], findings
 
 
 def test_an_untracked_dot_directory_is_not_a_shipping_directory(tmp_path, manifest):

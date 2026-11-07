@@ -1144,7 +1144,7 @@ def test_a_migration_refusing_over_a_conflict_the_update_leaves_is_not_checked(
     update of this project will refuse the same way: the audit reports the tree
     copier leaves, names the job and its rerun under not checked, and exits on
     the findings, never 2 (bedrock-platform's restamp over its edited
-    check_structure.py, docs/design/downstream-feedback.md)."""
+    check_structure.py)."""
     tag = _migrating_template(
         template, [("job", "make job", True)], {"scripts/dep.py": "VALUE = 2\n"}
     )

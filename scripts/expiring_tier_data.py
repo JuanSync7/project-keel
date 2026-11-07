@@ -8,8 +8,7 @@ effect: read-only
 
 __all__ = ["CEILING", "CHECKS", "WARN_ONLY"]
 
-# The date the maintainer ruled (docs/design/downstream-feedback.md, rulings 9
-# and 10): from this day a project's own code that breaks a keel gate check is
+# The date the maintainer ruled (rulings 9 and 10): from this day a project's own code that breaks a keel gate check is
 # red, whatever its baseline records.
 CEILING = "2027-01-31"
 

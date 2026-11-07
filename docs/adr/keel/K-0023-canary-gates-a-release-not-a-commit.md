@@ -8,7 +8,7 @@ tags: [adr, release, canary, copier, update, gate]
 summary: "No gate ran a generated project's own make verify, fresh or after copier update, so a frontend app without a lockfile kept CI red for five days. scripts/canary.py (make canary) renders each config/project.json canary.answer_sets set fresh and as an update from the previous release tag and runs that project's make verify. It costs one whole project verify per set and path, so it runs before a release push, weekly and on demand, and never inside make verify; a red canary blocks the push in CONTRIBUTING.md's Release steps and nothing else."
 id: docs-adr-0023-canary-gates-a-release-not-a-commit
 created: 2026-10-17
-updated: 2026-10-18
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -27,8 +27,7 @@ structure gate, its pytest suite, the evals, the trace, the exit gate and the
 launcher. No test ran a generated project's whole `make verify`, with its
 lint, type check, frontend suites and doc checks, and no test ran it after a
 `copier update` from the previous release. The `react-vite` app shipped
-without a `package-lock.json` (open item 17 of
-`docs/design/downstream-feedback.md`), CI's npm resolved a tree of its own
+without a `package-lock.json` (the template defect), CI's npm resolved a tree of its own
 under another Node major, and CI stayed red for five days before anyone traced
 it.
 

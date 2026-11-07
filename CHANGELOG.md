@@ -41,6 +41,10 @@ version rather than a bare commit:
   harmless, including clustered short flags and their values. Unknown options,
   selection tokens and malformed quoting refuse through the exit helper;
   warning-filter values containing `::` pass. Tier targets and direct pytest may narrow without gate evidence.
+- **Shipped source paths respect unconditional docs/ exclusions (KEEL-CABINET-1).**
+  The document-drift gate reads all shipped text sources with Copier's matcher,
+  including history, tables and fences, and counts NUL-containing binaries.
+  Only test modules with the copier-absent module skip guard are exempt.
 
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying

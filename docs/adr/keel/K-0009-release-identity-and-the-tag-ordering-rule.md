@@ -8,7 +8,7 @@ tags: [adr, release, versioning, copier, upgrade, tags, changelog]
 summary: "keel's first release is the current main tip, not the 2026-08-04 commit its CHANGELOG named in anticipation. A version heading may only exist for a tag that exists, and a tag may only name a commit that no already-generated descendant is ahead of — because copier resolves an untagged template to a `.postN.devM` version that compares GREATER than the tag, and refuses to update downwards. Tagging the older commit would have broken `copier update` for every project generated from main."
 id: docs-adr-0009-release-identity-and-the-tag-ordering-rule
 created: 2026-09-02
-updated: 2026-10-12
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -16,8 +16,7 @@ canonical: true
 # ADR-K-0009: Release identity, and the tag-ordering rule
 
 **Status:** accepted. Completes pass 1 of the hardening plan
-(`docs/design/keel-hardening-plan.md` — keel's own worklist, which a generated
-project deliberately does not carry, so it is cited here rather than linked),
+(keel's own worklist),
 whose version-identity half has been outstanding since `d0a25c4`. Governs
 every future release.
 

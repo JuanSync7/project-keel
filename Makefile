@@ -113,7 +113,7 @@ new: check-python ## [local] Generate a NEW project from this template into DEST
 # DEST is never written: the update is predicted in a scratch copy removed on
 # exit, and DEST's files are data, never imported, made or hooked. Keel-only
 # doer (copier.yml `_exclude`); in a generated project this target only says
-# where the template checkout is (docs/design/downstream-feedback.md, CMP-1.S5).
+# where the template checkout is.
 # The floor is a recipe line after the stub and usage lines, not a
 # prerequisite: a prerequisite would run first, so a generated project's stub,
 # or a call without DEST, would answer with the interpreter's version instead.

@@ -8,7 +8,7 @@ tags: [adr, copier, update, check-structure, extension]
 summary: "A generated project adds its own structure checks as modules in a top-level directory it owns, named by config/project.json `structure.project_checks`, and never as an edit to scripts/check_structure.py. The gate runs each module's `check(root)` after every lettered check, in file-name order, reports each finding as `project:<stem>`, and turns every way a module can fail into an ERROR naming it. A project check only adds findings: no knob waives a template check. Every `copier update` after-migration refuses to run over a conflicted module it imports, exit 2, and the restamp leaves a conflicted document for the merge."
 id: docs-adr-0014-project-owned-structure-checks
 created: 2026-10-08
-updated: 2026-10-08
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -37,8 +37,7 @@ imports `check_structure` (directly, or through
 `scripts/jobs/review_docs.py`). In the rehearsal of keel slice project_keel:CMP-3.S2 the restamp migration
 died on a `SyntaxError` traceback at the first marker in that file, on both
 replicas. The traceback named neither the file to fix nor the command to run
-afterwards, and the update exited 1
-(keel slice project_keel:CMP-3.S2 in `docs/design/downstream-feedback.md`).
+afterwards, and the update exited 1.
 
 ## Decision
 

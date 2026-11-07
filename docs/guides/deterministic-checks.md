@@ -8,7 +8,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-06
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -675,8 +675,7 @@ in the 3.6 pre-commit hook. The work-naming rule has the same git half:
 the plan docs. The shipped-doc rule has a pytest half too:
 `tests/integration/test_doc_drift.py` refuses, in a shipped document's prose,
 a concrete campaign or slice id, a `doc_drift.forbidden_phrases` pattern, a
-loopback port no non-Markdown file declares, and a citation of a document
-copier.yml never ships (CONVENTIONS §15, `doc_drift`). It also refuses a cited
+loopback port no non-Markdown file declares, while its excluded-path rule scans every shipped text source for paths under unconditional `docs/` exclusions only, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), and exempts only a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` (CONVENTIONS §15, `doc_drift`). It also refuses a cited
 check that does not run: a `check_<LETTER>` or a prose "check H", "checks A–Z"
 whose letter `scripts/check_structure.py` `CHECKS` does not hold, and any other
 `check_<name>` that is neither a Python file stem nor a function or class the

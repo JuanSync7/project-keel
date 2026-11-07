@@ -8,7 +8,7 @@ tags: [adr, gate, copier, upgrade, policy]
 summary: "A keel gate test that adopts the expiring tier hands its finding lines to scripts/expiring_tier.py under a check id scripts/expiring_tier_data.py CHECKS registers. In the template repository, which holds copier.yml, every finding is red. In a generated project a finding whose identity (its line with the line number dropped) the baseline config/project.json expiring_tier.baseline names still records warns until expiring_tier.expires and is red from that day; an unrecorded finding and an entry no finding matches are red at once. make gate-baseline (scripts/record_gate_baseline.py, [tree,write]) writes the baseline from what the gate tests see, and may add entries only when .copier-answers.yml _commit differs from the commit the file records. expiring_tier.expires may be no later than CEILING, a keel-owned data file copier rewrites on every update. A hand edit is not prevented; review holds it."
 id: docs-adr-0027-a-project-s-own-code-warns-until-a-hard-date
 created: 2026-10-22
-updated: 2026-10-22
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -31,8 +31,7 @@ things went wrong with that.
   skipped in a generated project and only named what they saw, so a project's
   own direct read was never judged.
 
-The maintainer ruled (docs/design/downstream-feedback.md, B1 and rulings 9 and
-10) that a project's own code warns before it fails, until a hard date, and
+The maintainer ruled (B1 and rulings 9 and 10) that a project's own code warns before it fails, until a hard date, and
 that keel's own code stays red.
 
 ## Decision

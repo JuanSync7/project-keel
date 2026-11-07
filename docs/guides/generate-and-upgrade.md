@@ -8,7 +8,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-05
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -22,6 +22,8 @@ exclusion table names every `_exclude` entry; the update checklist gives every
 `_tasks` and every `_migrations` entry a row of its own, in the order copier
 runs them, with each script's exit codes; and the copier version floor below is
 the template's `_min_copier_version`.
+The shipped twin omits the template's private-document inventory and retirement
+row while this source guide retains the complete Copier inventory.
 
 ## Generate
 
