@@ -3653,6 +3653,46 @@ Will not do in CMP-18: move or revise K-0004, K-0005, K-0016, CONTRIBUTING.md's 
 The maintainer decides each of those documents.
 Extra moves and ADR retirement remain outside this campaign.
 
+## CMP-19 — every structure check has an id and a failing twin
+
+KEEL-CHECKID-1 closes row 44: a check can be registered without evidence that it
+has ever rejected a planted fault.
+The cap is three slices, one pass each and three review fix rounds each under
+CONVENTIONS §17. Stop at CMP-19.S3 green or the cap.
+
+| Slice | Capability | Proof | Status |
+|-------|------------|-------|--------|
+| CMP-19.S1 | Give every existing structure check one id, enforcement sentence and statically resolved fault-injection twin. | `tests/integration/test_check_twins_gate.py` rejects missing and stale rows, broken twins and zero rows. | planned |
+| CMP-19.S2 | Prove each twin depends on its named check rejecting the fault. | `test_each_twin_fails_with_a_silent_check` requires each twin to fail when its check is made silent, with a positive twin count. | planned |
+| CMP-19.S3 | Link practice enforcement references to check ids. | `test_practice_check_ids_resolve` rejects an unknown check id; valid references preserve existing verdicts. | planned |
+
+CMP-19.S1 owns `scripts/checks_data.py`, its mirror unit test,
+`tests/integration/test_check_twins_gate.py`, small fault-injection twins, the
+CONVENTIONS check-contract sentence, the feature row and the changelog row.
+The registry is declared data under CONVENTIONS §18, following
+`scripts/audit_dependencies_data.py`; there is no prose copy of its membership.
+The gate derives named check functions from source and resolves twin functions
+by parsing their test modules without executing them.
+A check helper outside the dispatch naming grammar is not a registered check.
+The gate proves twin existence, not that a twin's assertion is meaningful.
+Existing behavior tests and review establish the latter.
+
+CMP-19.S2 owns the twin-dependence tests and any twin repairs they expose.
+It derives its cases from the registry and runs each twin with that check
+made silent, requiring the twin's assertion to fail.
+S1 registers 26 checks: 19 twins already existed, seven short twins were
+written, and zero ids are deferred. The S2 empty-twin backlog is empty;
+an empty twin is always a finding. No blanket exemption permits one.
+
+CMP-19.S3 owns the practice-reference migration, its loader and gate changes,
+and their tests and documentation. It reuses the S1 registry rather than
+introducing another list of checks.
+
+Will not do in CMP-19: change check behavior, inventory project-owned checks or
+other gate families, execute twins during static resolution, introduce a
+mutation-testing service, or merge check ids into requirement and goal ids.
+The requirement traceability prefix registry serves only those two families.
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
@@ -3749,7 +3789,7 @@ The CMP-7 opening pass proposes the rows below. Their positions are proposals th
 
 | Position | Queue id | Gap | Status |
 |----------|----------|-----|--------|
-| 44 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1; found by the CMP-7 opening pass; after CMP-7, at the position the maintainer picks | planned: after the CMP-15.S2 and CMP-16.S1 lanes land. Both lanes have landed, so this row is eligible |
+| 44 | KEEL-CHECKID-1 | No check has an id of its own and no registered check names a fault-injection twin, so nothing fails a check that was never shown failing; the study's slice 1; found by the CMP-7 opening pass; after CMP-7, at the position the maintainer picks | planned: CMP-19 gives every structure check an id and a fault-injection twin |
 | 45 | KEEL-GENRE-1 | 26 tracked `kind: doc` files ending `.md` (27 with the `.jinja` twin of `docs/guides/README.md`) carry no facet saying what form of document each is; the study calls the facet `form` and the inventory `genre`, and its name is open; found by the CMP-7 opening pass | planned: the facet is `form`, with the closed values guide, reference, index, explanation, runbook. Row 60 KEEL-BATCH-1 uses the same field |
 | 46 | KEEL-CHLOG-1 | An unknown `CHANGELOG.md` heading and a "wip" commit subject pass, and no `commit-msg` hook exists; the study's slice 3, after KEEL-FRAG-1, which changes how the changelog is written; found by the CMP-7 opening pass | planned |
 | 47 | KEEL-VOCAB-1 | No reject list runs over prose: `change_comments.phrases` reads code comments only; the study's slice 6, overlapping KEEL-DOC-2 (lane L8); found by the CMP-7 opening pass | planned |
