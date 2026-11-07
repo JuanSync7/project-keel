@@ -102,7 +102,10 @@ _AUTHORITY_END = re.compile(r"[/?#]")
 #    The port is what separates it from ordinary values with `x:y@z` in them: a
 #    glibc LANGUAGE list (`sr_RS:sr@latin`), USER's `name@domain` and an
 #    scp-style `git@host:org/repo` never end in `@host:digits`.
-_BARE_AUTHORITY = re.compile(r"^[^\s/@]+@(?:\[[0-9A-Fa-f:.]+\]|[^\s/@:\[\]]+):[0-9]+$")
+# Keep detecting credentials followed by one terminal newline, as `$` did.
+_BARE_AUTHORITY = re.compile(
+    r"^[^\s/@]+@(?:\[[0-9A-Fa-f:.]+\]|[^\s/@:\[\]]+):[0-9]+\n?\Z"
+)
 # 3. A variable a proxy reader takes is judged as that reader reads it.
 #    urllib.request.getproxies_environment takes every variable whose lower-cased
 #    name ends in this suffix (curl reads `<scheme>_proxy` and ALL_PROXY), and

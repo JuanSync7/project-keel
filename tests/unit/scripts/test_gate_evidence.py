@@ -657,16 +657,17 @@ def test_a_missing_block_names_every_key_it_lacks_before_one_refusal(repo, capsy
     assert lines[2].startswith("gate_evidence: refused before any goal ran: "), lines
 
 
-@pytest.mark.parametrize("gate", ["Verify", "../x", "a/b", "", "-v"])
+@pytest.mark.parametrize("gate", ["Verify", "../x", "a/b", "", "-v", "verify\n"])
 def test_a_malformed_gate_token_is_refused(repo, gate):
     runner = _Runner()
     assert ge.main(["--gate", gate, "--", "make", "test"], runner) == 2
     assert runner.calls == [] and not (repo / ".evidence").exists()
 
 
-def test_a_malformed_goal_is_refused(repo):
+@pytest.mark.parametrize("goal", ["../x", "test\n"])
+def test_a_malformed_goal_is_refused(repo, goal):
     runner = _Runner()
-    assert ge.main(["--gate", "verify", "--", "make", "../x"], runner) == 2
+    assert ge.main(["--gate", "verify", "--", "make", goal], runner) == 2
     assert runner.calls == [] and not (repo / ".evidence").exists()
 
 

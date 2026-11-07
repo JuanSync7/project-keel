@@ -213,7 +213,8 @@ def test_previous_tag_is_the_newest_released_heading_that_is_a_strict_ancestor_o
     assert canary.previous_tag(_CHANGELOG, none, "here") is None
 
 
-def test_the_release_heading_grammar_takes_only_dated_version_headings():
+@pytest.mark.parametrize("ending", ["", "\n"])
+def test_the_release_heading_grammar_takes_only_dated_version_headings(ending):
     text = (
         "## [1.2.3] — 2026-01-02\n"
         "## [1.2.4]\n"
@@ -222,9 +223,9 @@ def test_the_release_heading_grammar_takes_only_dated_version_headings():
         " ## [1.2.7] — 2026-01-02\n"
         "## [1.2.8] — 2026-13-40\n"
         "## [Unreleased]\n"
-        "## [0.9.0] — 2025-12-31\n"
+        "## [0.9.0] — 2025-12-31"
     )
-    assert canary.released_versions(text) == ["1.2.3", "0.9.0"]
+    assert canary.released_versions(text + ending) == ["1.2.3", "0.9.0"]
 
 
 def test_no_qualifying_tag_refuses_with_usage_before_any_render(root, capsys):

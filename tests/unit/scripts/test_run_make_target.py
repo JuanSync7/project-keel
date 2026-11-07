@@ -72,7 +72,9 @@ def test_safe_targets_accepted(name):
     assert rmt.is_safe_target(name)
 
 
-@pytest.mark.parametrize("name", ["", "a b", "a;rm -rf /", "$(x)", "a|b", "-x", ".x"])
+@pytest.mark.parametrize(
+    "name", ["", "a b", "a;rm -rf /", "$(x)", "a|b", "-x", ".x", "verify\n"]
+)
 def test_unsafe_targets_rejected(name):
     assert not rmt.is_safe_target(name)
 
@@ -174,7 +176,7 @@ def test_a_target_outside_the_gate_effects_is_refused_unrun(proj, target, expect
 
 
 @pytest.mark.parametrize(
-    "arg", ["-f", "--file=other.mk", "-C", "check", "1BAD=x", "-e"]
+    "arg", ["-f", "--file=other.mk", "-C", "check", "1BAD=x", "-e", "PY=python3\n"]
 )
 def test_an_extra_argument_that_is_not_a_variable_is_refused(proj, arg):
     runner = _fake(0)
@@ -182,6 +184,17 @@ def test_an_extra_argument_that_is_not_a_variable_is_refused(proj, arg):
         "check", cwd=str(proj), extra=[arg], runner=runner, snapshot=_never
     )
     assert res["refused"] and "NAME=VALUE" in res["refused"], res
+    assert runner.calls == []
+
+
+def test_a_bare_identifier_argument_is_refused_without_echoing_it(proj):
+    arg = "PastedSecretToken"
+    runner = _fake(0)
+    res = rmt.run_target(
+        "check", cwd=str(proj), extra=[arg], runner=runner, snapshot=_never
+    )
+    assert res["refused"].startswith("argument is not a NAME=VALUE"), res
+    assert arg not in json.dumps(res), "the refusal carries the raw argument"
     assert runner.calls == []
 
 
@@ -222,6 +235,7 @@ def test_a_variable_outside_gate_vars_is_refused(proj, arg):
         "'q'",
         "a#b",
         "x\ny",
+        "python3\n",
     ],
 )
 def test_a_gate_variable_whose_value_is_not_one_plain_word_is_refused(proj, value):
@@ -232,6 +246,7 @@ def test_a_gate_variable_whose_value_is_not_one_plain_word_is_refused(proj, valu
         "check", cwd=str(proj), extra=["PY=" + value], runner=runner, snapshot=_never
     )
     assert res["refused"] and "PY" in res["refused"], res
+    assert value not in res["refused"], "the refusal carries the value"
     assert runner.calls == []
 
 
@@ -322,9 +337,10 @@ def test_a_timeout_is_red_and_still_checks_the_tree(proj):
     assert snap.left == []
 
 
-def test_run_target_rejects_an_unsafe_target_name():
+@pytest.mark.parametrize("target", ["a; rm -rf /", "verify\n"])
+def test_run_target_rejects_an_unsafe_target_name(target):
     with pytest.raises(ValueError):
-        rmt.run_target("a; rm -rf /", runner=_fake(0))
+        rmt.run_target(target, runner=_fake(0))
 
 
 def test_main_exits_2_on_an_unsafe_name():
@@ -361,10 +377,11 @@ def test_an_explicit_gate_variable_wins_over_the_environment(proj, monkeypatch):
     assert runner.calls[0][0] == ["make", "check", "PY=/a", "RALPH=1"]
 
 
+@pytest.mark.parametrize("value", ["python3 ; make deploy-apply RALPH=", "python3\n"])
 def test_a_gate_variable_in_the_environment_that_is_not_one_word_is_refused(
-    proj, monkeypatch
+    proj, monkeypatch, value
 ):
-    monkeypatch.setenv("PY", "python3 ; make deploy-apply RALPH=")
+    monkeypatch.setenv("PY", value)
     runner = _fake(0)
     res = rmt.run_target("check", cwd=str(proj), runner=runner, snapshot=_never)
     assert res["refused"] and "PY" in res["refused"], res
@@ -397,6 +414,7 @@ _CREDENTIALED_GATE_VALUES = [
     "http://alice:s3cr3t-pw@x y",
     "http://alice:s3cr3t-pw@x",
     "alice:s3cr3t-pw@x:1",
+    "alice:s3cr3t-pw@x:1\n",
 ]
 
 

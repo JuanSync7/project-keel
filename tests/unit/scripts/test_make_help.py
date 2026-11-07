@@ -55,7 +55,7 @@ def test_an_effect_filter_keeps_every_label_containing_the_word():
     ]
 
 
-@pytest.mark.parametrize("word", ["bogus", "?", "tree,read"])
+@pytest.mark.parametrize("word", ["bogus", "?", "tree,read", "tree\n"])
 def test_an_unknown_effect_is_refused_naming_the_vocabulary(word):
     with pytest.raises(ValueError) as exc:
         mh.group(_LINES, _HEADERS, "", word)

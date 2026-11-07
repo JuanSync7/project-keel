@@ -61,8 +61,9 @@ def test_a_never_committed_document_is_held_only_to_today_when_modified():
     assert len(_find(("new.md", "2026-01-01", None, True))) == 1
 
 
-def test_a_stamp_that_is_not_a_date_is_a_finding():
-    out = _find(("a.md", "yesterday", "2026-08-18", False))
+@pytest.mark.parametrize("stamp", ["yesterday", "2026-09-02\n"])
+def test_a_stamp_that_is_not_a_date_is_a_finding(stamp):
+    out = _find(("a.md", stamp, "2026-08-18", False))
     assert len(out) == 1 and "not a date" in out[0]["reason"]
 
 
@@ -677,10 +678,12 @@ def test_a_run_date_config_fault_is_answered_with_the_config_fix(
         (None, "tomorrow"),
         (None, ""),
         (None, "1.5"),
+        (None, "0\n"),
         # Digits, but past datetime's year 9999: fromtimestamp raises, and an
         # uncaught raise exits 1, which in `--check` means "would restamp".
         (None, "99999999999999"),
         ("2026-9-2", None),
+        ("2026-09-02\n", None),
         ("2026-02-30", None),
     ],
 )

@@ -81,7 +81,7 @@ def is_safe_target(name: str) -> bool:
     the tree. Read-only-ness is the effect label's claim (check_W), which
     run_target checks and then tests by snapshotting the tree.
     """
-    return bool(_TARGET_RE.match(name or ""))
+    return bool(_TARGET_RE.fullmatch(name or ""))
 
 
 # Named here as the runner's own refusal: run_target turns it into one, and a
@@ -393,12 +393,20 @@ def run_target(
     root = os.path.abspath(cwd or os.getcwd())
     extra = list(extra or [])
     for arg in extra:
-        if not _VARIABLE_ARG.match(arg):
+        if not _VARIABLE_ARG.fullmatch(arg):
+            # Syntax refusal precedes credential detection, so only a validated
+            # variable name before `=` may be shown; a bare token could be a secret.
+            name = arg.split("=", 1)[0]
+            label = (
+                "`%s`" % name
+                if "=" in arg and _VARIABLE_ARG.fullmatch(name + "=")
+                else "argument"
+            )
             return _refusal(
                 target,
-                "`%s` is not a NAME=VALUE make variable -- a gate run passes only "
+                "%s is not a NAME=VALUE make variable (value not shown) -- a gate run passes only "
                 "variables, never a flag (`-f`/`-C` would run a makefile whose "
-                "labels were never read) or another goal" % arg,
+                "labels were never read) or another goal" % label,
             )
     manifest, policy, why = _policy(root)
     if policy is None:
@@ -433,7 +441,7 @@ def run_target(
     for name in sorted(allowed):
         if name in given or name not in os.environ:
             continue
-        if not _GATE_VALUE.match(os.environ[name]):
+        if not _GATE_VALUE.fullmatch(os.environ[name]):
             # The value is never quoted: a credential in a form no rule
             # recognises would otherwise reach the caller's log.
             return _refusal(
@@ -465,7 +473,7 @@ def run_target(
                 "line reaches every recipe and any `ps`; pass the program without "
                 "the credential" % (name, label),
             )
-        if not _GATE_VALUE.match(value):
+        if not _GATE_VALUE.fullmatch(value):
             return _refusal(
                 target,
                 "`%s`'s value is not one path-like word (value not shown) -- a "

@@ -178,7 +178,7 @@ def _pragma_lines(text):
     try:
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
             if tok.type == tokenize.COMMENT:
-                m = _PRAGMA_RE.match(tok.string.strip())
+                m = _PRAGMA_RE.fullmatch(tok.string.strip())
                 if m:
                     out[tok.start[0]] = m.group(1).strip()
     except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):  # noqa: DROP001 -- every caller passes text ast.parse accepted, and such text tokenizes
@@ -234,7 +234,7 @@ def _allcaps_value_ids(tree):
         else:
             continue
         if not any(
-            isinstance(t, ast.Name) and _ALLCAPS_RE.match(t.id) for t in targets
+            isinstance(t, ast.Name) and _ALLCAPS_RE.fullmatch(t.id) for t in targets
         ):
             continue
         val = getattr(node, "value", None)

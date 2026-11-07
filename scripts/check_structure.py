@@ -3901,14 +3901,14 @@ def _anchors(text):
     body = lines[_frontmatter_end(lines) :]
     for i, line in enumerate(body):
         heading = None
-        m = _ATX_HEADING.match(line)
+        m = _ATX_HEADING.fullmatch(line)
         if m:
             heading = m.group(1)
         elif (
             line.strip()
             and not line.lstrip().startswith(("|", "#", "-", "=", ">", "*", "+"))
             and i + 1 < len(body)
-            and _SETEXT_UNDERLINE.match(body[i + 1])
+            and _SETEXT_UNDERLINE.fullmatch(body[i + 1])
         ):
             heading = line.strip()
         if heading is not None:
@@ -4164,8 +4164,8 @@ def _make_rules(text):
             or _MAKE_CONDITIONAL.match(line)
         ):
             continue
-        m = _MAKE_RULE.match(line)
-        if not m or re.match(r"^\.[A-Z_]+$", m.group(1)):
+        m = _MAKE_RULE.fullmatch(line)
+        if not m or re.fullmatch(r"\.[A-Z_]+", m.group(1)):
             current = None
             continue
         current = m.group(1)
@@ -4629,7 +4629,7 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     practice's `enforced_by`, a writer's `rerun_proof:`. Split out of
     _mechanism_findings rather than duplicated, because two graders of the same
     grammar drift and the drift is invisible until one of them is wrong."""
-    m = _MECHANISM_RE.match(str(ref))
+    m = _MECHANISM_RE.fullmatch(str(ref))
     if not m:
         return "names '%s', which is not in the mechanism grammar (%s)" % (
             _shown(ref),
@@ -5537,7 +5537,7 @@ def make_target_rules(text, specials=None):
         if re.match(r"^\s*(?:override\s+|export\s+)?define\b", line):
             define_depth, current = 1, []
             continue
-        m = _RULE_HEAD.match(line)
+        m = _RULE_HEAD.fullmatch(line)
         if not m:
             current = []
             continue
@@ -5563,9 +5563,9 @@ def make_target_rules(text, specials=None):
             (unresolved if word.startswith("$") else prereqs).append(word)
         current = []
         for name in names:
-            if _SPECIAL_TARGET.match(name) and specials is not None:
+            if _SPECIAL_TARGET.fullmatch(name) and specials is not None:
                 specials.append((name, start + 1))
-            if name.startswith("$") or _SPECIAL_TARGET.match(name):
+            if name.startswith("$") or _SPECIAL_TARGET.fullmatch(name):
                 continue
             rec = {
                 "target": name,
@@ -5665,7 +5665,7 @@ def _kept_dirs_errors(kept, where):
     for key in sorted(kept):
         value = kept[key]
         name = "%s.%s" % (key_path, config_loader.shown(key, bare=True))
-        if not _KEPT_DIR_NAME.match(key):
+        if not _KEPT_DIR_NAME.fullmatch(key):
             errs.append(name + " is not an upper-case environment variable name")
         elif key == _SANDBOXED_HOME:
             errs.append(
@@ -5749,7 +5749,7 @@ def make_targets_policy(manifest):
                 "names (the variables CI and gate runs set)"
             )
         else:
-            bad = [v for v in unattended if not _MAKE_NAME.match(v)]
+            bad = [v for v in unattended if not _MAKE_NAME.fullmatch(v)]
             dup = sorted({v for v in unattended if unattended.count(v) > 1})
             if bad:
                 errs.append(
@@ -5763,7 +5763,7 @@ def make_targets_policy(manifest):
                 unattended_ok = True
     if "gate_runner_var" in block:
         runner = block["gate_runner_var"]
-        if not isinstance(runner, str) or not _MAKE_NAME.match(runner):
+        if not isinstance(runner, str) or not _MAKE_NAME.fullmatch(runner):
             errs.append(where + "gate_runner_var must be a make variable name")
         elif unattended_ok and runner not in unattended:
             errs.append(
@@ -5800,7 +5800,7 @@ def make_targets_policy(manifest):
         if not _is_name_list(shapes):
             errs.append(where + "write_shapes must be a list of name suffixes")
         else:
-            bad = [s for s in shapes if not _WRITE_SHAPE.match(s)]
+            bad = [s for s in shapes if not _WRITE_SHAPE.fullmatch(s)]
             if bad:
                 errs.append(
                     where
@@ -5811,7 +5811,7 @@ def make_targets_policy(manifest):
         area_dir = block["area_dir"]
         if area_dir is not None and not (
             isinstance(area_dir, str)
-            and _AREA_DIR_NAME.match(area_dir)
+            and _AREA_DIR_NAME.fullmatch(area_dir)
             and area_dir not in (".", "..")
         ):
             errs.append(
@@ -5861,7 +5861,7 @@ def make_targets_policy(manifest):
             )
         else:
             for key in sorted(empty):
-                if not _MARKER_NAME.match(key):
+                if not _MARKER_NAME.fullmatch(key):
                     errs.append(
                         where + "empty_test_selections.%s is not a bare pytest "
                         "marker name -- only a `-m <marker>` selection can be "
@@ -5881,7 +5881,7 @@ def make_targets_policy(manifest):
                 "NAME=VALUE variables a gate run may set, e.g. PY)"
             )
         else:
-            bad = [v for v in gate_vars if not _MAKE_NAME.match(v)]
+            bad = [v for v in gate_vars if not _MAKE_NAME.fullmatch(v)]
             owned = [
                 v
                 for v in gate_vars
@@ -6196,7 +6196,7 @@ def _area_findings(makefiles, by_file, area_dir):
     headers = {}
     for relpath, text in makefiles:
         for lineno, line in enumerate(text.split("\n"), 1):
-            m = AREA_HEADER.match(line)
+            m = AREA_HEADER.fullmatch(line)
             if m:
                 headers.setdefault(relpath, []).append((lineno, m.group(1)))
     if area_dir is None:
@@ -6227,7 +6227,7 @@ def _area_findings(makefiles, by_file, area_dir):
         if not fname.endswith(".mk"):
             continue
         relpath, area = area_dir + "/" + fname, fname[: -len(".mk")]
-        if not _KEBAB.match(area):
+        if not _KEBAB.fullmatch(area):
             errs.append(
                 "%s: `%s` is not a kebab-case area name -- an area makefile is "
                 "<area>.mk with a lower-case, hyphenated name" % (relpath, area)
@@ -7373,7 +7373,7 @@ def adr_policy(manifest):
             "%s.template_adrs names %s, not a %s-<slug>.md file name"
             % (_ADR_BLOCK, _quoted(name), shape)
             for name in owned
-            if not template_re.match(name)
+            if not template_re.fullmatch(name)
         )
         errs.extend(
             "%s.template_adrs names %s twice" % (_ADR_BLOCK, _quoted(name))
@@ -7416,7 +7416,7 @@ def adr_inventory(policy):
             )
         found = []
         for name in names:
-            m = grammar.match(name)
+            m = grammar.fullmatch(name)
             found.append((m.group(1) if m else None, policy[key] + "/" + name))
         out[space] = found
     return out
@@ -7509,7 +7509,7 @@ def check_Y():
     project_re, template_re = _adr_grammars(policy)
     for number, path in spaces["project"]:
         name = path.rsplit("/", 1)[1]
-        if template_re.match(name) or name.startswith(prefix):
+        if template_re.fullmatch(name) or name.startswith(prefix):
             err(
                 "%s: an ADR named with the template prefix '%s' is a template "
                 "ADR; it belongs in %s, not in the project space %s"
@@ -7728,7 +7728,7 @@ def work_naming_policy(manifest):
         value = block[key]
         if not isinstance(value, str) or not value.strip():
             errs.append("%s.%s must be a non-empty string" % (_WORK_BLOCK, key))
-        elif key != "slice_column" and not _TRAILER_KEY.match(value):
+        elif key != "slice_column" and not _TRAILER_KEY.fullmatch(value):
             errs.append(
                 "%s.%s must be a git trailer key (letters, digits and hyphens), "
                 "got %s" % (_WORK_BLOCK, key, _quoted(value))
@@ -7737,7 +7737,7 @@ def work_naming_policy(manifest):
     if (
         isinstance(slice_key, str)
         and isinstance(backlog_key, str)
-        and _TRAILER_KEY.match(slice_key)
+        and _TRAILER_KEY.fullmatch(slice_key)
         and slice_key.lower() == backlog_key.lower()
     ):
         errs.append(
@@ -7927,7 +7927,7 @@ def parse_plan(text, policy, own_name):
             )
     headings = {}
     for i, line in enumerate(lines):
-        if _ATX_HEADING.match(line):
+        if _ATX_HEADING.fullmatch(line):
             level = len(line) - len(line.lstrip("#"))
             campaigns = sorted(
                 {

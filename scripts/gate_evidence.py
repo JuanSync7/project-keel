@@ -478,12 +478,12 @@ def main(argv=None, runner=None, clock=None):
             return ExitCode.SUCCESS
         return _refuse("argparse refused the arguments above", usage)
     root = os.getcwd()
-    if not _GATE.match(args.gate):
+    if not _GATE.fullmatch(args.gate):
         return _refuse(
             "--gate %r is not a gate token ([a-z0-9][a-z0-9-]*)" % args.gate, usage
         )
     make, goals = (command[0], command[1:]) if command else (None, [])
-    bad = [g for g in goals if not _GOAL.match(g)]
+    bad = [g for g in goals if not _GOAL.fullmatch(g)]
     if bad:
         return _refuse("goal(s) %s are not make target tokens" % ", ".join(bad), usage)
     try:

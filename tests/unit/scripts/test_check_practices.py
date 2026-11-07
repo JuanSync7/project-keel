@@ -22,6 +22,13 @@ from exit_codes import ExitCode  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("ending", ["", "\n"])
+def test_a_pragma_is_read_as_a_comment_line(ending):
+    assert cp._pragma_lines("# practice-ok: injected dependency" + ending) == {
+        1: "injected dependency"
+    }
+
+
 # --- dependency-injection smell ------------------------------------------------
 
 

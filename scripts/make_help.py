@@ -26,7 +26,7 @@ def _area_of(headers):
     `##@ name  about` line names its area."""
     out = {}
     for relpath, line in headers:
-        m = check_structure.AREA_HEADER.match(line.rstrip("\n"))
+        m = check_structure.AREA_HEADER.fullmatch(line.rstrip("\n"))
         if m and relpath not in out:
             out[relpath] = (m.group(1), (m.group(2) or "").strip())
     return out
@@ -57,7 +57,7 @@ def group(grep_lines, headers, area, effect):
             )
     groups, order = {}, []
     for line in grep_lines:
-        m = _GREP_LINE.match(line.rstrip("\n"))
+        m = _GREP_LINE.fullmatch(line.rstrip("\n"))
         if not m:
             continue
         relpath, target, help_ = m.group(1), m.group(2), m.group(3).strip()

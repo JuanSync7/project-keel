@@ -38,6 +38,11 @@ version rather than a bare commit:
   states the positive-integer and exit-condition checks and the absence of a
   measuring gate; the Python style guide names the configured type-check scope.
   A reader-backed drift test rejects the former measuring-test claim.
+- **Whole-value checks reject trailing newlines (KEEL-GATEVAL-NL-1).**
+  Gate arguments, environment values and configured names use fullmatch;
+  a refused gate argument is no longer echoed.
+  A source-scanning gate rejects dollar-anchored match calls outside
+  explicit multiline scans, with synthetic cases proving detection.
 - **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
   The Python 3.6-safe `scripts/project_python.py` launcher uses the current
   tree's venv, then the main checkout's, preserving arguments, stdin and the

@@ -1364,7 +1364,8 @@ def test_login_name_schemes_default_to_none_and_are_validated():
         assert "child_env.login_name_schemes" in errs[0], errs
 
 
-def test_carries_credential_without_a_policy_keeps_its_structural_rules():
+@pytest.mark.parametrize("ending", ["", "\n"])
+def test_carries_credential_without_a_policy_keeps_its_structural_rules(ending):
     """No policy means no patterns and no login schemes: the call answers with
     the structural label alone, so a value it once refused is still refused."""
     assert (
@@ -1372,7 +1373,7 @@ def test_carries_credential_without_a_policy_keeps_its_structural_rules():
         == "url-userinfo"
     )
     assert (
-        child_env.carries_credential("SVC_URL", "u:" + "p@proxy:3128")
+        child_env.carries_credential("SVC_URL", "u:" + "p@proxy:3128" + ending)
         == "bare-authority"
     )
     assert child_env.carries_credential("https_proxy", "tok@proxy") == "proxy-userinfo"

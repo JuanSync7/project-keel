@@ -253,6 +253,13 @@ def test_read_refusals_ignores_lines_that_are_not_a_refusal(text):
     assert conflict_guard.read_refusals(text) == []
 
 
+def test_a_refusal_item_must_consume_its_whole_value():
+    text = "job: %s: a.py (line 3)\n; resolve them, then run `make job`\n" % (
+        conflict_guard.REFUSAL,
+    )
+    assert conflict_guard.read_refusals(text) == []
+
+
 def test_a_conflicted_declared_read_is_named_with_its_line(tmp_path, capsys):
     """A data file the job's module declares reading is guarded like an
     import: a hunk in it refuses the job by file and line."""

@@ -551,13 +551,13 @@ def _heading(lines: Sequence[str], index: int) -> tuple[int, str, bool] | None:
     three spaces and for a setext heading (a text line with a line of `=` or
     `-` under it), which a renderer shows as headings just the same."""
     line = lines[index]
-    plain = cs._ATX_HEADING.match(line)
+    plain = cs._ATX_HEADING.fullmatch(line)
     if plain is not None:
         return len(line) - len(line.lstrip("#")), plain.group(1), True
     inner = line.lstrip(" ")
     indent = len(line) - len(inner)
     if 0 < indent <= _HEADING_INDENT_MAX:
-        indented = cs._ATX_HEADING.match(inner)
+        indented = cs._ATX_HEADING.fullmatch(inner)
         if indented is not None:
             return len(inner) - len(inner.lstrip("#")), indented.group(1), False
     below = lines[index + 1] if index + 1 < len(lines) else ""
@@ -566,7 +566,7 @@ def _heading(lines: Sequence[str], index: int) -> tuple[int, str, bool] | None:
     if (
         line.strip()
         and below.strip()
-        and cs._SETEXT_UNDERLINE.match(below)
+        and cs._SETEXT_UNDERLINE.fullmatch(below)
         and _list_item(line) is None
     ):
         return (1 if "=" in below else 2), line.strip(), False

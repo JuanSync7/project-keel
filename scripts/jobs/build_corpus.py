@@ -289,7 +289,7 @@ def _raw_references(text: str, rel: str) -> list:
         for m in _INLINE_CODE.finditer(line):
             span = m.group(2).strip()
             looks_like_path = "/" in span or span.endswith((".py", ".md"))
-            if looks_like_path and _MENTION_RE.match(span):
+            if looks_like_path and _MENTION_RE.fullmatch(span):
                 refs.append(("mention", span, span.rstrip("/")))
     return refs
 
@@ -408,7 +408,7 @@ def _sections(body, doc_id, rel, doc_res, doc_visibility, nodes, refs, default):
     cur = None
     preamble = []  # the doc's own prose before its first section
     for i, line in enumerate(lines):
-        m = _HEADING_RE.match(line)
+        m = _HEADING_RE.fullmatch(line)
         if m:
             if cur:
                 blocks.append(cur)

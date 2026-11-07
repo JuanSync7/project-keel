@@ -476,7 +476,7 @@ def read_refusals(text):
     for match in _REFUSAL_LINE.finditer(text):
         items = []
         for item in match.group("items").split(", "):
-            found = _REFUSAL_ITEM.match(item)
+            found = _REFUSAL_ITEM.fullmatch(item)
             if found is None:
                 items = None
                 break

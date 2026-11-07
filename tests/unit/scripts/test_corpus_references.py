@@ -66,6 +66,15 @@ def _edges(node, kind):
     return [(e["to"], e["via"]) for e in node["links"] if e["kind"] == kind]
 
 
+@pytest.mark.parametrize("path", ["src/thing.py\n", "scripts/\n"])
+def test_a_backticked_path_cannot_span_a_newline(path):
+    assert bc._raw_references("`%s`" % path, "docs/guide.md") == []
+    plain = path.rstrip("\n")
+    assert bc._raw_references("`%s`" % plain, "docs/guide.md") == [
+        ("mention", plain, plain.rstrip("/"))
+    ]
+
+
 def test_a_link_becomes_a_link_edge_from_the_writing_node_to_the_doc(repo):
     nodes = _nodes(repo)
     assert ("conventions", "../CONVENTIONS.md") in _edges(nodes["guide"], "link")

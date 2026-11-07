@@ -111,7 +111,7 @@ def released_versions(text):
     order (newest first)."""
     out = []
     for line in text.splitlines():
-        match = _RELEASE.match(line)
+        match = _RELEASE.fullmatch(line)
         if not match:
             continue
         try:

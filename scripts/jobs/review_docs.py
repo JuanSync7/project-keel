@@ -73,7 +73,7 @@ def resolve_today(argv_today, environ, root=None, clock=datetime.date.today):
     refused source raises DateSourceError, never a silent fallback. *clock*
     stands in for datetime.date.today."""
     if argv_today is not None:
-        if not ISO_DATE.match(argv_today):
+        if not ISO_DATE.fullmatch(argv_today):
             raise DateSourceError("--today %r is not an ISO date" % argv_today)
         try:
             return datetime.datetime.strptime(argv_today, "%Y-%m-%d").date()
@@ -83,7 +83,7 @@ def resolve_today(argv_today, environ, root=None, clock=datetime.date.today):
             ) from exc
     if "SOURCE_DATE_EPOCH" in environ:
         raw = environ["SOURCE_DATE_EPOCH"]
-        if not _EPOCH.match(raw):
+        if not _EPOCH.fullmatch(raw):
             raise DateSourceError(
                 "SOURCE_DATE_EPOCH=%r is not a whole number of seconds" % raw
             )
@@ -145,7 +145,7 @@ def _filter_drivers(root):
         raise GitConfigError(proc.stderr.strip() or "git config failed")
     names = set()
     for entry in proc.stdout.split("\0"):
-        m = _FILTER_KEY.match(entry.split("\n", 1)[0])
+        m = _FILTER_KEY.fullmatch(entry.split("\n", 1)[0])
         if m:
             names.add(m.group(1))
     return sorted(names)
@@ -300,7 +300,7 @@ def stale_findings(records, today):
     testable and the report reproducible."""
     findings = []
     for relpath, updated, last_commit, modified in records:
-        if not ISO_DATE.match(updated):
+        if not ISO_DATE.fullmatch(updated):
             findings.append(
                 {
                     "path": relpath,

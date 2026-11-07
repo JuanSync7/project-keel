@@ -686,6 +686,19 @@ def test_a_bad_gate_runner_limit_is_one_error_naming_it(over, expect):
     "over, expect",
     [
         ({"unknown": 1}, "unknown"),
+        ({"unattended_vars": ["CI", "RALPH", "BOT\n"]}, "unattended_vars"),
+        ({"gate_runner_var": "RALPH\n"}, "gate_runner_var"),
+        ({"write_shapes": ["-apply\n"]}, "write_shapes"),
+        ({"area_dir": "mk\n"}, "area_dir"),
+        (
+            {"effect_proof_kept_dirs": {"CACHE_HOME\n": ".cache"}},
+            "effect_proof_kept_dirs",
+        ),
+        (
+            {"empty_test_selections": {"unit\n": "no tests by design"}},
+            "empty_test_selections",
+        ),
+        ({"gate_vars": ["PY\n"]}, "gate_vars"),
         ({"gate_effects": ["read"]}, "local"),
         ({"gate_effects": ["local", "tree"]}, "tree"),
         ({"gate_effects": ["local", "write"]}, "write"),
@@ -910,6 +923,16 @@ def test_a_misnamed_area_makefile_is_an_error(repo):
         mk__Gate_way_mk="##@ Gate_way  x\n",
     )
     assert any("mk/Gate_way.mk" in e and "kebab" in e for e in errs), errs
+
+
+def test_an_area_filename_ending_in_a_newline_is_not_kebab_case(repo):
+    errs, _ = _run(
+        repo,
+        _AREA_ROOT,
+        _policy(area_dir="mk"),
+        **{"mk__gateway\n_mk": "##@ gateway\n"},
+    )
+    assert any("kebab" in error and "gateway\n" in error for error in errs), errs
 
 
 def test_a_declared_area_directory_that_is_absent_is_stale(repo):
