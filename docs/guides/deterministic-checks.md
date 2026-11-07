@@ -312,11 +312,13 @@ print but never fail the build.
   twin, so a generated project's roster matches its pruned tree — the
   generation tests run this check inside every generated project.
 - **T. Practice mechanisms resolve** — every `config/practices.json` entry
-  carries `enforced_by`, a list in a closed grammar (`check:<LETTER>`,
+  carries `enforced_by`, a list in a closed grammar (`check:CHECK-<LETTER>`,
   `script:<path>`, `test:<path>`, `make:<target>`, `doc:<path>[ §N]`,
-  `ruff:<CODE>`, `mypy:<flag>`), and every reference resolves: the check letter
-  is defined here, the script/test/doc exists (and has that numbered section),
-  the make target is a rule. `ruff:`/`mypy:` codes are accepted as written —
+  `ruff:<CODE>`, `mypy:<flag>`), and every reference resolves: the check id
+  is registered in `scripts/checks_data.py` `CHECKS`, the script/test/doc exists
+  (and has that numbered section), the make target is a rule.
+  A bare check letter is refused with the id spelling to write.
+  `ruff:`/`mypy:` codes are accepted as written —
   the tools themselves reject an unknown one. `mechanism` stays as prose for a
   reader; this is the same claim a machine can hold. Silent without a
   registry.

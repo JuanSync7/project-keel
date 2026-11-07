@@ -4490,16 +4490,54 @@ def check_S():
 #
 # config/practices.json says how each practice is enforced. `mechanism` is prose
 # for a reader; `enforced_by` is the same claim in a closed grammar a check can
-# resolve, so a practice cannot name a check letter, script, test, make target
+# resolve, so a practice cannot name a check id, script, test, make target
 # or guide section that does not exist — the cdmon lesson, applied to the
 # practices registry. ruff and mypy references are external tools' vocabularies
 # and are accepted as written (the tools themselves reject an unknown code).
 
 _MECHANISM_RE = re.compile(r"^(check|script|test|make|doc|ruff|mypy):(.+)$")
-_MECHANISM_FORMS = "check:<LETTER> | script:<path> | test:<path> | make:<target> | doc:<path>[ §N] | ruff:<CODE> | mypy:<flag>"
+_MECHANISM_FORMS = "check:CHECK-<LETTER> | script:<path> | test:<path> | make:<target> | doc:<path>[ §N] | ruff:<CODE> | mypy:<flag>"
 
 
-def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
+def _registered_check_ids(path=None):
+    """Read the adjacent literal registry without importing the scripts package.
+
+    An absent, unparsable or malformed registry is one error naming the file,
+    reported once however many checks read it, and yields no ids, so every
+    `check:` reference is then refused rather than passed."""
+    if path is None:
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "checks_data.py"
+        )
+    path = os.path.abspath(path)
+
+    def refuse(why):
+        if path not in _READ_REPORTED:
+            _READ_REPORTED.add(path)
+            err(
+                "%s: %s; it must declare CHECKS as a literal list of rows "
+                "that each carry an `id`" % (rel(path), why)
+            )
+        return set()
+
+    if not os.path.isfile(path):
+        return refuse("the check-id registry is missing")
+    source = _read_text(path, err)
+    if source is None:
+        return set()  # The read failure is already an error, never a silent pass.
+    try:
+        for node in ast.parse(source, filename=path).body:
+            if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "CHECKS"
+                for target in node.targets
+            ):
+                return {row["id"] for row in ast.literal_eval(node.value)}
+    except (SyntaxError, ValueError, TypeError, KeyError) as e:
+        return refuse("the check-id registry is malformed (%s)" % e.__class__.__name__)
+    return refuse("the check-id registry declares no literal CHECKS")
+
+
+def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     """Why `ref` does not name a real mechanism, as the clause that follows the
     claimant -- or None when it resolves. Shared with check_V so that "name the
     thing that proves this" has ONE grammar wherever the claim is made: a
@@ -4514,9 +4552,15 @@ def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
         )
     form, value = m.group(1), m.group(2).strip()
     if form == "check":
-        if value not in check_letters:
-            return "claims check_%s, which check_structure.py does not define" % _shown(
-                value
+        if re.fullmatch(r"[A-Z]", value):
+            return "names '%s'; write check:CHECK-%s to cite its registry id" % (
+                _shown(ref),
+                value,
+            )
+        if value not in check_ids:
+            return (
+                "claims '%s', which scripts/checks_data.py CHECKS does not register"
+                % _shown(ref)
             )
     elif form in ("script", "test"):
         if value not in tree:
@@ -4543,9 +4587,9 @@ def _mechanism_reason(ref, check_letters, tree, make_targets, sections_of):
     return None
 
 
-def _mechanism_findings(practices, check_letters, tree, make_targets, sections_of):
-    """practices: the registry dict; check_letters: the letters check_structure
-    defines; tree: every file path; make_targets: the Makefile's rule names;
+def _mechanism_findings(practices, check_ids, tree, make_targets, sections_of):
+    """practices: the registry dict; check_ids: ids in scripts/checks_data.py
+    CHECKS; tree: every file path; make_targets: the Makefile's rule names;
     sections_of(path) -> set of numbered sections or None. -> error strings."""
     errs = []
     entries = practices.get("practices") if isinstance(practices, dict) else None
@@ -4564,9 +4608,7 @@ def _mechanism_findings(practices, check_letters, tree, make_targets, sections_o
             )
             continue
         for ref in refs:
-            reason = _mechanism_reason(
-                ref, check_letters, tree, make_targets, sections_of
-            )
+            reason = _mechanism_reason(ref, check_ids, tree, make_targets, sections_of)
             if reason:
                 errs.append(
                     "config/practices.json: practice '%s' %s" % (_shown(pid), reason)
@@ -4580,13 +4622,7 @@ def check_T():
     practices = _load_practices()
     if not practices:
         return
-    letters = set(
-        re.findall(
-            r"^def check_([A-Z])\(",
-            _read_text(os.path.abspath(__file__), err) or "",
-            re.MULTILINE,
-        )
-    )
+    check_ids = _registered_check_ids()
     tree = set()
     for dirpath, _, filenames in walk(ROOT):
         reldir = rel(dirpath).replace(os.sep, "/")
@@ -4601,7 +4637,7 @@ def check_T():
         text = _read_text(os.path.join(ROOT, path), err)
         return None if text is None else _numbered_sections(text)
 
-    for m in _mechanism_findings(practices, letters, tree, targets, sections_of):
+    for m in _mechanism_findings(practices, check_ids, tree, targets, sections_of):
         err(m)
 
 
@@ -4975,9 +5011,7 @@ def _declaration_findings(relpath, meta, sites, mechanism_reason):
     return errs, warns_
 
 
-def _effect_declaration_findings(
-    modules, check_letters, tree, make_targets, sections_of
-):
+def _effect_declaration_findings(modules, check_ids, tree, make_targets, sections_of):
     """modules: {relpath: source}; the rest as _mechanism_reason takes them.
     -> (errors, warnings). Pure; the walk is check_V's.
 
@@ -4987,7 +5021,7 @@ def _effect_declaration_findings(
     """
 
     def reason(proof):
-        return _mechanism_reason(proof, check_letters, tree, make_targets, sections_of)
+        return _mechanism_reason(proof, check_ids, tree, make_targets, sections_of)
 
     errs, warns_ = [], []
     for relpath in sorted(modules):
@@ -5006,14 +5040,14 @@ def _effect_declaration_findings(
     return errs, warns_
 
 
-def _shell_effect_findings(scripts, check_letters, tree, make_targets, sections_of):
+def _shell_effect_findings(scripts, check_ids, tree, make_targets, sections_of):
     """scripts: {relpath: shell source} -> (errors, warnings), the module
     rules read from the header _shell_header finds, with no write detector
     (_declaration_findings' sites None). Pure; the walk is check_V's. A
     file with no header is check_O's to report."""
 
     def reason(proof):
-        return _mechanism_reason(proof, check_letters, tree, make_targets, sections_of)
+        return _mechanism_reason(proof, check_ids, tree, make_targets, sections_of)
 
     errs, warns_ = [], []
     for relpath in sorted(scripts):
@@ -5048,13 +5082,7 @@ def check_V():
                         modules[rel(os.path.join(dirpath, f))] = fh.read()
                 except UNREADABLE:  # noqa: DROP001 -- check_D's _parse_python reports an unreadable file over the same roots
                     continue
-    letters = set(
-        re.findall(
-            r"^def check_([A-Z])\(",
-            _read_text(os.path.abspath(__file__), err) or "",
-            re.MULTILINE,
-        )
-    )
+    check_ids = _registered_check_ids()
     tree = set()
     for dirpath, _, filenames in walk(ROOT):
         reldir = rel(dirpath).replace(os.sep, "/")
@@ -5070,7 +5098,7 @@ def check_V():
         return None if text is None else _numbered_sections(text)
 
     errs, warns_ = _effect_declaration_findings(
-        modules, letters, tree, targets, sections_of
+        modules, check_ids, tree, targets, sections_of
     )
     # A refused shell block is check_O's error; here it leaves no file to read.
     shell, _ = _shell_files(WRITER_ROOTS)
@@ -5082,7 +5110,7 @@ def check_V():
         if text is not None:
             scripts[relpath] = text
     sh_errs, sh_warns = _shell_effect_findings(
-        scripts, letters, tree, targets, sections_of
+        scripts, check_ids, tree, targets, sections_of
     )
     for m in errs + sh_errs:
         err(m)

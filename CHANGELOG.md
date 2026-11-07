@@ -41,6 +41,9 @@ version rather than a bare commit:
   harmless, including clustered short flags and their values. Unknown options,
   selection tokens and malformed quoting refuse through the exit helper;
   warning-filter values containing `::` pass. Tier targets and direct pytest may narrow without gate evidence.
+- **Practice check references use registry ids (KEEL-CHECKID-1, CMP-19.S3).**
+  A practice's `enforced_by` cites a structure check as `check:CHECK-O`; a
+  bare letter is refused with an error naming the id spelling to write.
 - **Every structure check names an id and a failing twin (KEEL-CHECKID-1, CMP-19.S1).**
   A closed data registry covers all 26 checks. The integration gate rejects
   missing or stale rows, unresolved twin files or functions, empty twins and

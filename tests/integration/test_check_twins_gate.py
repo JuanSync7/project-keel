@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 
 import pytest
+from scripts import config_loader
 
 pytestmark = pytest.mark.integration
 _ROOT = Path(__file__).resolve().parents[2]
@@ -286,3 +287,19 @@ def test_registry_fault_names_the_id_and_remedy(registry_tree, fault, expected):
     found = _findings(root, rows)
     assert len(found) > 0
     assert any(expected in message and ";" in message for message in found), found
+
+
+def test_practice_check_ids_resolve():
+    practices = config_loader.read(_ROOT, "config/practices.json")
+    refs = [
+        ref
+        for practice in practices["practices"]
+        for ref in practice["enforced_by"]
+        if ref.startswith("check:")
+    ]
+    assert len(refs) > 0, "Practice registry: zero check references judged"
+    ids = {row["id"] for row in _read_rows(_ROOT)}
+    for ref in refs:
+        assert ref.removeprefix("check:") in ids, (
+            "%s: unknown check id in scripts/checks_data.py CHECKS" % ref
+        )

@@ -19,7 +19,7 @@ pytestmark = pytest.mark.unit
 
 _S = "§"  # spelled as an escape: check_Q reads this file's source too
 
-_LETTERS = {"O", "V"}
+_IDS = {"CHECK-O", "CHECK-V"}
 _TREE = {"tests/integration/test_idempotence.py", "docs/guides/idempotency.md"}
 _TARGETS = {"verify", "site-data"}
 
@@ -101,7 +101,7 @@ def test_line_numbers_are_reported_so_the_fix_is_findable():
 def _find(modules):
     """modules: {relpath: source} -> (errors, warnings)."""
     return cs._effect_declaration_findings(
-        modules, _LETTERS, _TREE, _TARGETS, lambda p: None
+        modules, _IDS, _TREE, _TARGETS, lambda p: None
     )
 
 
@@ -233,7 +233,7 @@ def test_findings_are_sorted_by_path():
     "proof",
     [
         "test:tests/integration/test_idempotence.py",
-        "check:V",
+        "check:CHECK-V",
         "make:site-data",
         "doc:docs/guides/idempotency.md",
     ],
@@ -266,7 +266,7 @@ def test_check_v_reports_through_the_gate(gate):
         _header() + "import os\nos.remove(p)\n", encoding="utf-8"
     )
     (gate / "scripts" / "good.py").write_text(
-        _header(effect="writes", rerun="fixed-point", rerun_proof="check:V")
+        _header(effect="writes", rerun="fixed-point", rerun_proof="check:CHECK-V")
         + "import os\nos.remove(p)\n",
         encoding="utf-8",
     )
@@ -296,7 +296,7 @@ def test_check_v_does_not_read_the_test_suite(gate, monkeypatch):
 
 def _sh_find(scripts):
     """scripts: {relpath: shell source} -> (errors, warnings)."""
-    return cs._shell_effect_findings(scripts, _LETTERS, _TREE, _TARGETS, lambda p: None)
+    return cs._shell_effect_findings(scripts, _IDS, _TREE, _TARGETS, lambda p: None)
 
 
 def _sh(**keys):
@@ -380,3 +380,24 @@ def test_check_v_skips_a_shell_script_in_excluded_paths(gate):
     (gate / "scripts" / "vendor.sh").write_text(_sh(), encoding="utf-8")
     cs.check_V()
     assert cs.errors == [], cs.errors
+
+
+def test_a_valid_check_id_resolves_as_a_proof(gate):
+    src = _header(effect="writes", rerun="fixed-point", rerun_proof="check:CHECK-V")
+    (gate / "scripts/w.py").write_text(src + "open(p, 'w')\n", encoding="utf-8")
+    cs.check_V()
+    assert cs.errors == [], cs.errors
+
+
+def test_an_unknown_proof_check_id_names_the_reference_and_registry():
+    src = _header(effect="writes", rerun="fixed-point", rerun_proof="check:CHECK-Z")
+    errs, _warns = _find({"scripts/w.py": src + "open(p, 'w')\n"})
+    assert len(errs) == 1, errs
+    assert "check:CHECK-Z" in errs[0] and "scripts/checks_data.py" in errs[0], errs
+
+
+def test_a_bare_proof_check_letter_names_the_id_spelling():
+    src = _header(effect="writes", rerun="fixed-point", rerun_proof="check:V")
+    errs, _warns = _find({"scripts/w.py": src + "open(p, 'w')\n"})
+    assert len(errs) == 1, errs
+    assert "check:V" in errs[0] and "write check:CHECK-V" in errs[0], errs

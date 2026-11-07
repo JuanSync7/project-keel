@@ -8,7 +8,7 @@ tags: [idempotency, writers, fixed-point, determinism, guide]
 summary: How a doer that writes into the tree is built so that running it twice changes nothing the first run did not, and how that is declared and proven here — the `effect:` / `rerun:` / `rerun_proof:` header check_V gates, the recipe for reaching a fixed point, the ladder of proofs, and the honest declarations for the writers that cannot reach one. The code twin of doc-style.md §6, which governs how the claim is written down rather than how it is made true.
 id: docs-guides-idempotency
 created: 2026-09-12
-updated: 2026-11-06
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -78,9 +78,11 @@ Demanding a proof of the other two would push an honest author toward the
 flattering word, which is the opposite of what this is for.
 
 `rerun_proof:` names the mechanism in the closed grammar check_T already holds
-`enforced_by` to — `check:<LETTER>`, `script:<path>`, `test:<path>`,
+`enforced_by` to — `check:CHECK-<LETTER>`, `script:<path>`, `test:<path>`,
 `make:<target>`, `doc:<path>`. One grammar for "name the thing that proves
 this", wherever the claim is made.
+Check ids resolve against `scripts/checks_data.py` `CHECKS`; a bare letter is
+refused with the id spelling to write.
 
 **What the gate proves and what it does not.** `check_V` proves the declaration
 exists, its values are in the closed sets, and its proof resolves. It does not

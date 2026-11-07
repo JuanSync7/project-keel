@@ -124,7 +124,13 @@ def test_a_reference_inside_a_fenced_block_is_an_illustration_and_does_not_count
 
 @pytest.mark.parametrize(
     "ref",
-    ["check:O", "script:scripts/x.py", "test:tests/x.py", "make:verify", "ruff:B904"],
+    [
+        "check:CHECK-O",
+        "script:scripts/x.py",
+        "test:tests/x.py",
+        "make:verify",
+        "ruff:B904",
+    ],
 )
 def test_only_doc_mechanisms_are_held_to_reachability(ref):
     assert _find(_registry(ref), {"AGENT.md": "\n"}) == []
