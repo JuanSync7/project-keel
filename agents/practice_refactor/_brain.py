@@ -325,8 +325,9 @@ def _propose(state, meter):
 def _apply(state):
     """Writes: apply the proposed spec through the gated doer, advance the cursor.
 
-    apply_refactor applies atomically and ROLLS BACK unless the gate stays green,
-    so a chunk lands in `refactored` only when the tree is still green; anything
+    apply_refactor attempts per-file restoration unless the gate stays green;
+    RollbackError names failed restores, and a crash can leave a partial tree.
+    A chunk lands in `refactored` only when the gate stays green; anything
     else (no spec, unparseable, or gate-red) lands in `skipped`. The agent thus
     cannot mark a chunk done unless it satisfies the very `make verify` it gates on.
     """

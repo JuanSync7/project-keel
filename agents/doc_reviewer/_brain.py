@@ -386,8 +386,11 @@ def _propose(state, meter):
 
 
 def _apply(state):
-    """Writes: apply the spec through the gated doer (rolled back unless the gate
-    stays green), advance the cursor."""
+    """Writes: apply the spec through the gated doer, advance the cursor.
+
+    A red gate triggers per-file restoration; RollbackError names failed
+    restores, and a crash can leave a partial tree.
+    """
     chunk = state["chunks"][state["cursor"]]
     applied = list(state.get("applied", ()))
     skipped = list(state.get("skipped", ()))
@@ -488,8 +491,9 @@ def review(
     stamps, unresolved mentions, change openers, every roster row), retrieve the style guide's
     rules from the corpus, and — only with ``execute=True`` — ask the model for
     one bounded edit per chunk and apply it through the gated ``apply_refactor``
-    doer, which rolls back unless ``make <gate>`` (default ``check-docs``: the
-    structure gate plus strict freshness) stays green.
+    doer, which attempts per-file restoration unless ``make <gate>`` (default
+    ``check-docs``: the structure gate plus strict freshness) stays green.
+    RollbackError names failed restores; a crash can leave a partial tree.
 
     Dry-run is the default and never calls a model: the report is real (counts,
     candidates, the prompt the first chunk would get) and nothing is written.

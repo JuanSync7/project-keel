@@ -8,7 +8,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-11-05
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -188,8 +188,10 @@ It is an ordinary keel agent — a neutral `Plan` on a `Runtime`, model from
    `make_targets.gate_effects`, so the baseline cannot rewrite the tree it
    measures (CONVENTIONS §7).
 3. **propose** (model-call) — draft ONE bounded edit for the chunk at the cursor.
-4. **apply** (writes) — `apply_refactor` applies it atomically and **rolls it
-   back** unless `make verify` stays green.
+4. **apply** (writes) — `apply_refactor` applies it file by file and attempts
+   per-file restoration unless `make verify` stays green. A failed restore
+   raises `RollbackError` naming every unrestored file. A crash between files
+   can leave a half-applied tree.
 
 So the agent **cannot mark a chunk done unless it satisfies the very rule the
 gate encodes** — the gate, not the model's judgment, is the definition of done
@@ -201,10 +203,11 @@ Its mechanical hands are two vendor-neutral `scripts/` doers (no model, no
 provider): **`run_make_target.py`** runs a make target whose effect label a
 gate may run, fails a green run that changed the tree, and reports a structured
 pass/fail (the *gate*), and **`apply_refactor.py`** applies one bounded edit
-*atomically* and **rolls it back** unless the gate stays green (the *safety
-net*) — each declared as a tool in `agents/tools/`. The agent supplies the
-judgment (which chunk, which practice, what edit); the doers keep the tree green
-at every step. See [dev-loops](dev-loops.md) for the convergence discipline.
+file by file and attempts to restore the planned files' saved text on red —
+each declared as a tool in `agents/tools/`. Restoration is not a transaction;
+`agents/tools/apply_refactor.tool.md` states its failure and crash limits.
+The agent supplies the judgment (which chunk, which practice, what edit);
+the gate decides acceptance. See [dev-loops](dev-loops.md) for the convergence discipline.
 
 Run it through the thin CLI entrypoint (the vendor-agnostic doer) or its
 vendor-specific trigger, the `practice-refactor` skill:

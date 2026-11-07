@@ -17,7 +17,8 @@ Your permitted tools are listed in `tools.md`; invoke each per its spec in
 - `query_corpus` (read-only) — walk the KG for the practice's neighbourhood.
 - `run_make_target` (read-only) — gate a **green baseline** before you touch anything.
 - `apply_refactor` (writes) — apply ONE bounded edit spec; it gates on `make verify`
-  and **rolls back** unless the tree stays green.
+  and attempts per-file restoration on red. A failed restore is `RollbackError`
+  naming every unrestored file; a crash can leave a half-applied tree.
 
 # Procedure
 The agent code orchestrates the loop — it walks the graph (1), gates the baseline
@@ -38,7 +39,8 @@ given. You do not iterate, run tools, or write files.
    The `find` text MUST appear **verbatim and exactly once** in the file; if you
    cannot produce such an edit safely, return `{"edits": []}` to decline the chunk.
 4. *(agent)* Apply the spec through `apply_refactor`. A chunk is *done* only if the
-   gate stays green; if it goes red, the edit is rolled back and the chunk skipped.
+   gate stays green; on red, the doer attempts per-file restoration and the chunk
+   is skipped. Check any `RollbackError` before another refactor.
 
 # Output contract
 Return a `RefactorReport`: `practice`, `baseline_green`, `candidates` (the walked

@@ -19,7 +19,8 @@ Your permitted tools are listed in `tools.md`; invoke each per its spec in
 - `query_corpus` (read-only) — the guide's rules, and any node you need to cite.
 - `run_make_target` (read-only) — gate a **green baseline** before you touch anything.
 - `apply_refactor` (writes) — apply ONE bounded edit spec; it gates on `make check-docs`
-  and **rolls back** unless the tree stays green.
+  and attempts per-file restoration on red. A failed restore is `RollbackError`
+  naming every unrestored file; a crash can leave a half-applied tree.
 
 # Procedure
 The agent code orchestrates the loop — it gathers findings (1), retrieves the
@@ -53,7 +54,8 @@ once per chunk. **Your job on each call is step 4 only.**
      documentation says it does.
    If you cannot produce a safe edit, return `{"edits": []}` to decline.
 5. *(agent)* Apply through `apply_refactor`. A chunk is *done* only if the gate
-   stays green; if it goes red the edit is rolled back and the chunk skipped.
+   stays green; on red, the doer attempts per-file restoration and the chunk is
+   skipped. Check any `RollbackError` before another refactor.
 
 # Output contract
 Return a `DocReviewReport`: `baseline_green`, `stale`, `unresolved`, `rosters`,

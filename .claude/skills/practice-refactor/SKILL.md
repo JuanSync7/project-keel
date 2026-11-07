@@ -31,8 +31,9 @@ The user wants an *existing* codebase brought toward one **named** practice from
    corpus may be stale — rebuild it with `make site-data`.
 
 3. **Execute** once the dry-run looks right (proposes one bounded edit per chunk
-   and applies it through the gated `apply_refactor`, which **rolls back** any edit
-   that turns `make verify` red):
+   and applies it through the gated `apply_refactor`, which **restores** each file
+   of an edit that turns `make verify` red, one file at a time; a restore that
+   fails stops the run with a named error):
    ```
    python3 scripts/refactor_practice.py <practice-id> --execute --json
    ```

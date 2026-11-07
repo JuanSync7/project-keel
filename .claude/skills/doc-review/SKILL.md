@@ -1,6 +1,6 @@
 ---
 name: doc-review
-description: Review the documentation against docs/guides/doc-style.md — stale `updated:` stamps, backticked paths that resolve to nothing, and every roster's `Not for` cell — and, when asked, apply one gated edit per finding. Use when the user asks to check, review, freshen, or tidy the docs, to make the READMEs say what ships, or to find documentation drift. Dry-run by default; every applied edit is gated on `make check-docs` and rolled back if red.
+description: Review the documentation against docs/guides/doc-style.md — stale `updated:` stamps, backticked paths that resolve to nothing, and every roster's `Not for` cell — and, when asked, apply one gated edit per finding. Use when the user asks to check, review, freshen, or tidy the docs, to make the READMEs say what ships, or to find documentation drift. Dry-run by default; every applied edit is gated on `make check-docs` and restored file by file if red.
 ---
 
 # Doc review
@@ -31,8 +31,9 @@ prose written from scratch.
    execute run would stop before its first edit.
 
 2. **Execute** once the dry-run looks right (one bounded edit per chunk, applied
-   through the gated `apply_refactor`, which **rolls back** any edit that turns
-   `make check-docs` red):
+   through the gated `apply_refactor`, which **restores** each file of an edit
+   that turns `make check-docs` red, one file at a time; a restore that fails
+   stops the run with a named error):
    ```
    .venv/bin/python scripts/doc_review.py --execute --json
    ```

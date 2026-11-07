@@ -2,13 +2,14 @@
 title: Unit — apply_refactor (edit application and its default gate)
 kind: tests
 layer: n/a
-summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. plan_edits refuses, before any write and so in a dry run too, an edit to a path the root's config/project.json `agents` block protects (a protected path covers everything under it, a protected name or glob covers each file name it matches anywhere, an editable name carves a README.md back out), judged on the path as written and on its realpath, case-folded, so a symlink, a directory link, a case variant, a new file and a full `content` replacement are refused alike; git's own state, a nested .gitignore, .gitattributes, the secret scanner's own ignore file and config, the frontend tests and configs the default stack ships, a root conftest.py, the .jinja twins of .gitignore and .copier-answers.yml and make check-openapi's checker are each refused; every template twin of a protected file is itself protected, derived from git's own list, with a fault-injection twin; a file git does not track (.venv, node_modules, an untracked source file, git's state even with its entry removed) and a root outside a git work tree are refused before any write; `src/m.py` and `./src/m.py` compose as one file; an absolute path, a `..` part and a hard-linked file are refused outright; removing an entry from the config lets that edit apply, so the config and not a literal drives the refusal; and an unusable policy (no file, no block, an empty map, a blank reason, a `..` key, a map that leaves config/project.json uncovered) is a config fault the CLI returns as ExitCode.CONFIG. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back, and so is a gate that raises any exception. The gate is the caller's: a spec that names a gate, or holds any key outside its closed vocabulary, is refused before any write, an empty gate is refused rather than defaulted, and the CLI's --gate defaults to verify; repeated --allow binds a run to those files, so an edit to any other is refused and an empty binding refuses every edit.
+summary: apply_one applies a search/replace only when the target text occurs EXACTLY once, so a refactor edit is unambiguous — zero or multiple matches raise before anything is written. plan_edits refuses, before any write and so in a dry run too, an edit to a path the root's config/project.json `agents` block protects (a protected path covers everything under it, a protected name or glob covers each file name it matches anywhere, an editable name carves a README.md back out), judged on the path as written and on its realpath, case-folded, so a symlink, a directory link, a case variant, a new file and a full `content` replacement are refused alike; git's own state, a nested .gitignore, .gitattributes, the secret scanner's own ignore file and config, the frontend tests and configs the default stack ships, a root conftest.py, the .jinja twins of .gitignore and .copier-answers.yml and make check-openapi's checker are each refused; every template twin of a protected file is itself protected, derived from git's own list, with a fault-injection twin; a file git does not track (.venv, node_modules, an untracked source file, git's state even with its entry removed) and a root outside a git work tree are refused before any write; `src/m.py` and `./src/m.py` compose as one file; an absolute path, a `..` part and a hard-linked file are refused outright; removing an entry from the config lets that edit apply, so the config and not a literal drives the refusal; and an unusable policy (no file, no block, an empty map, a blank reason, a `..` key, a map that leaves config/project.json uncovered) is a config fault the CLI returns as ExitCode.CONFIG. The default gate is scripts/run_make_target.py, so a refused gate (a target labelled wider than a gate may run) and a gate that changed the tree are both red and roll the edit back, and so is a gate that raises any exception. The gate is the caller's: a spec that names a gate, or holds any key outside its closed vocabulary, is refused before any write, an empty gate is refused rather than defaulted, and the CLI's --gate defaults to verify; repeated --allow binds a run to those files, so an edit to any other is refused and an empty binding refuses every edit. Restore write failures raise RollbackError naming every unrestored file after trying the others; the CLI reports ExitCode.FAILURE in text and JSON, including when the gate raised, and a later failed restore preserves earlier restorations.
 """
 
 import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -199,6 +200,102 @@ def test_a_gate_that_raises_anything_is_red_and_rolls_back(tmp_path, exc):
     assert res["rolled_back"] is True and res["applied"] is False
     assert type(exc).__name__ in res["gate_output"]
     assert f.read_text(encoding="utf-8") == "keep = 1\n"
+
+
+def _fail_restore_writes(monkeypatch, paths, *, gate_raises=False):
+    restoring = False
+    attempted = []
+
+    def fail_write(text):
+        raise OSError("restore write denied")
+
+    @contextmanager
+    def injected_open(path, *args, **kwargs):
+        with open(path, *args, **kwargs) as handle:
+            if restoring:
+                attempted.append(path)
+                if path in {str(p) for p in paths}:
+                    monkeypatch.setattr(handle, "write", fail_write)
+            yield handle
+
+    def red_gate(gate, cwd, timeout):
+        nonlocal restoring
+        restoring = True
+        if gate_raises:
+            raise RuntimeError("gate crashed")
+        return False, "gate rejected the edit"
+
+    monkeypatch.setattr(ar, "open", injected_open, raising=False)
+    monkeypatch.setattr(ar, "_read_only_gate", red_gate)
+    return attempted
+
+
+@pytest.mark.parametrize("gate_raises", [False, True])
+def test_restore_write_failure_raises_named_error(tmp_path, monkeypatch, gate_raises):
+    f, spec = _spec(tmp_path)
+    attempted = _fail_restore_writes(monkeypatch, [f], gate_raises=gate_raises)
+    with pytest.raises(Exception) as exc:
+        ar.apply_and_gate(spec, str(tmp_path))
+    assert type(exc.value).__name__ == "RollbackError"
+    assert isinstance(exc.value, ar.RollbackError)
+    assert "m.py" in str(exc.value) and "restore write denied" in str(exc.value)
+    assert attempted == [str(f)]
+
+
+@pytest.mark.parametrize("gate_raises", [False, True])
+@pytest.mark.parametrize("json_output", [False, True])
+def test_cli_restore_write_failure_reports_failure(
+    tmp_path, monkeypatch, capsys, gate_raises, json_output
+):
+    f, spec = _spec(tmp_path)
+    spec_file = tmp_path / "spec.json"
+    spec_file.write_text(json.dumps(spec), encoding="utf-8")
+    attempted = _fail_restore_writes(monkeypatch, [f], gate_raises=gate_raises)
+    argv = ["--spec", str(spec_file), "--root", str(tmp_path)]
+    code = ar.main(argv + (["--json"] if json_output else []))
+    assert code is ExitCode.FAILURE
+    captured = capsys.readouterr()
+    assert "RollbackError" in captured.err and "m.py" in captured.err
+    assert "restore write denied" in captured.err
+    assert "restore" in captured.err and "before running" in captured.err
+    assert "the gate failed" not in captured.err
+    assert "nothing was changed" not in captured.err
+    assert attempted == [str(f)]
+    if json_output:
+        error = json.loads(captured.out)["error"]
+        assert "RollbackError" in error and "m.py" in error
+
+
+def test_second_restore_failure_keeps_first_restored_and_names_second(
+    tmp_path, monkeypatch
+):
+    _policy_tree(tmp_path)
+    a = _plant(tmp_path, "a.py")
+    b = _plant(tmp_path, "b.py")
+    spec = {"edits": _edit("a.py")["edits"] + _edit("b.py")["edits"]}
+    attempted = _fail_restore_writes(monkeypatch, [b])
+    with pytest.raises(Exception) as exc:
+        ar.apply_and_gate(spec, str(tmp_path))
+    assert a.read_text(encoding="utf-8") == _KEEP
+    assert b.read_text(encoding="utf-8") != _KEEP
+    assert type(exc.value).__name__ == "RollbackError"
+    assert "b.py" in str(exc.value)
+    assert attempted == [str(a), str(b)]
+
+
+def test_restore_failures_name_every_unrestored_file_and_continue(
+    tmp_path, monkeypatch
+):
+    _policy_tree(tmp_path)
+    paths = [_plant(tmp_path, rel) for rel in ("a.py", "b.py", "c.py")]
+    spec = {"edits": [edit for p in paths for edit in _edit(p.name)["edits"]]}
+    attempted = _fail_restore_writes(monkeypatch, paths[:2])
+    with pytest.raises(Exception) as exc:
+        ar.apply_and_gate(spec, str(tmp_path))
+    assert attempted == [str(p) for p in paths]
+    assert type(exc.value).__name__ == "RollbackError"
+    assert "a.py" in str(exc.value) and "b.py" in str(exc.value)
+    assert paths[2].read_text(encoding="utf-8") == _KEEP
 
 
 # --- an agent edit cannot reach the code that judges it ------------------------

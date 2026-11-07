@@ -9,7 +9,7 @@ tags: [agent, toolset, manifest]
 summary: The shared tools agents/practice_refactor is permitted to invoke.
 id: agents-practice-refactor-tools
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -24,4 +24,4 @@ spec's `## Used by` (the binding is bidirectional).
 |-----------|--------|----------|
 | `../tools/query_corpus.tool.md` | read-only | walk the KG for the practice's neighbourhood |
 | `../tools/run_make_target.tool.md` | read-only | gate a green baseline before refactoring |
-| `../tools/apply_refactor.tool.md` | writes | apply one bounded edit, gated + rolled back |
+| `../tools/apply_refactor.tool.md` | writes | apply one bounded edit, gated with per-file restoration on red; `RollbackError` names failed restores |

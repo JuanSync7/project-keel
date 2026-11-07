@@ -1,5 +1,10 @@
 # {{ project_title }}
 
+- **Failed refactor restores are named (KEEL-ROLLBACK-1).** The doer raises
+  `RollbackError` naming every unrestored file after trying the remaining files;
+  the CLI reports `ExitCode.FAILURE` and a recovery step. The tool card and
+  related docs state per-file restoration and its crash limits.
+
 All notable changes. Format: Keep a Changelog.
 
 Generated from the [Project Keel](https://github.com/JuanSync7/project-keel) template.

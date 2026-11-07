@@ -6,10 +6,10 @@ status: template
 owner: TBD
 public_api: agents/doc_reviewer/__init__.py
 tags: [agent, documentation, review, rosters, freshness]
-summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs and rolled back if red.
+summary: Reviews the documentation against docs/guides/doc-style.md — the deterministic findings first, then one judged edit per chunk, each gated on make check-docs with per-file restoration attempted on red.
 id: agents-doc-reviewer
 created: 2026-09-02
-updated: 2026-11-06
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -17,8 +17,8 @@ canonical: true
 # Doc reviewer
 
 Reviews the documentation against `docs/guides/doc-style.md`: the deterministic
-findings first, then one judged edit per chunk, each gated and rolled back if
-red.
+findings first, then one judged edit per chunk, each gated with per-file
+restoration attempted on red.
 
 The **judgment half** of the documentation-quality system. The gate
 (`check_structure.py` P–T) proves what a rule can prove — links resolve, rosters
@@ -30,8 +30,9 @@ the run stops at its baseline. What no rule can decide — is this `Not for` cel
 *true*, is this backticked name a path or a noun, does this "Now" open a step or
 report a change — this agent judges, one chunk at a time, with the guide's own rules retrieved from
 the corpus as its context. Every edit lands through `apply_refactor`, gated on
-`make check-docs` (the structure gate plus strict freshness), and is **rolled
-back** unless the tree stays green.
+`make check-docs` (the structure gate plus strict freshness). On red, the doer
+attempts to restore planned files one at a time. A failed restore is
+`RollbackError`, naming every unrestored file; a crash can leave a half-applied tree.
 
 It is thin: policy + prompt only. The doers are `scripts/` tools (per the specs in
 `agents/tools/`, declared in `tools.md`); control flow is a neutral `Plan` on a

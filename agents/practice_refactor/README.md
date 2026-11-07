@@ -9,7 +9,7 @@ tags: [agent, refactor, practices, corpus, gate]
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 id: agents-practice-refactor-readme
 created: 2026-07-07
-updated: 2026-10-29
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---
@@ -29,8 +29,9 @@ file states on disk now (`config_loader.is_served_now`), so a confidential
 chunk's text, or one whose file was reclassified after the corpus was built,
 never reaches a prompt; the propose step asks the file's level again. It gates a green baseline with
 `run_make_target`, then for each chunk proposes one bounded edit and applies it
-through `apply_refactor` — which gates on `make verify` and **rolls back** unless
-the tree stays green. So the agent **cannot mark a chunk done unless it satisfies
+through `apply_refactor` — which gates on `make verify` and attempts to restore
+planned files one at a time on red. A failed restore is `RollbackError`, naming
+every unrestored file; a crash can leave a half-applied tree. So the agent **cannot mark a chunk done unless it satisfies
 the very rule the gate encodes**.
 
 It is thin: policy + prompt only. The real work lives in `scripts/` doers,

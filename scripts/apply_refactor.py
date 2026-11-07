@@ -3,7 +3,7 @@
 title: Apply a gated refactor (refactor doer)
 kind: script
 layer: n/a
-summary: Deterministic doer — apply a proposed set of file edits ATOMICALLY, run a gate (a make target, through scripts/run_make_target.py, so only a target labelled read-only runs and a gate run that changes the tree is red), and ROLL BACK every file if the gate fails or is refused. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; this doer is the safety net that keeps the tree green — a chunk is accepted only if the gate stays green, else the change is reverted. An edit may never reach the code that judges it: before any write, so a dry run sees every refusal, plan_edits refuses an edit to a path the root's config/project.json `agents` block protects (read through scripts/config_loader.py: `protected_paths` covers a path and everything under it, `protected_names` a file name or a glob over one in any directory, `editable_names` carves a name or glob back out of a protected path; a protected name refuses, else an editable name allows, else a protected path refuses), judged on case-folded path parts both as written and after resolving symlinks, and refuses outright an absolute path, a `..` part, a path outside the root and a file with more than one hard link; beneath the list it refuses a file git does not track (scripts/git_tree.py `tracked`), so git's own state, an ignored file and the toolchain the gate runs stay out of reach where no entry names them, and a root where git cannot say is refused too; edits are planned by the resolved path, so two spellings of one file compose as one; each refusal names the edit, the path and the protecting key with its reason. A policy it cannot use (absent, malformed, empty, or not protecting config/project.json itself) is a config fault, ExitCode.CONFIG, and nothing is written. The model never chooses the gate: the gate is the caller's `--gate` (default `verify`; `none`, no gate, is a human caller's flag, which the agents' own baseline run_make_target refuses), and a spec is a closed vocabulary (`practice`, `edits`; an edit's `file`, `find`, `replace`, `content`), so a spec naming a `gate` or any other key is refused before any write. Repeated `--allow <file>` binds the run to those files, judged on realpath, so an agent that passes the chunk it asked about cannot have the model edit another. A refusal over a protected path hides an `agents` rule key or reason that holds an `@` (scripts/config_loader.py `shown`). Vendor-neutral, stdlib.
+summary: Deterministic doer — apply a proposed set of file edits one file at a time, run a gate (a make target, through scripts/run_make_target.py, so only a target labelled read-only runs and a gate run that changes the tree is red), and attempt to restore each planned file from its saved text if the gate fails or is refused. The refactor loop (agents/practice_refactor) proposes one bounded, named-practice edit at a time; a chunk is accepted only if the gate stays green. A failed restore raises RollbackError naming every unrestored file; the CLI reports ExitCode.FAILURE. Restoration is not a transaction: a crash between files can leave a half-applied tree, and gate changes outside the planned files are not restored. An edit may never reach the code that judges it: before any write, so a dry run sees every refusal, plan_edits refuses an edit to a path the root's config/project.json `agents` block protects (read through scripts/config_loader.py: `protected_paths` covers a path and everything under it, `protected_names` a file name or a glob over one in any directory, `editable_names` carves a name or glob back out of a protected path; a protected name refuses, else an editable name allows, else a protected path refuses), judged on case-folded path parts both as written and after resolving symlinks, and refuses outright an absolute path, a `..` part, a path outside the root and a file with more than one hard link; beneath the list it refuses a file git does not track (scripts/git_tree.py `tracked`), so git's own state, an ignored file and the toolchain the gate runs stay out of reach where no entry names them, and a root where git cannot say is refused too; edits are planned by the resolved path, so two spellings of one file compose as one; each refusal names the edit, the path and the protecting key with its reason. A policy it cannot use (absent, malformed, empty, or not protecting config/project.json itself) is a config fault, ExitCode.CONFIG, and nothing is written. The model never chooses the gate: the gate is the caller's `--gate` (default `verify`; `none`, no gate, is a human caller's flag, which the agents' own baseline run_make_target refuses), and a spec is a closed vocabulary (`practice`, `edits`; an edit's `file`, `find`, `replace`, `content`), so a spec naming a `gate` or any other key is refused before any write. Repeated `--allow <file>` binds the run to those files, judged on realpath, so an agent that passes the chunk it asked about cannot have the model edit another. A refusal over a protected path hides an `agents` rule key or reason that holds an `@` (scripts/config_loader.py `shown`). Vendor-neutral, stdlib.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -38,6 +38,17 @@ class RefactorError(Exception):
     Raised BEFORE any file is written, so a malformed spec never leaves a
     half-applied tree.
     """
+
+
+class RollbackError(Exception):
+    """A failed gate's per-file restore left the named files unrestored."""
+
+    def __init__(self, failures: Sequence[tuple[str, OSError]]) -> None:
+        self.failures = tuple(failures)
+        super().__init__(
+            "RollbackError: could not restore "
+            + "; ".join("%s (%s)" % (path, exc) for path, exc in self.failures)
+        )
 
 
 # A spec is model-written, so its shape is a closed vocabulary: a key outside
@@ -339,8 +350,8 @@ def _read_only_gate(gate: str, cwd: str, timeout: int | None) -> tuple[bool, str
     """The default gate: scripts/run_make_target.py, as (ok, output).
 
     A refusal (a target labelled wider than a gate may run, no git, no policy)
-    and a green run that changed the tree are both red, so the caller rolls the
-    edit back; the changed paths are appended so the reader sees why."""
+    and a green run that changed the tree are both red, so the caller attempts
+    per-file restoration; the changed paths are appended so the reader sees why."""
     res = run_make_target.run_target(gate, cwd, timeout)
     output = str(res["output"])
     changed = list(res.get("changed") or [])  # type: ignore[call-overload]
@@ -358,7 +369,7 @@ def apply_and_gate(
     allow: Sequence[str] | None = None,
     policy: EditPolicy | None = None,
 ) -> dict[str, object]:
-    """Apply the planned edits, run the gate, and roll back ALL files if it fails.
+    """Apply planned edits, gate them, and restore files one at a time on red.
 
     ``gate`` is the caller's and only the caller's (default ``"verify"``); a
     spec naming one is refused, and an empty gate raises RefactorError.
@@ -370,11 +381,12 @@ def apply_and_gate(
     RAISES -- any exception: a timeout, a hang, a killed ``make`` subprocess, an
     allowlist that cannot be built -- is treated as red, so
     the rollback still fires -- a non-returning gate must never leave an ungated
-    write behind. Returns a result dict describing what happened; the tree is left
-    green either way (accepted, or reverted to the originals). The one window it
-    cannot itself undo is a hard external kill (SIGKILL/OOM) of *this* process
-    mid-write -- that partial edit is surfaced by the next gate run, never
-    silently kept as done.
+    write without attempting restoration. Returns a result dict after acceptance
+    or successful restoration of the planned files' saved text. A restore write
+    failure raises RollbackError naming every unrestored file, after attempting
+    the remaining restores. This is not a transaction: a crash between files
+    can leave a half-applied tree. Changes the gate made outside the planned
+    files are not restored.
     """
     if not gate:
         raise RefactorError("no gate given")
@@ -391,16 +403,23 @@ def apply_and_gate(
         # environment never returns a verdict; treat ANY raise as RED so the
         # rollback below still fires -- a list of expected types once let a
         # ChildEnvError skip it and keep an ungated write. The cause is kept in
-        # the reported output (and the result says rolled_back), not swallowed.
+        # the reported output when restoration succeeds; a restore failure
+        # raises separately and takes precedence over the gate's failure.
         try:
             ok, output = (gate_runner or _read_only_gate)(gate, root, timeout)
         except Exception as exc:  # noqa: BLE001 — any raise is red; cause reported
             ok, output = False, "gate did not complete: %r" % exc
 
     if not ok:
-        for path, old, _new in planned:  # ROLL BACK on failure
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(old)
+        failures: list[tuple[str, OSError]] = []
+        for path, old, _new in planned:
+            try:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(old)
+            except OSError as exc:  # noqa: PERF203 -- one failed restore must not prevent the others being tried
+                failures.append((path, exc))
+        if failures:
+            raise RollbackError(failures) from failures[0][1]
 
     return {
         "practice": spec.get("practice", ""),
@@ -422,7 +441,7 @@ def _load_spec(path: str | None) -> dict[str, object]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Apply a proposed refactor and roll it back unless a make gate stays green."
+        description="Apply a proposed refactor and attempt per-file restoration unless a make gate stays green."
     )
     ap.add_argument(
         "--spec",
@@ -484,6 +503,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             result = apply_and_gate(
                 spec, args.root, gate=args.gate, timeout=args.timeout, allow=args.allow
             )
+    except RollbackError as exc:
+        if args.json:
+            json.dump({"error": str(exc)}, sys.stdout, indent=2, sort_keys=True)
+            sys.stdout.write("\n")
+        return report(
+            ExitCode.FAILURE,
+            "apply_refactor: RollbackError; per-file restore failed",
+            str(exc),
+            "restore each named file from its saved original or version control "
+            "and inspect the tree before running another refactor",
+        )
     except config_loader.ConfigError as exc:
         return report(
             ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
@@ -522,7 +552,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return ExitCode.SUCCESS
     return report(
         ExitCode.FAILURE,
-        "apply_refactor: the gate failed and every edit was rolled back",
+        "apply_refactor: the gate failed; planned files were restored one at a time",
         "`make %s` after editing %s" % (result["gate"], files),
         "read the gate's output, correct the spec and run it again",
     )
