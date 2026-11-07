@@ -2021,7 +2021,7 @@ Left by CMP-6.S1 so far:
   494 s, and `skeleton` (no frontend, no showcase, gRPC only) in 404 s and
   441 s. One job per set, `canary.workers` 1, so the whole canary is about 31
   minutes in one job. `launcher.long_scripts."make canary"` asks for 360
-  minutes, 8 cores and 16 GB, which is provisional: each job used under one core
+  minutes, 8 cores and 16 GiB, which is provisional: each job used under one core
   on average (12 and 15 CPU-minutes over 14 and 16 minutes) and peaked near
   320 MB of resident memory.
 - The farm nodes' CA bundle lacks the root the site's TLS interception signs

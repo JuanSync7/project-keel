@@ -622,7 +622,7 @@ def _capped(cap_mb, alloc_mb):
 @pytest.mark.skipif(not hasattr(os, "fork"), reason="RLIMIT_AS is a POSIX limit")
 def test_an_allocation_past_the_cap_is_refused_and_one_below_it_is_not():
     status, verdict = _capped(1024, 2048)
-    assert status.startswith("memory cap: 1024 MB of address space")
+    assert status.startswith("memory cap: 1024 MiB of address space")
     assert verdict == "refused"
     assert _capped(1024, 64)[1] == "allocated"
 
@@ -632,7 +632,7 @@ def test_no_cap_is_said_and_allocates_freely():
     assert status.startswith("memory cap: off") and verdict == "allocated"
 
 
-def test_a_cap_below_one_megabyte_is_refused():
+def test_a_cap_below_one_mebibyte_is_refused():
     for bad in (0, -1, True, 1.5):
         with pytest.raises(ValueError):
             resource_limits.cap_memory(bad)
@@ -660,7 +660,7 @@ def test_a_cap_above_the_hard_limit_is_lowered_to_it_and_says_so():
     assert done.returncode == 0, done.stderr
     status, limits = done.stdout.splitlines()
     assert status.startswith(
-        "memory cap: %d MB of address space (RLIMIT_AS, lowered to the hard limit)"
+        "memory cap: %d MiB of address space (RLIMIT_AS, lowered to the hard limit)"
         % hard_mb
     ), status
     assert limits.split() == [str(hard_mb << 20)] * 2, limits

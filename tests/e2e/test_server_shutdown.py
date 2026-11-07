@@ -89,7 +89,7 @@ def test_the_rest_server_exits_zero_on_sigterm():
         output = _read(log)
     assert code == 0, output
     assert "REST server: stopping on SIGTERM" in output
-    assert "memory cap: 4096 MB of address space" in output
+    assert "memory cap: 4096 MiB of address space" in output
 
 
 def test_the_mcp_server_exits_zero_on_sigterm_with_its_stdin_open():
@@ -123,4 +123,4 @@ def test_the_mcp_server_exits_zero_on_sigterm_with_its_stdin_open():
     assert reply["id"] == 1
     assert code == 0, err
     assert "MCP server keel-actions: stopping on SIGTERM" in err, err
-    assert "memory cap: 4096 MB of address space" in err
+    assert "memory cap: 4096 MiB of address space" in err

@@ -43,6 +43,10 @@ version rather than a bare commit:
   a refused gate argument is no longer echoed.
   A source-scanning gate rejects dollar-anchored match calls outside
   explicit multiline scans, with synthetic cases proving detection.
+- **Memory size settings name their binary units (KEEL-SIZE-UNIT-1).**
+  Document memory caps and scratch floors in mebibytes (MiB), and launcher
+  memory requests in gibibytes (GiB), matching the existing readers.
+  A reference drift gate rejects decimal or missing unit labels on size keys.
 - **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
   The Python 3.6-safe `scripts/project_python.py` launcher uses the current
   tree's venv, then the main checkout's, preserving arguments, stdin and the

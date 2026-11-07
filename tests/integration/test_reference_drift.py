@@ -102,6 +102,16 @@ _MULTISELECT_KEY = "multiselect"
 _VALIDATOR_KEY = "validator"
 _MANIFEST_TWIN = "config/project.json.jinja"
 _MISSING = object()
+# A suffix keeps its historical spelling; its documented unit follows the
+# reader's binary multiplier rather than the decimal-looking key name.
+_SIZE_UNITS = {
+    "_kb": r"\b(?:kibibytes?|KiB)\b",
+    "_mb": r"\b(?:mebibytes?|MiB)\b",
+    "_gb": r"\b(?:gibibytes?|GiB)\b",
+}
+_DECIMAL_SIZE_UNIT = re.compile(
+    r"\b(?:kilobytes?|megabytes?|gigabytes?|KB|MB|GB)\b", re.IGNORECASE
+)
 
 
 # --- the document ---------------------------------------------------------
@@ -168,6 +178,32 @@ def _ships(row):
 
 def _default_span(row):
     return _first_span(row["Default"])
+
+
+def size_unit_findings(doc, sections):
+    """One finding per size-key row with a decimal label or no matching
+    binary unit, across every settings table; judging no size rows fails."""
+    findings, judged = [], 0
+    for heading, body in sections.items():
+        if cs._pipe_table(body, _COLUMNS) is None:
+            continue
+        rows, errs = section_rows(doc, sections, heading)
+        findings += errs
+        for row in rows:
+            for suffix, binary in _SIZE_UNITS.items():
+                if not row["key"].endswith(suffix):
+                    continue
+                judged += 1
+                text = " ".join(row[col] for col in _COLUMNS)
+                if _DECIMAL_SIZE_UNIT.search(text) or not re.search(binary, text):
+                    findings.append(
+                        "%s: `## %s` row `%s` must name its binary unit (%s) "
+                        "and use no decimal size label"
+                        % (doc, heading, row["key"], suffix)
+                    )
+    if not judged:
+        findings.append("%s: size units judged over zero rows" % doc)
+    return findings
 
 
 # --- JSON key paths -------------------------------------------------------
@@ -1433,6 +1469,58 @@ def _all_rows(doc, sections):
 
 
 # --- JSON keys ------------------------------------------------------------
+
+
+def test_settings_size_keys_name_binary_units(settings, sections):
+    findings = size_unit_findings(settings[0], sections)
+    assert not findings, "\n".join(findings)
+
+
+@pytest.mark.parametrize(
+    ("suffix", "binary", "decimal"),
+    [
+        ("_kb", "kibibytes", "kilobytes"),
+        ("_kb", "KiB", "KB"),
+        ("_mb", "mebibytes", "megabytes"),
+        ("_mb", "MiB", "MB"),
+        ("_gb", "gibibytes", "gigabytes"),
+        ("_gb", "GiB", "GB"),
+    ],
+)
+def test_a_size_row_with_a_decimal_or_missing_unit_is_one_finding(
+    settings, sections, suffix, binary, decimal
+):
+    doc, _text = settings
+    rows, errs = _all_rows(doc, sections)
+    victim = next(row for row in rows if row["key"].endswith(tuple(_SIZE_UNITS)))
+    assert not errs, errs
+    # Mutate a real row's cells, so the proof also exercises the table reader.
+    units = "|".join([_DECIMAL_SIZE_UNIT.pattern, *_SIZE_UNITS.values()])
+    good = {col: re.sub(units, "", victim[col]) for col in _COLUMNS}
+    key = victim["key"][:-3] + suffix
+    good["Key"] = "`%s`" % key
+    good["Valid values"] = binary
+    table = "\n".join(
+        [
+            "| " + " | ".join(_COLUMNS) + " |",
+            "| " + " | ".join("---" for _ in _COLUMNS) + " |",
+            "| " + " | ".join(good[col] for col in _COLUMNS) + " |",
+        ]
+    )
+    baseline = {"size settings": table}
+    assert size_unit_findings(doc, baseline) == []
+    for unit in (
+        decimal,
+        "",
+        "MiB" if suffix != "_mb" else "GiB",
+        binary + " and " + decimal,
+    ):
+        planted = {
+            heading: body.replace(binary, unit) for heading, body in baseline.items()
+        }
+        findings = size_unit_findings(doc, planted)
+        assert len(findings) == 1, findings
+        assert key in findings[0]
 
 
 def test_settings_rows_cover_every_json_key_path(settings, sections, inventory):

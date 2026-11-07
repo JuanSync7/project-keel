@@ -63,7 +63,7 @@ changes directory to `tmp_path` first. `docs/adr/keel/K-0024-what-a-test-may-rea
 ## Where test scratch lives
 
 `conftest.py` points tempfile, `TMPDIR` and pytest's numbered basetemp at
-the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` megabytes free, and the directory is this user's with mode 0700; else `tests.scratch_root`. A nested pytest a test
+the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` mebibytes (MiB) free, and the directory is this user's with mode 0700; else `tests.scratch_root`. A nested pytest a test
 starts inherits the root through `KEEL_TEST_SCRATCH`. Memory comes first
 because test scratch is thrown away within seconds and needs no durability. A
 host without the parent, with too little free, with a parent others may

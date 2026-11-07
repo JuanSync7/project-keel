@@ -822,7 +822,7 @@ def test_isolation_guard_hides_a_memory_root_holding_an_at_in_each_note(
         parent.chmod(0o700)
     said = {
         "open": "writable by other users",
-        "floor": "MB free",
+        "floor": "MiB free",
         "unmade": "could not be made",
         "unowned": "owns with mode 0700",
     }[case]

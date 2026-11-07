@@ -989,7 +989,7 @@ _FLOOR_KEY = "memory_scratch_min_free_mb"
 
 def _memory_config(tmp_path, memory, floor=0, disk=None):
     """A checkout whose config names a disk root and *memory* as the memory
-    root, with *floor* MB as the free-space floor."""
+    root, with *floor* MiB as the free-space floor."""
     checkout = tmp_path / "checkout"
     (checkout / "config").mkdir(parents=True, exist_ok=True)
     disk = str((tmp_path / "disk").resolve()) if disk is None else disk
@@ -1063,7 +1063,7 @@ def test_a_memory_root_below_the_free_space_floor_falls_back_naming_both(tmp_pat
     checkout, disk = _memory_config(tmp_path, memory, floor)
     got = ig.choose_scratch(checkout, {}, _systemp(tmp_path))
     assert got.path == disk and got.medium == "disk", got
-    assert "MB free" in got.note and str(floor) in got.note, got
+    assert "MiB free" in got.note and str(floor) in got.note, got
     assert _FLOOR_KEY in got.note, got
     assert not os.path.exists("%s-%d" % (memory, os.getuid()))
 

@@ -1703,7 +1703,7 @@ KEYS = tuple(
                 ("tests", "memory_scratch_min_free_mb"),
                 "int",
                 NONE,
-                "the megabytes the memory root's file system must have free "
+                "the mebibytes (MiB) the memory root's file system must have free "
                 "for a session to choose it",
                 accepts=(_not_negative, "a value >= 0"),
             ),
@@ -1782,7 +1782,7 @@ KEYS = tuple(
                 ("transports", "serve", "memory_cap_mb"),
                 "int_or_null",
                 4096,
-                "the megabytes of address space a REST, MCP or gRPC server "
+                "the mebibytes (MiB) of address space a REST, MCP or gRPC server "
                 "process may hold (RLIMIT_AS); null: no cap",
                 accepts=(_null_or_at_least_one, "a value >= 1"),
             ),
