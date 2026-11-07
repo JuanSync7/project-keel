@@ -1,10 +1,5 @@
 # {{ project_title }}
 
-- **Failed refactor restores are named (KEEL-ROLLBACK-1).** The doer raises
-  `RollbackError` naming every unrestored file after trying the remaining files;
-  the CLI reports `ExitCode.FAILURE` and a recovery step. The tool card and
-  related docs state per-file restoration and its crash limits.
-
 All notable changes. Format: Keep a Changelog.
 
 Generated from the [Project Keel](https://github.com/JuanSync7/project-keel) template.
@@ -13,31 +8,4 @@ The template revision this project came from is recorded in `.copier-answers.yml
 template improvements. Keel's own changelog is not this project's history.
 
 ## [Unreleased]
-
-- **The generated README quotes the project title (KEEL-ANSWERS-2).**
-  A title with a colon or a double quote round-trips through the README
-  frontmatter, and one table of version clauses holds the backend and toolchain
-  answer grammars to the same verdict.
-- **An unreadable file below a directory pytest skips no longer stops the e2e
-  coverage gate (KEEL-MARKATTACH-2).**
-  A file there that does not decode or parse is named in a warning with its
-  path and reason, and the scan goes on; a readable endpoint marker there is
-  still a finding, and a collected file that fails to parse still raises.
-- **The exit gate sees a status bound to an attribute, subscript or augmented
-  target (KEEL-EXITDROP-2).**
-  `ns.status = main()`, `d["s"] = main()` and `s += main()` in an entry block
-  are a dropped status unless that same target is handed to `finish`; targets
-  are compared by syntax tree, and the finding keeps its wording.
-- **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
-  The Python 3.6-safe `scripts/project_python.py` launcher uses the current
-  tree's venv, then the main checkout's, preserving arguments, stdin and the
-  script's exit status.
-  Missing venvs name both paths and the build remedy; bare or unusual
-  fallback layouts refuse without guessing.
-- **Full test gates refuse narrowed runs (KEEL-TESTSEL-1).**
-  The selection guard refuses command-line and shlex-parsed `PYTEST_ADDOPTS`
-  tokens unless the configured flag/value allowlist recognises them as
-  harmless, including clustered short flags and their values. Unknown options,
-  selection tokens and malformed quoting refuse through the exit helper;
-  warning-filter values containing `::` pass. Tier targets and direct pytest may narrow without gate evidence.
 - Generated from Project Keel.

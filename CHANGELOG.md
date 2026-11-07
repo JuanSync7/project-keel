@@ -15,6 +15,10 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **A generated project starts its changelog empty (KEEL-LAND-FIX-1).**
+  Six template fixes had also copied their entry into `CHANGELOG.md.jinja`;
+  the twin is the generated project's own history, so the document-drift gate
+  now fails a twin that repeats an entry of the template's changelog.
 - **The generated README quotes the project title (KEEL-ANSWERS-2).**
   A title with a colon or a double quote round-trips through the README
   frontmatter, and one table of version clauses holds the backend and toolchain

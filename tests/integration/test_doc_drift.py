@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. The excluded-path rule instead reads every shipped text source, with no history, table or fence waiver, using Copier's own matcher for unconditional exclusions under docs/ only; other exclusions (Copier defaults, generated views and template-only tools) and conditional exclusions are outside its class. It exempts a whole test module only when its module-level pytest.mark.skipif uses the copier-absent guard and the _TEMPLATE_ONLY reason. NUL-containing files are counted as binary and skipped. Jinja sources are read without rendering answers. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. The excluded-path rule instead reads every shipped text source, with no history, table or fence waiver, using Copier's own matcher for unconditional exclusions under docs/ only; other exclusions (Copier defaults, generated views and template-only tools) and conditional exclusions are outside its class. It exempts a whole test module only when its module-level pytest.mark.skipif uses the copier-absent guard and the _TEMPLATE_ONLY reason. NUL-containing files are counted as binary and skipped. A history file's `.md.jinja` twin renders as the generated project's own history, so it carries no `- ` entry line of the untwinned file, and finding no such pair fails. Jinja sources are read without rendering answers. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
 """
 
 import ast
@@ -223,6 +223,38 @@ def entry_policy(manifest):
 
 def _untwinned(relpath):
     return relpath.removesuffix(_TWIN_SUFFIX)
+
+
+def leaked_history_findings(root, history_paths):
+    """(findings, pairs judged) for every `.md.jinja` twin under a history
+    prefix whose untwinned file exists: each `- ` entry line of the twin that
+    is also a line of the untwinned file is a finding, because the twin
+    renders as the generated project's own history and keel's entries are not
+    that history."""
+    findings, pairs = [], 0
+    for dirpath, _dirs, files in cs.walk(str(root)):
+        for name in files:
+            if not name.endswith(".md" + _TWIN_SUFFIX):
+                continue
+            twin = os.path.join(dirpath, name)
+            relpath = os.path.relpath(twin, str(root)).replace(os.sep, "/")
+            source = os.path.join(str(root), _untwinned(relpath))
+            if not _untwinned(relpath).startswith(history_paths):
+                continue
+            if not os.path.isfile(source):
+                continue
+            pairs += 1
+            with open(source, encoding="utf-8") as fh:
+                own = set(fh.read().splitlines())
+            with open(twin, encoding="utf-8") as fh:
+                for i, line in enumerate(fh.read().splitlines(), 1):
+                    if line.startswith("- ") and line in own:
+                        findings.append(
+                            "%s:%d: carries the template's own history entry %r; "
+                            "the generated project starts its history empty"
+                            % (relpath, i, line)
+                        )
+    return findings, pairs
 
 
 def shipped_docs(root, history_paths):
@@ -1537,6 +1569,30 @@ def test_no_shipped_doc_cites_a_document_the_template_never_ships():
     sources, _binaries = shipped_sources(_ROOT)
     findings = excluded_citation_findings(sources, excluded)
     assert not findings, "\n".join(findings)
+
+
+def test_a_history_twin_carries_none_of_the_template_s_own_history(policy):
+    if not (_ROOT / "copier.yml").is_file():
+        pytest.skip(_TEMPLATE_ONLY)
+    findings, pairs = leaked_history_findings(_ROOT, policy["history_paths"])
+    assert pairs, (
+        "no history file with a .md.jinja twin found -- a scan over zero pairs"
+    )
+    assert not findings, "\n".join(findings)
+
+
+def test_a_planted_history_entry_in_a_twin_reds_the_scan(tmp_path):
+    entry = "- **A template fix (KEEL-PLANTED-1).**"
+    (tmp_path / "CHANGELOG.md").write_text(
+        "## [Unreleased]\n\n%s\n" % entry, encoding="utf-8"
+    )
+    twin = tmp_path / "CHANGELOG.md.jinja"
+    twin.write_text("## [Unreleased]\n- Generated.\n", encoding="utf-8")
+    assert leaked_history_findings(tmp_path, ("CHANGELOG.md",)) == ([], 1)
+    twin.write_text("## [Unreleased]\n%s\n- Generated.\n" % entry, encoding="utf-8")
+    findings, pairs = leaked_history_findings(tmp_path, ("CHANGELOG.md",))
+    assert pairs == 1 and len(findings) == 1, findings
+    assert "CHANGELOG.md.jinja:2:" in findings[0] and "KEEL-PLANTED-1" in findings[0]
 
 
 def test_a_planted_citation_of_a_never_shipped_document_reds_the_scan(exclusion_tree):
