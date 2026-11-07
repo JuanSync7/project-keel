@@ -16,7 +16,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 sys.path.insert(0, str(_ROOT / "tests"))
 
 import config_loader  # noqa: E402
-from child_env import build_child_env  # noqa: E402
+from child_env import build_child_env, load_policy  # noqa: E402
 from exit_codes import ExitCode  # noqa: E402
 from jobs.conflict_guard import job_closure  # noqa: E402
 
@@ -24,6 +24,8 @@ import hermetic_git  # noqa: E402
 
 pytestmark = pytest.mark.unit
 _LAUNCHER = _ROOT / "scripts/project_python.py"
+# The shell stub may add these itself, independently of the launcher.
+_SHELL_ENV_NAMES = {"PWD", "SHLVL", "_"}
 _TIMEOUT = config_loader.resolve(
     config_loader.read(str(_ROOT)),
     config_loader.rows(("tests", "child_timeout_seconds")),
@@ -102,6 +104,39 @@ def test_linked_tree_uses_main_checkout_venv(project):
     result = _run(tree, "script.py")
     assert result.returncode == ExitCode.SUCCESS, result.stderr
     assert result.stdout == "main\nscript.py\n"
+
+
+def test_child_sees_only_allowlisted_variables(project, tmp_path):
+    root, _ = project
+    interpreter = _python(root, "local")
+    interpreter.write_text('#!/bin/sh\nenv | cut -d= -f1 > "$1"\n', encoding="utf-8")
+    recorded_env = tmp_path / "child-env-names"
+    policy = load_policy()
+    allowed_names = set(policy.names) | _SHELL_ENV_NAMES
+    planted_name = "KEEL_TEST_NON_ALLOWLISTED"
+    assert planted_name not in allowed_names
+    assert not planted_name.startswith(policy.prefixes)
+
+    result = subprocess.run(
+        [sys.executable, str(_LAUNCHER), str(recorded_env)],
+        cwd=root,
+        env=build_child_env(extra={planted_name: "must not reach the interpreter"}),
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=_TIMEOUT,
+    )
+
+    assert result.returncode == ExitCode.SUCCESS, result.stderr
+    recorded_names = set(recorded_env.read_text(encoding="utf-8").splitlines())
+    assert planted_name not in recorded_names
+    assert len(recorded_names) > 0
+    unexpected = {
+        name
+        for name in recorded_names
+        if name not in allowed_names and not name.startswith(policy.prefixes)
+    }
+    assert not unexpected, unexpected
 
 
 def test_missing_venvs_refuse_with_both_paths_and_remedy(project):
