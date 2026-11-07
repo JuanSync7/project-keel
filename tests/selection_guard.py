@@ -1,6 +1,11 @@
 """
-title: Selection guard — a test run that ran zero tests fails
-summary: The verdict tests/conftest.py applies when a pytest session ends. pytest exits 5 only when nothing is collected; a selection whose every test skipped exits 0, so a tier can be green with no assertion executed. Here zero tests ran is exit 5, with a message naming the selection as the run made it, unless the selection is one bare `-m` marker config/project.json make_targets.empty_test_selections declares, run over the configured suite with no `-k` and no explicit path, which exits 0 and prints its reason; a declared marker whose tests did run exits 1, because the declaration has gone stale.
+title: Selection guard — refuse narrowed full gates and runs with zero tests
+summary: A full gate accepts only configured harmless flag/value options in command-line tokens or shlex-parsed PYTEST_ADDOPTS; unknown tokens (including -k, -m, node ids and --deselect) and malformed environment quoting return ExitCode.USAGE, and an invalid allowlist returns ExitCode.CONFIG. The end-of-session verdict makes a run of zero tests exit 5, unless one bare marker make_targets.empty_test_selections declares is run over the configured suite with no -k or explicit path; a declared marker whose tests ran exits 1 as stale.
+
+The Makefile runs this module before pytest so malformed PYTEST_ADDOPTS cannot
+escape as pytest's own parse error. Its --keel-full-gate option makes conftest
+check the actual invocation too. Tier targets and direct pytest omit that
+option. This module writes no gate evidence.
 
 Why "ran" and not "collected": a skip executes no assertion, so a selection
 of only skips proves as little as an empty one. A test counts as ran when its
@@ -22,6 +27,7 @@ guard back into a pass over zero tests.
 
 import os
 import re
+import shlex
 import sys
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,10 +36,122 @@ if _SCRIPTS not in sys.path:
     sys.path.insert(0, _SCRIPTS)
 
 import config_loader  # noqa: E402
+from exit_codes import ExitCode, finish, report  # noqa: E402
 
 _KEY = "empty_test_selections"
 _BARE_MARKER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _EXPRESSION_WORDS = ("and", "or", "not")
+_OPTIONS_KEY = ("tests", "full_gate_options")
+
+
+def _full_gate_options():
+    """Read and validate the configured flag/value allowlist."""
+    options = config_loader.resolve(
+        config_loader.read(_ROOT),
+        config_loader.rows(_OPTIONS_KEY),
+        config_loader.CONFIG_FILE,
+        environ={},
+    )[_OPTIONS_KEY]
+    if not options:
+        raise ValueError("full_gate_options must name at least one harmless option")
+    for name, row in options.items():
+        if (
+            not re.fullmatch(r"-[A-Za-z]|--[a-z][a-z-]*", name)
+            or not isinstance(row, dict)
+            or row.get("kind") not in ("flag", "value")
+            or not isinstance(row.get("_comment"), str)
+            or not row["_comment"].strip()
+            or (
+                "values" in row
+                and (
+                    row["kind"] != "value"
+                    or not isinstance(row["values"], list)
+                    or not row["values"]
+                    or not all(isinstance(value, str) for value in row["values"])
+                )
+            )
+        ):
+            raise ValueError("invalid full_gate_options entry %s" % name)
+    return options
+
+
+def _unrecognised(tokens, options):
+    """Return the first token not proved harmless, with its offending option."""
+    tokens = iter(tokens)
+    for token in tokens:
+        if token.startswith("--"):
+            name, equals, value = token.partition("=")
+            row = options.get(name)
+            if row is None:
+                return token, name
+            if row["kind"] == "flag":
+                if equals:
+                    return token, name
+                continue
+            if not equals:
+                value = next(tokens, None)
+            if value is None or ("values" in row and value not in row["values"]):
+                return token, "%s value %r" % (name, value)
+        elif token.startswith("-") and token != "-":
+            # argparse walks flag letters until a value letter owns the suffix.
+            for offset, letter in enumerate(token[1:], 2):
+                name = "-" + letter
+                row = options.get(name)
+                if row is None:
+                    return token, name
+                if row["kind"] == "value":
+                    value = token[offset:]
+                    if value.startswith("="):
+                        value = value[1:]
+                    elif not value:
+                        value = next(tokens, None)
+                    if value is None or (
+                        "values" in row and value not in row["values"]
+                    ):
+                        return token, "%s value %r" % (name, value)
+                    break
+        else:
+            return token, "node id" if "::" in token else "path"
+    return None
+
+
+def check_full_gate(args, addopts):
+    """Require harmless argv and shlex-parsed PYTEST_ADDOPTS through a named exit."""
+    try:
+        env_tokens = shlex.split(addopts)
+    except ValueError:
+        return report(
+            ExitCode.USAGE,
+            "full gate cannot parse PYTEST_ADDOPTS",
+            "PYTEST_ADDOPTS",
+            "correct its shell quoting and run the full gate again",
+        )
+    try:
+        options = _full_gate_options()
+    except (config_loader.ConfigError, ValueError) as exc:
+        return report(
+            ExitCode.CONFIG,
+            "full gate cannot read its option allowlist: %s" % exc,
+            "tests.full_gate_options",
+            "correct the configured flag/value entries and run the full gate again",
+        )
+    for source, tokens in (("command line", args), ("PYTEST_ADDOPTS", env_tokens)):
+        refused = _unrecognised(tokens, options)
+        if refused is not None:
+            token, name = refused
+            return report(
+                ExitCode.USAGE,
+                "full gate refuses unrecognised or narrowing token %s (%s)"
+                % (token, name),
+                source,
+                "remove the selection or use a tier target or direct pytest",
+            )
+    return ExitCode.SUCCESS
+
+
+def main():
+    """Check the full gate before pytest parses PYTEST_ADDOPTS or writes reports."""
+    return check_full_gate(sys.argv[1:], os.environ.get("PYTEST_ADDOPTS", ""))
 
 
 def _policy_reader():
@@ -121,3 +239,7 @@ def verdict(ran, markexpr, declared, keyword="", paths=()):
             "stale: make_targets.%s.%s but %d tests ran" % (_KEY, marker, ran),
         )
     return None, ""
+
+
+if __name__ == "__main__":
+    finish(main())

@@ -1093,6 +1093,12 @@ KEYS = tuple(
                 "imported modules allowed to end the process, mapped to reasons",
             ),
             _row(
+                ("tests", "full_gate_options"),
+                "object",
+                NONE,
+                "the full-gate flag/value allowlist tests/selection_guard.py validates",
+            ),
+            _row(
                 ("make_targets",),
                 "object",
                 NONE,

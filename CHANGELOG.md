@@ -16,6 +16,13 @@ version rather than a bare commit:
   script's exit status.
   Missing venvs name both paths and the build remedy; bare or unusual
   fallback layouts refuse without guessing.
+- **Full test gates refuse narrowed runs (KEEL-TESTSEL-1).**
+  The selection guard refuses command-line and shlex-parsed `PYTEST_ADDOPTS`
+  tokens unless the configured flag/value allowlist recognises them as
+  harmless, including clustered short flags and their values. Unknown options,
+  selection tokens and malformed quoting refuse through the exit helper;
+  warning-filter values containing `::` pass. Tier targets and direct pytest may narrow without gate evidence.
+
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying
   a configured value names its source and key as WrongValue. Rendering uses

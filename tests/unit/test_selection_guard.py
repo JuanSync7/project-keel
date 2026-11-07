@@ -6,6 +6,9 @@ summary: The verdict table the suite's end-of-session guard applies. Zero tests 
 """
 
 import json
+import runpy
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
@@ -98,3 +101,105 @@ def test_declared_empty_raises_on_a_block_the_policy_rejects(value):
 
 def test_declared_empty_reads_this_projects_config_by_default():
     assert isinstance(sg.declared_empty(), dict)
+
+
+_NARROWING = [
+    ["-k", "test_passes"],
+    ["-ktest_passes"],
+    ["-k=test_passes"],
+    ["-m", "unit"],
+    ["-munit"],
+    ["-m=unit"],
+    ["tests/test_x.py::test_passes"],
+    ["--deselect", "tests/test_x.py::test_other"],
+    ["--deselect=tests/test_x.py::test_other"],
+]
+
+
+@pytest.mark.parametrize("tokens", _NARROWING)
+@pytest.mark.parametrize("source", ["command line", "PYTEST_ADDOPTS"])
+def test_full_gate_refuses_each_narrowing(tokens, source, monkeypatch, capsys):
+    monkeypatch.setenv(
+        "PYTEST_ADDOPTS", shlex.join(tokens) if source != "command line" else ""
+    )
+    monkeypatch.setattr(
+        sys, "argv", [sg.__file__] + (tokens if source == "command line" else [])
+    )
+    with pytest.raises(SystemExit) as caught:
+        runpy.run_path(sg.__file__, run_name="__main__")
+    assert caught.value.code == 2
+    message = capsys.readouterr().err
+    assert source in message and tokens[0] in message, message
+
+
+@pytest.mark.parametrize(
+    "addopts",
+    [
+        "-q",
+        "-p no:cacheprovider",
+        "-x",
+        "-rA",
+        "--tb=short",
+        "-W ignore::DeprecationWarning",
+    ],
+)
+def test_full_gate_accepts_harmless_addopts(addopts, monkeypatch):
+    monkeypatch.setenv("PYTEST_ADDOPTS", addopts)
+    monkeypatch.setattr(sys, "argv", [sg.__file__])
+    with pytest.raises(SystemExit) as caught:
+        runpy.run_path(sg.__file__, run_name="__main__")
+    assert caught.value.code == 0
+
+
+def test_full_gate_refuses_unparseable_addopts(monkeypatch, capsys):
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-k 'unterminated")
+    monkeypatch.setattr(sys, "argv", [sg.__file__])
+    with pytest.raises(SystemExit) as caught:
+        runpy.run_path(sg.__file__, run_name="__main__")
+    assert caught.value.code == 2
+    assert "cannot parse PYTEST_ADDOPTS" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "addopts",
+    [
+        "-xk foo",
+        "-qkfoo",
+        "--lf",
+        "--last-failed",
+        "--sw",
+        "--ignore=tests/integration",
+        "--ignore-glob tests/integration/*",
+        "--co",
+        "--collect-only",
+        "--noconftest",
+        "-c other.ini",
+        "-o addopts=-kfoo",
+        "--rootdir other",
+        "--unknown-option",
+        "-p otherplugin",
+        "-qpotherplugin",
+        "-qZ",
+        "tests/integration",
+        "-W",
+        "--tb",
+        "--quiet=yes",
+    ],
+)
+@pytest.mark.parametrize("source", ["command line", "PYTEST_ADDOPTS"])
+def test_full_gate_requires_positive_option_recognition(addopts, source, capsys):
+    args = shlex.split(addopts) if source == "command line" else []
+    assert sg.check_full_gate(args, addopts if source == "PYTEST_ADDOPTS" else "") == 2
+    message = capsys.readouterr().err
+    assert source in message and shlex.split(addopts)[0] in message, message
+
+
+def test_full_gate_consumes_harmless_values_before_judging_positionals():
+    options = [
+        "-qvxslrA -W ignore::DeprecationWarning -p=no:cacheprovider",
+        "--tb short --color=yes --durations 3 -Wignore::DeprecationWarning",
+        "--keel-full-gate -n auto --junitxml=report.xml -W ignore::DeprecationWarning",
+    ]
+    assert len(options) == 3
+    for options_text in options:
+        assert sg.check_full_gate(shlex.split(options_text), options_text) == 0

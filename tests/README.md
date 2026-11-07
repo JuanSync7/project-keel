@@ -115,6 +115,27 @@ stale and the run exits 1 until it is removed. `--collect-only`,
 `--setup-plan` and `--setup-only` (which execute no test by design), a run
 that already failed, and an xdist worker are left alone.
 
+A full gate (`make test`, including the `test` goal of `make verify` and a
+run through `scripts/run_make_target.py`) refuses `-k`, `-m`, node ids such as
+`path::test`, and `--deselect`, including attached and `=` forms, on the
+command line or in `PYTEST_ADDOPTS`. `tests/selection_guard.py` splits the
+variable with `shlex.split`; malformed quoting is also a refusal. Every option
+must appear in the harmless flag/value allowlist at `tests.full_gate_options`
+in `config/project.json`, read through `scripts/config_loader.py` and its
+`KEYS` row. Short flags may cluster; a value letter consumes the suffix or
+next token. Long value options accept both `--option=value` and `--option value`.
+Unknown options and paths are refused. Only `-p no:cacheprovider` may load or
+disable a plugin; warning-filter values such as `ignore::DeprecationWarning`
+are values, not node ids. An invalid allowlist returns `ExitCode.CONFIG` (14).
+The Makefile preflight returns `ExitCode.USAGE` (2) through the exit helper and names the
+refused token, its option and its source. The recipe passes `--keel-full-gate` directly
+to pytest, where `tests/conftest.py` checks the actual invocation before
+collection; pytest reports that refusal as a usage error. Tier targets and a
+direct pytest omit the flag, allow narrowing, and write no gate evidence.
+`PYTEST_ADDOPTS` is absent from `child_env.names`, so `make verify`'s driver and
+the gate runner remove it before starting their child. The full-gate flag is a
+command-line argument and needs no environment allowlist entry.
+
 ## A test that cannot fail fails the gate
 
 `integration/test_assertion_quality_gate.py` reads every test function under

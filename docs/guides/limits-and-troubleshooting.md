@@ -499,6 +499,7 @@ and holds their conflict and duplicate-key paths to this contract.
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |
 | `scripts/trace_requirements.py` | 0, 1, 2, 14 |
+| `tests/selection_guard.py` | 0, 2, 14 |
 <!-- exit-codes:end -->
 
 A failing script's last stderr line has three parts: `<what failed>: <on which
@@ -672,6 +673,27 @@ says when each script returns each code.
 | `scripts/scan_secrets.py` | 0: a scan judged at least one file or commit and every finding is a `secrets.scanner.exclusions` entry. 1: a finding, each one `file:line rule` stdout line (a history finding with its commit after it), never the value, and nothing else. 2: not exactly one of `--staged`, `--history` or `--staged-or-history`, or a git command that ran and failed. 11 (`BACKEND_ABSENT`): for any scan, no record, a record naming another program or rev, a recorded path that is gone or a program whose digest changed; or a scanner that ran and gave no verdict: a status other than 0 and the finding status, a report that is not a JSON list of findings, no report, or a status and report that disagree. 13 (`NOTHING_JUDGED`): no repository, a history with no commit, `secrets.scanner.history_log_opts` that reach no commit, or a `--staged` scan of a stage that adds or changes no file. 14 (`CONFIG`): a bad `secrets.scanner` block, a `secrets.scanner.name` other than the one scanner the adapter adapts, the scanner's own config or ignore file in the tree, or an exclusion the history scan did not use |
 | `scripts/install_scanner.py` | 0: the pinned scanner is installed and recorded, or already was. 1: the fetched archive is not the pinned one: a sha256 that differs, a reply over `secrets.scanner.download_max_bytes`, an archive that cannot be read as a `.tar.gz` (a cut gzip stream included) or that lacks exactly one regular member named `secrets.scanner.name`; nothing is installed. 2: any argument, or a local file it cannot read or write (the install root, the kept archive, the program, the record or the scratch directory), named; never reported as a network fault. 11 (`BACKEND_ABSENT`): the archive could not be fetched from `secrets.scanner.release_url`. 14 (`CONFIG`): a bad `secrets.scanner` block (a `rev` or `name` that is not one path part included), a name other than the scanner `scripts/scan_secrets.py` adapts, no archive pinned for this platform, an install root or program path that resolves inside the checkout, or a record file git would track, each before any fetch |
 | `scripts/trace_requirements.py` | 0: every unit is `covered` or a `traceability.gaps` row, and there is no finding. 1: at least one finding, each one stderr line: an `uncovered` unit, a marker or gap id that is malformed or undefined, an unreadable or unattached marker, a redundant gap, or zero requirements with no reason. 2: it could not judge: a bad `traceability` block, a path reached through a symlink, a `matrix_path` git does not ignore, a repository git cannot read, an unreadable schema, spec or test file, a spec line that does not parse, a document under the specs root that defines a requirement without `kind: spec`, or a collection rule pytest could not give; or it could not write the matrix at `traceability.matrix_path` |
+
+A full gate (`make test`, including the `test` goal of `make verify` and a
+run through `scripts/run_make_target.py`) refuses `-k`, `-m`, node ids such as
+`path::test`, and `--deselect`, including attached and `=` forms, on the
+command line or in `PYTEST_ADDOPTS`. `tests/selection_guard.py` splits the
+variable with `shlex.split`; malformed quoting is also a refusal. Every option
+must appear in the harmless flag/value allowlist at `tests.full_gate_options`
+in `config/project.json`, read through `scripts/config_loader.py` and its
+`KEYS` row. Short flags may cluster; a value letter consumes the suffix or
+next token. Long value options accept both `--option=value` and `--option value`.
+Unknown options and paths are refused. Only `-p no:cacheprovider` may load or
+disable a plugin; warning-filter values such as `ignore::DeprecationWarning`
+are values, not node ids. An invalid allowlist returns `ExitCode.CONFIG` (14).
+The Makefile preflight returns `ExitCode.USAGE` (2) through the exit helper and names the
+refused token, its option and its source. The recipe passes `--keel-full-gate` directly
+to pytest, where `tests/conftest.py` checks the actual invocation before
+collection; pytest reports that refusal as a usage error. Tier targets and a
+direct pytest omit the flag, allow narrowing, and write no gate evidence.
+`PYTEST_ADDOPTS` is absent from `child_env.names`, so `make verify`'s driver and
+the gate runner remove it before starting their child. The full-gate flag is a
+command-line argument and needs no environment allowlist entry.
 
 Three more codes come from the tools around these scripts:
 

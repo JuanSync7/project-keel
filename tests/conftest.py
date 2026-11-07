@@ -94,6 +94,11 @@ _RECORD_OPTION = "--expiring-tier-record"
 
 def pytest_addoption(parser):
     parser.addoption(
+        "--keel-full-gate",
+        action="store_true",
+        help="refuse narrowed selections for make test and make verify",
+    )
+    parser.addoption(
         _RECORD_OPTION,
         metavar="PATH",
         default=None,
@@ -115,6 +120,12 @@ def _tier():
 
 
 def pytest_configure(config):
+    if config.getoption("--keel-full-gate") and selection_guard.check_full_gate(
+        config.invocation_params.args, os.environ.get("PYTEST_ADDOPTS", "")
+    ):
+        raise pytest.UsageError(
+            "full gate refused a narrowed run; see the selection_guard refusal"
+        )
     if not config.getoption(_RECORD_OPTION):
         return
     if getattr(config.option, "numprocesses", None):

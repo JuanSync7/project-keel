@@ -192,8 +192,11 @@ verify: ## [local] Run all gates (all checks + secret scan + lint + types + test
 # config/project.json tests.workers says (tests/conftest.py answers xdist's
 # count with it; 0 keeps one process). Only this target asks for workers: a
 # tier target, a direct pytest and a nested session stay in one process.
+# The preflight refuses malformed PYTEST_ADDOPTS before pytest parses it;
+# the CLI flag also checks the actual invocation, without leaking to children.
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+	$(PY) tests/selection_guard.py
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest --keel-full-gate -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 # The traceability gate reads specs and test files and runs no test, so it is
 # [local]. Its matrix lands on a git-ignored path, which is why it is not [tree].

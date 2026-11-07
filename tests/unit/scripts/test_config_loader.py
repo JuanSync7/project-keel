@@ -1721,3 +1721,9 @@ def test_a_wrapped_refusal_keeps_its_identity_and_absence():
     assert config_loader.refusal_cause(ValueError("not config")) is None
     outer.__cause__ = outer
     assert config_loader.refusal_cause(outer) is None
+
+
+def test_full_gate_option_table_has_a_required_keys_row():
+    row = config_loader.rows(("tests", "full_gate_options"))[0]
+    assert row.type == "object"
+    assert row.default is config_loader.NONE

@@ -20,6 +20,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 
 pytestmark = [
@@ -88,26 +89,35 @@ def _add_test(root, name, marker, body):
     )
 
 
-def _make(root, target):
+def _make(root, target, *, addopts=""):
     r = subprocess.run(
         ["make", "--no-print-directory", "PY=" + sys.executable, target],
         cwd=str(root),
-        env=build_child_env(),
+        env=build_child_env(extra={"PYTEST_ADDOPTS": addopts}),
         capture_output=True,
         text=True,
-        timeout=600,
+        timeout=_child_timeout(),
     )
     return r.returncode, r.stdout + r.stderr
 
 
-def _pytest(root, *args):
+def _child_timeout():
+    key = ("tests", "child_timeout_seconds")
+    return config_loader.resolve(
+        config_loader.read(str(_ROOT)),
+        config_loader.rows(key),
+        config_loader.CONFIG_FILE,
+    )[key]
+
+
+def _pytest(root, *args, addopts=""):
     r = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider"] + list(args),
         cwd=str(root),
-        env=build_child_env(extra={"PYTHONPATH": "src:."}),
+        env=build_child_env(extra={"PYTHONPATH": "src:.", "PYTEST_ADDOPTS": addopts}),
         capture_output=True,
         text=True,
-        timeout=600,
+        timeout=_child_timeout(),
     )
     return r.returncode, r.stdout + r.stderr
 
@@ -194,3 +204,54 @@ def test_a_narrowed_selection_is_named_and_never_declarable(tmp_path):
     code, out = _pytest(root, "-m", "smoke", "-k", "zzz_nomatch")
     assert code == 5, out[-2000:]
     assert "-m smoke -k zzz_nomatch" in out, out[-2000:]
+
+
+@pytest.mark.parametrize(
+    "addopts",
+    [
+        "-k test_passes",
+        "-xk test_passes",
+        "-qktest_passes",
+        "-munit",
+        "--deselect=tests/test_unit.py::test_other",
+        "tests/test_unit.py::test_passes",
+        "-k 'unterminated",
+    ],
+)
+def test_full_gate_refuses_addopts_but_tiers_and_direct_pytest_can_narrow(
+    tmp_path, addopts
+):
+    root = _scratch(tmp_path)
+    _add_test(root, "unit", "unit", _PASS + "\ndef test_other():\n    assert True\n")
+    code, out = _make(root, "test", addopts=addopts)
+    assert code != 0, out[-2000:]
+    assert "full gate" in out and "PYTEST_ADDOPTS" in out, out[-2000:]
+    assert "Error 2" in out, out[-2000:]
+    if "unterminated" not in addopts:
+        code, out = _make(root, "unit", addopts=addopts)
+        assert code == 0 and ("1 passed" in out or "2 passed" in out), out[-2000:]
+        code, out = _pytest(root, "-k", "test_passes")
+        assert code == 0 and "1 passed" in out, out[-2000:]
+        code, out = _pytest(root, addopts=addopts)
+        assert code == 0 and ("1 passed" in out or "2 passed" in out), out[-2000:]
+        code, out = _pytest(root, "--keel-full-gate", addopts=addopts)
+        assert code != 0 and "full gate" in out and "PYTEST_ADDOPTS" in out, out[-2000:]
+    code, out = _make(root, "test", addopts="-q -p no:cacheprovider -x")
+    assert code == 0 and "2 passed" in out, out[-2000:]
+    assert not (root / ".evidence").exists()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["-ktest_passes"],
+        ["-m=unit"],
+        ["tests/test_unit.py::test_passes"],
+        ["--deselect=tests/test_unit.py::test_other"],
+    ],
+)
+def test_full_gate_flag_refuses_command_line_narrowing(tmp_path, args):
+    root = _scratch(tmp_path)
+    _add_test(root, "unit", "unit", _PASS)
+    code, out = _pytest(root, "--keel-full-gate", *args)
+    assert code != 0 and "full gate" in out and "command line" in out, out[-2000:]
