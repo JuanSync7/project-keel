@@ -8,7 +8,9 @@ check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 Checks:
   A. Frontmatter validity on README.md / AGENT.md / CLAUDE.md, docs/**,
      test-docs/** *.md, and agents/**/*.tool.md; a 'deprecated' or
-     'superseded' document names its successor in superseded_by
+     'superseded' document names its successor in superseded_by; every
+     kind: doc Markdown source or twin carries form from FORMS, other kinds
+     cannot carry form, and a docs/ tree must hold a judged kind: doc
   B. Closed taxonomy (ERR): every non-hidden top-level dir is in TAXONOMY or
      declared in config/project.json structure.extra_toplevel; a declaration
      exists and is not redundant; every top-level dir and every agents/<name>/
@@ -179,6 +181,7 @@ import re
 import shlex
 import sys
 import tokenize
+from typing import Dict
 from urllib.parse import unquote
 
 # The allowlist's owner is scripts/child_env.py, beside this file; reading its
@@ -279,6 +282,7 @@ KINDS = {
     "ops",
     "tool",  # agents/tools/*.tool.md adapters
 }
+FORMS = {"guide", "reference", "index", "explanation", "runbook"}
 TOOL_EFFECTS = {"read-only", "writes", "model-call"}
 LAYERS = {"frontend", "backend", "shared", "app", "cross-cutting", "n/a"}
 STATUSES = {
@@ -360,7 +364,7 @@ GOVERNED = []  # (relpath, kind, owner) for frontmatter docs check_A validated
 _PROJECT_CHECKS = None
 
 
-def err(msg):
+def err(msg: str) -> None:
     errors.append(msg)
 
 
@@ -383,7 +387,7 @@ _quoted = config_loader.quoted
 _listed = config_loader.listed
 
 
-def rel(p):
+def rel(p: str) -> str:
     return os.path.relpath(p, ROOT)
 
 
@@ -606,6 +610,7 @@ def check_frontmatter(path, seen_ids):
             err("%s: frontmatter missing required key '%s'" % (rel(path), k))
     if fm.get("kind") and fm["kind"] not in KINDS:
         err("%s: invalid kind '%s'" % (rel(path), fm["kind"]))
+    _check_form(path, fm)
     if fm.get("layer") and fm["layer"] not in LAYERS:
         err("%s: invalid layer '%s'" % (rel(path), fm["layer"]))
     if fm.get("status") and fm["status"] not in STATUSES:
@@ -635,6 +640,37 @@ def check_frontmatter(path, seen_ids):
         err("%s: status is '%s' but no 'superseded_by' is set" % (rel(path), status))
     if not fm.get("owner"):
         warn("%s: frontmatter missing 'owner'" % rel(path))
+
+
+def _check_form(path: str, fm: Dict[str, str]) -> None:
+    """Only kind: doc carries form, chosen from FORMS."""
+    if fm.get("kind") == "doc":
+        if fm.get("form") in FORMS:
+            return
+        problem = "kind: doc requires form from FORMS (got '%s')" % fm.get("form", "")
+    elif "form" in fm:
+        problem = "form is only valid on kind: doc (kind: %s)" % fm.get("kind", "")
+    else:
+        return
+    key = "form" if "form" in fm else "kind"
+    line_number = 1
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for number, line in enumerate(fh.read().splitlines()[1:], 2):
+                if line.strip() == "---":
+                    break
+                if (
+                    line[:1] not in (" ", "\t")
+                    and line.partition(":")[0].strip() == key
+                ):
+                    line_number = number
+                    break
+    except UNREADABLE as exc:
+        problem = "cannot read form (%s)" % exc
+    err(
+        "%s:%s: %s; allowed form values for kind: doc: %s"
+        % (rel(path), line_number, problem, ", ".join(sorted(FORMS)))
+    )
 
 
 def sorted_walk(root):
@@ -736,6 +772,7 @@ def _visibility_contradictions(stated, chain=None, unwalked=None):
 def check_A():
     seen_ids = {}
     seen_real = set()  # dedupe symlink + target (CLAUDE.md -> AGENT.md)
+    doc_count = 0
     # A file is judged at the path build_corpus keeps for it, by served_chain:
     # the node and the chain the corpus serves.
     walked = walked_paths(ROOT)
@@ -751,23 +788,40 @@ def check_A():
         in_docs = top in ("docs", "test-docs")
         for f in filenames:
             is_tool = f.endswith(".tool.md") and top == "agents"
-            if (
+            governed = (
                 f in ("README.md", "AGENT.md", "CLAUDE.md")
                 or (in_docs and f.endswith(".md"))
                 or is_tool
-            ):
-                full = os.path.join(dirpath, f)
-                real = os.path.realpath(full)
-                if real in seen_real:
-                    continue
-                seen_real.add(real)
+            )
+            if not governed and not f.endswith((".md", ".md.jinja")):
+                continue
+            full = os.path.join(dirpath, f)
+            real = os.path.realpath(full)
+            if real in seen_real:
+                continue
+            fm = parse_frontmatter(full)
+            if not governed and not (fm and (fm.get("kind") == "doc" or "form" in fm)):
+                continue
+            seen_real.add(real)
+            if fm and fm.get("kind") == "doc":
+                doc_count += 1
+            if f.endswith(".md.jinja"):
+                # A twin shares its source's id; judge its facet without
+                # adding a second corpus identity or visibility chain.
+                _check_form(full, fm)
+            else:
                 judged.append(served(full))
                 check_frontmatter(full, seen_ids)
-                fm = parse_frontmatter(full)  # cheap re-parse for the roll-up
                 if fm:
                     GOVERNED.append((rel(full), fm.get("kind"), fm.get("owner")))
                     if fm.get("visibility"):
                         stated[served(full)] = fm["visibility"]
+
+    if os.path.isdir(os.path.join(ROOT, "docs")) and doc_count == 0:
+        err(
+            "docs/:1: form check judged zero kind: doc documents; allowed form values: %s"
+            % ", ".join(sorted(FORMS))
+        )
 
     chains = {
         path: [served(r) for r in served_chain(os.path.join(ROOT, path), ROOT, walked)]

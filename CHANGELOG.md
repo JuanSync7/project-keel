@@ -74,6 +74,11 @@ version rather than a bare commit:
   caller's interpreter, keeping the worker policy in the shipped recipe, and
   drops an outer make's flags, level and junit path first, so an outer
   `make -i` cannot turn a red generated suite into exit 0.
+- **Document forms are explicit (Backlog: KEEL-GENRE-1).** Every `kind: doc`
+  source and template twin carries `form` from `scripts/check_structure.py`
+  `FORMS`; `check_A` refuses missing or invalid forms, forms on other kinds,
+  and a tree with `docs/` but zero judged `kind: doc` documents.
+
 - **The config loader refuses recursion (KEEL-CFGCRASH-1, CMP-15.S1).**
   Decoder recursion names the file as ConfigUnreadable, and recursion copying
   a configured value names its source and key as WrongValue. Rendering uses

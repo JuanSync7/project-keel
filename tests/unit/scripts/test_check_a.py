@@ -25,6 +25,7 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "ROOT", str(tmp_path))
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
+    monkeypatch.setattr(cs, "GOVERNED", [])
     return tmp_path
 
 
@@ -71,6 +72,63 @@ def test_a_replaced_document_that_names_its_replacement_passes(repo, status):
 def test_a_live_document_needs_no_replacement(repo, status):
     cs.check_frontmatter(str(_doc(repo / "a.md", status)), {})
     assert _lifecycle_errors() == [], cs.errors
+
+
+def _form_doc(repo, relative, kind, form):
+    path = repo / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = _doc(path, "stable").read_text(encoding="utf-8")
+    declaration = "kind: %s" % kind
+    if form is not None:
+        declaration += "\nform: %s" % form
+    path.write_text(text.replace("kind: adr", declaration), encoding="utf-8")
+    return path
+
+
+def _assert_form_error(relative, line):
+    found = [message for message in cs.errors if "form" in message]
+    assert len(found) == 1, cs.errors
+    assert found[0].startswith("%s:%s:" % (relative, line)), found
+    assert all(value in found[0] for value in cs.FORMS), found
+
+
+@pytest.mark.parametrize(
+    "relative", ["docs/body.md", "CONTRIBUTING.md", "docs/body.md.jinja"]
+)
+def test_a_doc_without_form_errors(repo, relative):
+    _form_doc(repo, relative, "doc", None)
+    cs.check_A()
+    _assert_form_error(relative, 3)
+
+
+@pytest.mark.parametrize("form", ["essay", "", "Guide"])
+def test_a_doc_with_invalid_form_errors(repo, form):
+    _form_doc(repo, "docs/body.md", "doc", form)
+    cs.check_A()
+    _assert_form_error("docs/body.md", 4)
+
+
+@pytest.mark.parametrize("relative", ["docs/body.md", "other.md", "other.md.jinja"])
+def test_a_non_doc_with_form_errors(repo, relative):
+    _form_doc(repo, "docs/control.md", "doc", "guide")
+    _form_doc(repo, relative, "adr", "guide")
+    cs.check_A()
+    _assert_form_error(relative, 4)
+
+
+def test_a_docs_tree_with_zero_docs_errors(repo):
+    _form_doc(repo, "docs/README.md", "readme", None)
+    cs.check_A()
+    _assert_form_error("docs/", 1)
+    assert "zero kind: doc" in cs.errors[0], cs.errors
+
+
+def test_a_doc_with_valid_form_passes(repo):
+    path = _form_doc(repo, "docs/body.md", "doc", "guide")
+    cs.check_A()
+    assert path.is_file()
+    assert len([item for item in cs.GOVERNED if item[0] == "docs/body.md"]) > 0
+    assert cs.errors == [], cs.errors
 
 
 # --- a child stating a looser visibility than a README above it -------------

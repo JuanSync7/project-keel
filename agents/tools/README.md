@@ -1,6 +1,7 @@
 ---
 title: Agent tools
 kind: doc
+form: index
 layer: cross-cutting
 status: template
 owner: TBD

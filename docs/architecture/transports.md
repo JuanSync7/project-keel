@@ -1,6 +1,7 @@
 ---
 title: API transports
 kind: doc
+form: explanation
 layer: n/a
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [api, transport, architecture]
 summary: How clients reach the domain: the edge + transport layers in api/.
 id: docs-architecture-transports
 created: 2026-06-17
-updated: 2026-10-07
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

@@ -1,13 +1,14 @@
 ---
 title: Reference
 kind: doc
+form: index
 layer: n/a
 status: template
 owner: TBD
 summary: Per-module reference, the settings reference and the feature catalogue. The only docs that may thinly mirror src/.
 id: docs-reference-readme
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

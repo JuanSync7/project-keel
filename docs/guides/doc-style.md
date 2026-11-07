@@ -1,6 +1,7 @@
 ---
 title: Documentation style — how prose is written here
 kind: doc
+form: guide
 layer: n/a
 status: template
 owner: TBD
@@ -51,10 +52,12 @@ paragraph, and it does not do a sibling's job:
 |---|---|---|
 | `readme` | orient: what is here, what each member is for, what it is *not* for | teach a procedure (a guide) or record a decision (an ADR) |
 | `rules` (`AGENT.md`) | the imperatives an agent follows in this directory | explain why at length (link the rule that does) |
-| `doc` / guide | the playbook for a rule stated elsewhere, with worked examples | be the rule's canonical statement (that is CONVENTIONS or an ADR) |
+| `doc` | a living document whose purpose is declared by `form` | record an immutable decision (an ADR) |
 | `adr` | one decision, its context, its alternatives, at one moment — immutable once accepted | a living catalogue (supersede it; never edit the decision) |
 | `design` | a bounded-convergence record: status table, passes, decisions, corrections | ship to a generated project (keel-only design records are pruned) |
 | `spec` / `tool` | a contract: command, purpose, when (and when NOT) to use, args, output, effects | narrative |
+
+`form` describes a document's purpose, is required on `kind: doc` and forbidden on other kinds, and takes its closed values from `FORMS` beside `KINDS` in `scripts/check_structure.py`, enforced by `check_A`.
 
 When a document and the rule it describes disagree, the rule wins and the
 document is the thing to fix.

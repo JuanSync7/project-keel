@@ -1,6 +1,7 @@
 ---
 title: Solving the general case (don't fit the eval)
 kind: doc
+form: explanation
 layer: n/a
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [generic, overfitting, evals, golden-set, hardcoding, advisory, agents, gu
 summary: How to solve the general problem an eval/golden set exemplifies instead of overfitting to it — the discipline, plus the advisory check that backstops it.
 id: docs-guides-generic-solution
 created: 2026-06-24
-updated: 2026-06-24
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

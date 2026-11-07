@@ -1,6 +1,7 @@
 ---
 title: The showcase site (product demo, synced front-to-back)
 kind: doc
+form: explanation
 layer: n/a
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-10-29
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

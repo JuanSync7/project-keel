@@ -1,6 +1,7 @@
 ---
 title: Deterministic checks (the template linter)
 kind: doc
+form: reference
 layer: n/a
 status: template
 owner: TBD

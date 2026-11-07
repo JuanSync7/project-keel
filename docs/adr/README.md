@@ -1,6 +1,7 @@
 ---
 title: Architecture decision records
 kind: doc
+form: index
 layer: n/a
 status: template
 owner: TBD
@@ -9,7 +10,7 @@ tags: [adr, decisions]
 summary: Where a decision is recorded. This directory is the project's own ADR space, NNNN-<slug>.md numbered from 0001; the ADRs the template ships live in keel/ as K-NNNN-<slug>.md.
 id: docs-adr-readme
 created: 2026-10-07
-updated: 2026-10-07
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

@@ -1,6 +1,7 @@
 ---
 title: Idempotency
 kind: doc
+form: guide
 layer: n/a
 status: template
 owner: TBD

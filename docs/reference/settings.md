@@ -1,6 +1,7 @@
 ---
 title: Settings reference
 kind: doc
+form: reference
 layer: n/a
 status: template
 owner: TBD

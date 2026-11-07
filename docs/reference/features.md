@@ -1,6 +1,7 @@
 ---
 title: Feature catalogue
 kind: doc
+form: reference
 layer: n/a
 status: template
 owner: TBD
@@ -29,7 +30,7 @@ tree and writes nothing; `make check` runs all of them.
 
 | Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
 |---------|----------------------|------------|----------|------------------|----------|-------|
-| `check_A` frontmatter | Refuses a governed document without valid frontmatter labels or with a duplicate `id`, so every document can be found and owned. | `make check` | — | Not a prose review: it reads the labels, not the body. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
+| `check_A` frontmatter | Refuses a governed document without valid frontmatter labels or with a duplicate `id`; requires every `kind: doc` Markdown source and template twin to carry `form` from `scripts/check_structure.py` `FORMS`, refuses `form` on other kinds, and fails a tree with `docs/` but zero judged `kind: doc` documents. | `make check` | — | Not a prose review: it reads the labels, not the body. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `check_B` closed taxonomy | Refuses a top-level directory that is not a CONVENTIONS §2 row or declared, and a labelled directory without `README.md` and `CLAUDE.md`. | `make check` | [`structure.extra_toplevel`](settings.md#configprojectjson) | Does not judge nested directories, except each one directly under `agents/`. An undeclared symlinked directory is a WARN. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `check_C` package boundary | Refuses a `src/` directory holding Python without an `__init__.py` that defines `__all__`. | `make check` | — | Only `src/`; it does not judge what `__all__` exports. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |
 | `check_D` private imports | Refuses an absolute import of another package's `_private` module, `from pkg import _sub`, and imported attribute chains such as `pkg._sub` from outside `pkg/`, so `__init__.py` stays the API. | `make check` | — | Attribute chains resolve import bindings, including aliases and dotted imports; shadowing locals and parameters, private attributes without a submodule on disk, and a package's own access are allowed. It also flags the stdlib `_thread` and `_pytest` internals, and has no waiver. A `.py` file no check can parse is an error; under an interpreter older than `layers.backend.python`'s floor it is one warning per run instead, because there newer syntax cannot be told from a broken file. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

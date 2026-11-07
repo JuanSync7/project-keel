@@ -1,6 +1,7 @@
 ---
 title: Shell style (how shell scripts are written here)
 kind: doc
+form: guide
 layer: n/a
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [practices, style, readability, robustness, guide]
 summary: The canonical statement of how a shell script is written in this project — the opening comment block the corpus reads, the re-exec line that puts the script under the child environment allowlist, the exit helper every ending goes through, a configured value read through scripts/config_get.py, the lint, format and test tools behind make targets, and what each of those gates cannot see. The provable floor is gated (check_O, check_V, check_X, test_exit_gate, test_config_reads_gate, scripts/shell_gate.py); this guide is the judgment above it.
 id: docs-guides-shell-style
 created: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

@@ -1,13 +1,14 @@
 ---
 title: Contributing
 kind: doc
+form: guide
 layer: n/a
 status: template
 owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-10-18
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

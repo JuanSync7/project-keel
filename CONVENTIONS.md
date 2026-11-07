@@ -1,6 +1,7 @@
 ---
 title: Conventions
 kind: doc
+form: reference
 layer: n/a
 status: template
 owner: TBD
@@ -47,6 +48,8 @@ canonical: true                      # true = authoritative; or a path/id to the
 **KINDS:** `readme` `rules` `package` `module` `tests` `test-doc` `doc`
 `spec` `design` `adr` `config` `script` `agent` `mcp` `api` `wiki`
 `demo` `model` `eval` `container` `ops` `tool`.
+
+`form` describes a document's purpose, is required on `kind: doc` and forbidden on other kinds, and takes its closed values from `FORMS` beside `KINDS` in `scripts/check_structure.py`, enforced by `check_A`.
 
 **LAYERS:** `frontend` `backend` `shared` `app` `cross-cutting` `n/a`.
 

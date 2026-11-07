@@ -1,6 +1,7 @@
 ---
 title: Agent runtimes (Plan + Runtime; LangGraph as one engine)
 kind: doc
+form: guide
 layer: backend
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [agents, runtime, control-flow, langgraph, determinism, guide]
 summary: How to declare an agent's control flow as a neutral Plan, run it on the default engine, and opt into LangGraph as one adapter.
 id: docs-guides-agent-runtimes
 created: 2026-06-22
-updated: 2026-11-05
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

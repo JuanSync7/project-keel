@@ -1,13 +1,14 @@
 ---
 title: Specs
 kind: doc
+form: index
 layer: n/a
 status: template
 owner: TBD
 summary: Requirements and their numbered acceptance criteria, written in the grammar `make trace` reads so each one is named by a test or excused as a documented gap in config/project.json `traceability.gaps`.
 id: docs-specs-readme
 created: 2026-06-17
-updated: 2026-10-11
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

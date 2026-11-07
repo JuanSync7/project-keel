@@ -1,6 +1,7 @@
 ---
 title: Coding practices (what Keel enforces, advises, and documents)
 kind: doc
+form: reference
 layer: n/a
 status: template
 owner: TBD

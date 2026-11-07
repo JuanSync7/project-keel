@@ -1,6 +1,7 @@
 ---
 title: Template ADRs
 kind: doc
+form: index
 layer: n/a
 status: template
 owner: TBD
@@ -9,7 +10,7 @@ tags: [adr, decisions, template]
 summary: The architecture decisions the template ships into every project, numbered in their own space as K-NNNN-<slug>.md and cited as ADR-K-NNNN.
 id: docs-adr-keel-readme
 created: 2026-10-07
-updated: 2026-10-22
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

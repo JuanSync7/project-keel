@@ -1,6 +1,7 @@
 ---
 title: Exposing a service as an agent (the agent surface)
 kind: doc
+form: guide
 layer: n/a
 status: template
 owner: TBD
@@ -8,7 +9,7 @@ tags: [agent, surface, aad, discovery, guide]
 summary: When and how to make a service discoverable as an agent — the neutral surface + a wire adapter (AAD).
 id: docs-guides-agent-surface
 created: 2026-06-18
-updated: 2026-09-02
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

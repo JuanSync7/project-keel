@@ -1,6 +1,7 @@
 ---
 title: Docs
 kind: doc
+form: index
 layer: n/a
 status: template
 owner: TBD
@@ -9,7 +10,7 @@ tags: []
 summary: Documentation organized by purpose and audience, not by source file.
 id: docs-readme
 created: 2026-06-17
-updated: 2026-10-10
+updated: 2026-11-07
 visibility: internal
 canonical: true
 ---

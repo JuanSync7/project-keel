@@ -35,7 +35,8 @@ def _label(root, name):
     d = root / name
     d.mkdir(parents=True, exist_ok=True)
     slug = name.replace("/", "-")
-    (d / "README.md").write_text(_FM % (name, "readme", slug + "-readme"))
+    kind = "doc\nform: index" if name == "docs" else "readme"
+    (d / "README.md").write_text(_FM % (name, kind, slug + "-readme"))
     (d / "AGENT.md").write_text(_FM % (name, "rules", slug + "-rules"))
     if not (d / "CLAUDE.md").is_symlink():
         os.symlink("AGENT.md", str(d / "CLAUDE.md"))
