@@ -3693,6 +3693,29 @@ other gate families, execute twins during static resolution, introduce a
 mutation-testing service, or merge check ids into requirement and goal ids.
 The requirement traceability prefix registry serves only those two families.
 
+## CMP-20 — blank-line HTML blocks cannot manufacture fences
+
+KEEL-FENCE-HTML-1 serves engineers who start from the Copier template and keep it healthy with `make verify`: the fence scanners in `scripts/check_structure.py` and `scripts/jobs/review_docs.py` recognise CommonMark HTML block boundaries.
+The cap is one slice, one pass and three review fix rounds under CONVENTIONS §17.
+Stop at CMP-20.S1 green or the cap.
+The campaign was planned under a working label and took the next free label when it landed, because check_Z refuses a gap in declared campaign numbers.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-20.S1 | Pin type-6 and type-7 HTML block starts, paragraph interruption and blank-line endings in both scanners. | done |
+
+## CMP-21 — interrupted refactors recover the whole change set
+
+KEEL-ROLLBACK-2 follows ruling 3b in the rulings recorded after CMP-5.S3: a refactor's change set becomes a journalled transaction.
+The cap is two slices, one pass each and three review fix rounds each under CONVENTIONS §17.
+Stop at CMP-21.S2 green or the cap.
+The campaign was planned under a working label and took the next free label when it landed, because check_Z refuses a gap in declared campaign numbers.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-21.S1 | Durable application, replay and caller recovery. | done |
+| CMP-21.S2 | Explicit recovery, human discard and process-kill proof. | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
