@@ -14,6 +14,11 @@ template improvements. Keel's own changelog is not this project's history.
 
 ## [Unreleased]
 
+- **The exit gate sees a status bound to an attribute, subscript or augmented
+  target (KEEL-EXITDROP-2).**
+  `ns.status = main()`, `d["s"] = main()` and `s += main()` in an entry block
+  are a dropped status unless that same target is handed to `finish`; targets
+  are compared by syntax tree, and the finding keeps its wording.
 - **The Stop hook finds the project interpreter in worktrees (KEEL-HOOKVENV-1).**
   The Python 3.6-safe `scripts/project_python.py` launcher uses the current
   tree's venv, then the main checkout's, preserving arguments, stdin and the
