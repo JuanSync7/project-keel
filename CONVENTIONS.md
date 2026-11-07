@@ -425,6 +425,11 @@ satisfies it — so this is backward-compatible.
 
 ## 6. Enforcement (this is checked, not just documented)
 
+Every structure check has an id and a fault-injection twin in
+`scripts/checks_data.py`; `tests/integration/test_check_twins_gate.py`
+requires exact registry membership and statically resolves each twin's file
+and test function, failing empty twins and zero rows judged.
+
 `scripts/check_structure.py` (run via `make check`, in CI, and as a
 pre-commit hook) fails the build if the conventions above drift:
 

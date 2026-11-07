@@ -41,6 +41,11 @@ version rather than a bare commit:
   harmless, including clustered short flags and their values. Unknown options,
   selection tokens and malformed quoting refuse through the exit helper;
   warning-filter values containing `::` pass. Tier targets and direct pytest may narrow without gate evidence.
+- **Every structure check names an id and a failing twin (KEEL-CHECKID-1, CMP-19.S1).**
+  A closed data registry covers all 26 checks. The integration gate rejects
+  missing or stale rows, unresolved twin files or functions, empty twins and
+  zero rows judged. Seven short temporary-tree twins complete the existing
+  fault-injection coverage without changing check behavior.
 - **Shipped source paths respect unconditional docs/ exclusions (KEEL-CABINET-1).**
   The document-drift gate reads all shipped text sources with Copier's matcher,
   including history, tables and fences, and counts NUL-containing binaries.
