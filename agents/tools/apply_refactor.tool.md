@@ -41,8 +41,12 @@ The states are prepared, applied after all targets, and committed after a green
 startup replays any pre-commit interruption, including one after a green gate.
 If committed publication fails, the journal is re-saved as applied before restoration.
 Restoration still runs if that re-save also fails.
-A committed journal is cleaned without undo and its cleanup is logged to stderr. Replay removes orphan temporaries
-and only removes the journal after all restores succeed. A failed restore raises
+A committed journal is cleaned without undo only when every target matches its
+recorded `intended_sha256`; cleanup is logged to stderr. A mismatch refuses with
+`JournalConflict` and `journal_conflict: true`, keeping the journal and targets
+for reconciliation, including after a failed applied re-save and partial restore.
+Replay removes orphan temporaries and only removes the journal after all restores
+succeed. A failed restore raises
 `RollbackError` after trying every target and retains the evidence for retry.
 The gate waits on a stdin pipe until its process-group id is durably journalled.
 A live recorded gate process group (named by id), conflicting bytes or corrupt evidence

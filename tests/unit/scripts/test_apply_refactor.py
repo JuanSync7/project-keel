@@ -1551,3 +1551,76 @@ def test_failed_applied_resave_still_restores(tmp_path, monkeypatch):
     assert failures == ["committed", "applied"]
     assert f.read_bytes() == original, "failed applied re-save skipped restoration"
     assert not _journal(tmp_path).exists()
+
+
+@pytest.mark.parametrize("failed_index", [0, 1])
+@pytest.mark.parametrize("explicit", [False, True])
+def test_failed_resave_and_partial_restore_refuses_recovery(
+    tmp_path, monkeypatch, capsys, failed_index, explicit
+):
+    f, spec = _spec(tmp_path)
+    b = _plant(tmp_path, "b.py")
+    spec["edits"] += _edit("b.py")["edits"]
+    targets = [f, b]
+    originals = [p.read_bytes() for p in targets]
+    save, publish = ar._save, ar._publish
+    failures, restores = [], []
+
+    def fail_saves(path, journal):
+        if journal["state"] == "committed" or failures:
+            if journal["state"] == "committed":
+                save(path, journal)
+            failures.append(journal["state"])
+            raise OSError("journal save denied")
+        save(path, journal)
+
+    def fail_restore(path, data, mode):
+        if path in targets and data == originals[targets.index(path)]:
+            restores.append(path)
+            if path == targets[failed_index]:
+                raise OSError("restore denied")
+        publish(path, data, mode)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ar, "_save", fail_saves)
+        patch.setattr(ar, "_publish", fail_restore)
+        with pytest.raises(ar.RollbackError, match="restore denied"):
+            ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    assert failures == ["committed", "applied"]
+    assert restores == targets
+    current = [p.read_bytes() for p in targets]
+    assert current[failed_index] == b"keep = 2\n"
+    assert current[1 - failed_index] == originals[1 - failed_index]
+    journal = _journal(tmp_path)
+    evidence = journal.read_bytes()
+    assert json.loads(evidence)["state"] == "committed"
+
+    other = _plant(tmp_path, "other.py")
+    monkeypatch.setattr(ar, "_load_spec", lambda path: _edit(other.name))
+    args = ["--root", str(tmp_path), "--json", "--gate", "none"]
+    if explicit:
+        args.append("--recover")
+    code = ar.main(args)
+    assert code == ExitCode.FAILURE
+    assert journal.read_bytes() == evidence
+    result = json.loads(capsys.readouterr().out)
+    assert result["journal_conflict"] is True
+    assert targets[1 - failed_index].name in result["error"]
+    assert [p.read_bytes() for p in targets] == current
+
+
+def test_committed_recovery_cleans_only_matching_targets(tmp_path, monkeypatch, capsys):
+    f, spec = _spec(tmp_path)
+    b = _plant(tmp_path, "b.py")
+    spec["edits"] += _edit("b.py")["edits"]
+    _interrupt(monkeypatch, "committed")
+    with pytest.raises(_Crash):
+        ar.apply_and_gate(spec, str(tmp_path), gate="none")
+    journal = _journal(tmp_path)
+    assert json.loads(journal.read_bytes())["state"] == "committed"
+    assert [p.read_bytes() for p in (f, b)] == [b"keep = 2\n"] * 2
+
+    assert ar.main(["--root", str(tmp_path), "--recover", "--json"]) == ExitCode.SUCCESS
+    assert json.loads(capsys.readouterr().out)["recovered"] == []
+    assert not journal.exists()
+    assert [p.read_bytes() for p in (f, b)] == [b"keep = 2\n"] * 2

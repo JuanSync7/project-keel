@@ -743,10 +743,32 @@ def _restore(path: Path, journal: dict[str, Any], root: str) -> list[str]:
 
 
 def _recover(path: Path, root: str) -> list[str]:
+    """Replay originals, or clean a committed journal whose targets all match.
+
+    A committed target must match its recorded intended_sha256. A mismatch
+    raises JournalConflict and keeps the journal for reconciliation, without
+    restoring targets or accepting a partially restored transaction.
+    """
     if not path.exists():
         _clean(path.parent)
         return []
     journal = _validated(path, root)
+    if journal["state"] == "committed":
+        try:
+            for entry in journal["targets"]:
+                target = Path(root) / entry["path"]
+                current = target.read_bytes() if target.exists() else None
+                if _hash(current) != entry["intended_sha256"]:
+                    raise ValueError(
+                        "committed target differs from intended_sha256 at %s"
+                        % entry["path"]
+                    )
+        except (OSError, ValueError) as exc:
+            raise JournalConflict(
+                "%s: %s; preserve the journal and reconcile the evidence before retrying; "
+                "a human may abandon recovery with --discard-journal --yes (keeps current targets)"
+                % (path, exc)
+            ) from exc
     _clean(path.parent)
     if journal["state"] == "committed":
         for directory in journal["directories"]:

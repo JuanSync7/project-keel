@@ -18,7 +18,9 @@ version rather than a bare commit:
 - **Refactor recovery and human discard are explicit (KEEL-ROLLBACK-2).**
   `--recover` replays or cleans the journal without reading stdin or a spec.
   Human-only `--discard-journal --yes` abandons evidence without touching targets.
-  Restoration runs even when the applied-state re-save fails; subprocess SIGKILL
+  Restoration runs even when the applied-state re-save fails. Committed recovery
+  checks every target against `intended_sha256`; a mismatch refuses with
+  `JournalConflict` and retains the journal for reconciliation. Subprocess SIGKILL
   cases prove recovery and its second-run fixed point at each transaction cut.
 
 - **Every shipped document has a reachable index link (KEEL-CABINET-1).** The documentation
@@ -34,8 +36,9 @@ version rather than a bare commit:
 - **Interrupted refactors recover their whole change set (KEEL-ROLLBACK-2).**
   A durable undo journal restores original bytes and modes before the next spec;
   the gate waits for its process-group id to be durable, and failed commit
-  publication keeps rollback replayable. Both agents log recovery and stop on
-  conflicting evidence or lock contention. A downstream
+  publication keeps rollback replayable unless the applied re-save also fails;
+  committed recovery then refuses any target mismatch. Both agents log recovery
+  and stop on conflicting evidence or lock contention. A downstream
   project must add `refactor.journal_path` as an ignored, untracked path
   (the template uses `.evidence/refactor-journal.json`).
 
