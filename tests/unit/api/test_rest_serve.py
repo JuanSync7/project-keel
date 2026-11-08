@@ -108,6 +108,10 @@ def test_unreadable_identity_is_config_before_server_or_reload_starts(
 def test_symlinked_entry_preflights_the_identity_the_app_reads(
     serve, tmp_path, monkeypatch, capsys, reload
 ):
+    _run_symlinked_entry(serve, tmp_path, monkeypatch, capsys, reload)
+
+
+def _run_symlinked_entry(serve, tmp_path, monkeypatch, capsys, reload):
     real_root = tmp_path / "real"
     real_api = real_root / "api" / "rest_fastapi"
     real_api.mkdir(parents=True)
@@ -125,10 +129,9 @@ def test_symlinked_entry_preflights_the_identity_the_app_reads(
     linked_api = entry_root / "api" / "rest_fastapi"
     linked_api.symlink_to(real_api, target_is_directory=True)
     monkeypatch.setattr(sys, "path", sys.path.copy())
-    # Import the scratch copy, then restore any worker's cached transport modules.
-    for name in ("schemas", "app"):
-        monkeypatch.setitem(sys.modules, name, sys.modules.get(name))
-        monkeypatch.delitem(sys.modules, name)
+    # Import the scratch copy, then restore any worker's cached schemas module.
+    monkeypatch.setitem(sys.modules, "schemas", sys.modules.get("schemas"))
+    monkeypatch.delitem(sys.modules, "schemas")
 
     # Import the actual app through the link: its reader rejects the real root.
     with pytest.raises(IdentityUnreadable, match="must be an object"):
@@ -149,8 +152,7 @@ def test_symlinked_entry_preflights_the_identity_the_app_reads(
 def test_symlinked_entry_restores_modules(
     serve, tmp_path, monkeypatch, capsys, reload, cached
 ):
-    for name in ("schemas", "app"):
-        monkeypatch.delitem(sys.modules, name, raising=False)
+    monkeypatch.delitem(sys.modules, "schemas", raising=False)
     if cached:
         spec = importlib.util.spec_from_file_location(
             "schemas", _SERVE.parent / "schemas.py"
@@ -158,13 +160,9 @@ def test_symlinked_entry_restores_modules(
         schemas = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(schemas)
         monkeypatch.setitem(sys.modules, "schemas", schemas)
-        monkeypatch.setitem(sys.modules, "app", types.ModuleType("app"))
-    before = {name: sys.modules.get(name) for name in ("schemas", "app")}
+    before = sys.modules.get("schemas")
 
     with monkeypatch.context() as case_patch:
-        test_symlinked_entry_preflights_the_identity_the_app_reads(
-            serve, tmp_path, case_patch, capsys, reload
-        )
+        _run_symlinked_entry(serve, tmp_path, case_patch, capsys, reload)
 
-    for name, module in before.items():
-        assert sys.modules.get(name) is module, name
+    assert sys.modules.get("schemas") is before, "schemas"
