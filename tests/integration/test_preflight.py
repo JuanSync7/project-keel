@@ -32,9 +32,11 @@ def project(tmp_path):
     cfg["venv"]["extras"] = ["dev"]
     cfg["transports"]["enabled"] = []
     cfg["shell"]["enabled"] = False
-    cfg["layers"].setdefault("frontend", {}).setdefault("journey", {})[
-        "browser_executable"
-    ] = None
+    # These projects create frontend apps even when the source tree has none.
+    cfg["layers"]["frontend"] = {
+        "journey": {"browser_executable": None},
+        "browser_probe": {"timeout_seconds": 10, "stderr_max_chars": 240},
+    }
     (tmp_path / "config/project.json").write_text(json.dumps(cfg))
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "probe"\nrequires-python = ">=3.10"\ndependencies = ["packaging"]\n[project.optional-dependencies]\ndev=[]\n'
@@ -542,7 +544,7 @@ def test_preflight_passes_when_every_required_install_exists(project, frontend):
         shutil.rmtree(root / "src/frontend")
         (bindir / "npm").unlink()
         (bindir / "node").unlink(missing_ok=True)
-        del cfg["layers"]["frontend"]["journey"]
+        cfg["layers"]["frontend"] = None
         _save(root, cfg)
     before = {
         str(path.relative_to(root)): (path.read_bytes(), path.stat().st_mode)

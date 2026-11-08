@@ -981,7 +981,21 @@ def test_precommit_python3_entries_actually_execute_on_an_old_interpreter():
         old,
         r.stderr,
     )
-    assert r.stderr == "", r.stderr
+    # A no-frontend project must still execute this compatibility check; only
+    # its omitted frontend rows may announce defaults. Keel stays silent.
+    expected = ""
+    if config_loader.read(str(_ROOT))["layers"].get("frontend") is None:
+        for row in config_loader.KEYS:
+            if row.file == config_loader.CONFIG_FILE and row.path[:2] == (
+                "layers",
+                "frontend",
+            ):
+                name = ".".join(row.path)
+                expected += (
+                    f"[using default] {name} = {json.dumps(row.default)}  "
+                    f"(not set; to change it, set {name} in {row.file})\n"
+                )
+    assert r.stderr == expected, r.stderr
 
 
 # --- the interpreter floor: a target that needs the project interpreter checks it first

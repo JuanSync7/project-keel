@@ -659,6 +659,77 @@ def test_the_key_table_is_well_formed():
             )
 
 
+# Audited against config/project.json.jinja and copier.yml: this object can
+# disappear for an answer, so none of its descendants can be mandatory.
+_COPIER_OPTIONAL_SUBTREES = (("layers", "frontend"),)
+
+
+def test_the_loader_tolerates_exactly_the_audited_optional_subtrees():
+    """A subtree the loader tolerates as null but this audit omits would have
+    its rows unchecked by the two tests below, and an audited subtree the
+    loader does not tolerate would refuse a generated project."""
+    audited = frozenset((CONFIG_FILE, subtree) for subtree in _COPIER_OPTIONAL_SUBTREES)
+    assert audited == config_loader._NULLABLE_SUBTREES
+
+
+@pytest.mark.parametrize("subtree", _COPIER_OPTIONAL_SUBTREES)
+def test_copier_optional_subtrees_have_no_required_rows(subtree):
+    rows = [
+        k for k in KEYS if k.file == CONFIG_FILE and k.path[: len(subtree)] == subtree
+    ]
+    assert rows, "no rows under the optional subtree"
+    assert not [k.path for k in rows if k.required]
+
+
+@pytest.mark.parametrize("subtree", _COPIER_OPTIONAL_SUBTREES)
+@pytest.mark.parametrize("state", ["absent", "null", "empty"])
+def test_every_row_under_an_optional_subtree_resolves_its_default(subtree, state):
+    manifest = config_loader.read(str(_ROOT))
+    parent = manifest
+    for part in subtree[:-1]:
+        parent = parent[part]
+    if state == "absent":
+        parent.pop(subtree[-1], None)
+    else:
+        parent[subtree[-1]] = None if state == "null" else {}
+    before = copy.deepcopy(manifest)
+    rows = tuple(
+        k for k in KEYS if k.file == CONFIG_FILE and k.path[: len(subtree)] == subtree
+    )
+    buf = io.StringIO()
+    got = resolve(manifest, rows, CONFIG_FILE, environ={}, stream=buf)
+    assert got == {k.path: k.default for k in rows}
+    assert manifest == before
+    assert buf.getvalue().count("[using default]") == len(rows)
+    assert "[not set]" not in buf.getvalue()
+
+
+@pytest.mark.parametrize("value", [None, 5, [], "disabled"])
+def test_an_undeclared_nullable_parent_is_still_refused(value):
+    with pytest.raises(WrongValue, match="accepted: an object"):
+        resolve(
+            {"e": value},
+            (_key(("e", "child"), "int", 10),),
+            CONFIG_FILE,
+            environ={},
+            stream=io.StringIO(),
+        )
+
+
+@pytest.mark.parametrize("value", [5, [], "disabled"])
+def test_an_optional_subtree_still_refuses_a_non_object_value(value):
+    with pytest.raises(WrongValue, match="layers.frontend is"):
+        resolve(
+            {"layers": {"frontend": value}},
+            config_loader.rows(
+                ("layers", "frontend", "browser_probe", "timeout_seconds")
+            ),
+            CONFIG_FILE,
+            environ={},
+            stream=io.StringIO(),
+        )
+
+
 def test_keels_credential_rows_are_secret_variable_only_rows():
     """Every name config/project.json models.credential_env lists is a
     credential, so each has a variable-only row marked secret with no default;
@@ -694,7 +765,18 @@ def test_keels_own_config_resolves_every_file_row_silently():
     manifest = json.loads((_ROOT / CONFIG_FILE).read_text(encoding="utf-8"))
     buf = io.StringIO()
     got = resolve(manifest, rows, CONFIG_FILE, environ={}, stream=buf)
-    assert buf.getvalue() == ""
+    # Keel supplies every value; a generated project without a frontend uses
+    # exactly the declared defaults for that omitted (or null) object.
+    expected = ""
+    if manifest["layers"].get("frontend") is None:
+        for row in rows:
+            if row.path[:2] == ("layers", "frontend"):
+                name = ".".join(row.path)
+                expected += (
+                    f"[using default] {name} = {json.dumps(row.default)}  "
+                    f"(not set; to change it, set {name} in {CONFIG_FILE})\n"
+                )
+    assert buf.getvalue() == expected
     assert set(got) == {k.path for k in rows}
 
 
