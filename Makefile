@@ -284,12 +284,13 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 # journey against its BUILT site, each app's npm scripts test:unit and test:e2e.
 # Guard and loop are one logical line, as in lint-fe above. Unlike lint-fe they
 # never skip: a suite that ran nothing must not pass, so with a frontend app
-# present a missing npm/node, or a missing or incomplete app install, ends the target with
-# make's exit 2, naming the app and `make fe-install`. Every app is checked
-# before any runs, so the message names the first bare app rather than half a
-# run. A backend-only project (no FE_APPS) stays silent and exits 0. A verify
-# goal of their own, never under `test`: JUNIT_XML is pytest's report alone, so
-# the evidence record lists test-fe with `tests: null`. The journey's browser
+# present a missing npm/node, or a missing or incomplete app install, ends
+# the target with make's exit 2, naming the app and `make fe-install`.
+# Every app is checked before any runs, so the message names the first bare
+# app rather than half a run. A backend-only project (no FE_APPS) stays
+# silent and exits 0. A verify goal of their own, never under `test`:
+# JUNIT_XML is pytest's report alone, so the evidence record lists test-fe
+# with `tests: null`. The journey's browser
 # lives in a per-user cache that `make fe-install` does not fill; `make
 # fe-browsers` downloads it, and CI runs it (with FE_BROWSER_FLAGS=--with-deps
 # for the system libraries) before `make test-fe`. Zero tests, a missing

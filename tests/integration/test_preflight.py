@@ -153,6 +153,85 @@ def test_broken_browser_probe_refuses_before_later_work(project, package, versio
 
 
 @pytest.mark.parametrize(
+    "failure,diagnostic,detail,remedy",
+    [
+        (
+            "timeout",
+            "node did not answer within the limit",
+            "timed out after 10 seconds",
+            "check the node on PATH",
+        ),
+        (
+            "oserror",
+            "node could not be started",
+            "Permission denied",
+            "check the node on PATH",
+        ),
+        (
+            "empty",
+            "scripts/preflight.py _BROWSER_PATH probe failed",
+            "registry returned no executable",
+            "update the probe in scripts/preflight.py",
+        ),
+        (
+            "nonzero",
+            "scripts/preflight.py _BROWSER_PATH probe failed",
+            "registry module unavailable",
+            "update the probe in scripts/preflight.py",
+        ),
+    ],
+)
+def test_probe_failure_refuses_before_later_work(
+    project, failure, diagnostic, detail, remedy, monkeypatch, capsys
+):
+    import preflight
+
+    root, _cfg, _record, bindir, _browser = project
+    probed = []
+    real_run = subprocess.run
+
+    def probe(command, **kwargs):
+        if command[0] != "node":
+            return real_run(command, **kwargs)
+        probed.append(kwargs["cwd"])
+        assert kwargs["timeout"] == 10
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        if failure == "oserror":
+            raise PermissionError(13, "Permission denied", "node")
+        return subprocess.CompletedProcess(
+            command,
+            1 if failure == "nonzero" else 0,
+            str(root / "browser") if failure == "nonzero" else " \n\t",
+            "\n \t\n" + detail + "\nsecond stderr line must be omitted\n",
+        )
+
+    with monkeypatch.context() as patch:
+        patch.setenv("PATH", str(bindir))
+        patch.setattr(preflight.subprocess, "run", probe)
+        status = preflight.main(
+            argv=["src/frontend/one", "src/frontend/two"], root=str(root)
+        )
+    captured = capsys.readouterr()
+    if status == 0:
+        _run(project, "expensive")
+
+    assert status == 2, captured.err
+    assert diagnostic in captured.err, captured.err
+    assert detail in captured.err, captured.err
+    assert remedy in captured.err, captured.err
+    assert "src/frontend/one" in captured.err
+    if failure in ("timeout", "oserror"):
+        assert "update the probe" not in captured.err
+        assert "browser_executable" not in captured.err
+    else:
+        assert "layers.frontend.journey.browser_executable" in captured.err
+        assert "second stderr line must be omitted" not in captured.err
+    assert probed == [str(root / "src/frontend/one")]
+    assert not (root / "expensive-started").exists()
+
+
+@pytest.mark.parametrize(
     "missing,diagnostic,remedy",
     [
         ("npm", "npm is not on PATH", "make fe-install"),

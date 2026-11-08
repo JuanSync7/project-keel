@@ -38,7 +38,7 @@ process.stdout.write(registry.findExecutable('chromium-headless-shell').executab
 """
 
 
-def _probe_refused(folder, app):
+def _probe_refused(folder, app, stderr):
     """Refuse a failed browser probe with its installed runner version and remedy."""
     metadata = os.path.join(
         folder, "node_modules", "@playwright", "test", "package.json"
@@ -57,6 +57,9 @@ def _probe_refused(folder, app):
             "installed Playwright version is unreadable at %s"
             % config_loader.shown(metadata, bare=True)
         )
+    detail = next((line.strip() for line in stderr.splitlines() if line.strip()), "")
+    if detail:
+        installed += "; " + config_loader.shown(detail, bare=True)
     return report(
         ExitCode.USAGE,
         "scripts/preflight.py _BROWSER_PATH probe failed (%s)" % installed,
@@ -88,9 +91,23 @@ def _browsers(root, apps, loaded):
                     # A local registry lookup should be quick; a hung Node must not stall verify.
                     timeout=10,
                 )
-            except (OSError, subprocess.TimeoutExpired) as exc:
+            except subprocess.TimeoutExpired as exc:
+                return report(
+                    ExitCode.USAGE,
+                    "node did not answer within the limit (%s)"
+                    % config_loader.shown(str(exc), bare=True),
+                    app,
+                    "check the node on PATH, then rerun make preflight",
+                )
+            except OSError as exc:
                 if not (isinstance(exc, FileNotFoundError) and exc.filename == "node"):
-                    return _probe_refused(folder, app)
+                    return report(
+                        ExitCode.USAGE,
+                        "node could not be started (%s)"
+                        % config_loader.shown(str(exc), bare=True),
+                        app,
+                        "check the node on PATH, then rerun make preflight",
+                    )
                 return report(
                     ExitCode.USAGE,
                     "node cannot locate the journey browser (%s)"
@@ -99,7 +116,7 @@ def _browsers(root, apps, loaded):
                     "install Node.js and run `make fe-install` and `make fe-browsers`, then rerun",
                 )
             if proc.returncode or not proc.stdout.strip():
-                return _probe_refused(folder, app)
+                return _probe_refused(folder, app, proc.stderr)
             executable = proc.stdout.strip()
         path = os.path.join(folder, executable)
         if not executable or not os.path.isfile(path) or not os.access(path, os.X_OK):

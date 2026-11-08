@@ -1194,9 +1194,12 @@ share the Makefile's `REQUIRE_FE_INSTALLS` guard. Each frontend app needs
 `node_modules/.package-lock.json`, the marker npm writes when installation
 finishes; a non-empty directory without it is an incomplete install. The
 guard refuses with exit 2, naming the app and `make fe-install` before later
-work runs. A failed Playwright browser probe names `scripts/preflight.py`
-`_BROWSER_PATH` and the installed Playwright version (or unreadable metadata),
-with advice to update the probe or set
+work runs. If Node times out or cannot start, preflight names the failure and
+exception and advises checking `node` on `PATH`. A Playwright browser probe
+that exits nonzero or returns empty output names `scripts/preflight.py`
+`_BROWSER_PATH`, the installed Playwright version (or unreadable metadata),
+and the first non-blank stderr line when present. Only these probe refusals
+advise updating the probe or setting
 `layers.frontend.journey.browser_executable`.
 
 These are conventions an agent follows, not gated by a structural check today: no

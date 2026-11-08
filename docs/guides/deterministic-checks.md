@@ -1706,9 +1706,12 @@ frontend guard is shared with `make test-fe-unit`, `make test-fe-e2e` and
 `make fe-browsers`: each app must have `node_modules/.package-lock.json`,
 the marker npm writes at the end of an install. A directory without that
 marker is missing or incomplete, and the refusal names the app and
-`make fe-install`. If the browser probe fails, preflight names
-`scripts/preflight.py` `_BROWSER_PATH` and the installed Playwright version
-(or says it is unreadable). Update the probe or set
+`make fe-install`. If Node times out or cannot start, preflight names the
+failure and exception and advises checking `node` on `PATH`. If the browser
+probe exits nonzero or returns empty output, preflight names
+`scripts/preflight.py` `_BROWSER_PATH`, the installed Playwright version
+(or says it is unreadable), and the first non-blank stderr line when present.
+Only these probe refusals advise updating the probe or setting
 `layers.frontend.journey.browser_executable` to an installed browser.
 
 **What it holds.** `config/evidence/gate-record.schema.json` (config/project.json

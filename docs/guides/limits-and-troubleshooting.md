@@ -524,7 +524,7 @@ and holds their conflict and duplicate-key paths to this contract.
 | `scripts/exit_code_table.py` | 0, 1, 2, 14 |
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1, 2, 14 |
-| `scripts/preflight.py` | 0, 2 |
+| `scripts/preflight.py` | 0, 2, 14 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |
@@ -929,8 +929,10 @@ kept on purpose, such as a test fixture, with its reason.
 | check_W says `.IGNORE makes make ignore recipe errors` | a makefile holds a `.IGNORE` rule, which lets every recipe it names, or every recipe, carry on past a failing line, including the guard's `exit 1` | delete the `.IGNORE` rule; put a `-` on the one line whose failure may be ignored |
 | a `[write]` target stops with `refusing '<target>': make is ignoring recipe errors` | make was run with `-i`, `--ignore-errors`, `MAKEFLAGS=i` or under a bare `.IGNORE:`, so the guard could not stop the target | run the target without that flag |
 | `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: npm is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
+| `make preflight`, `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: node is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
 | `make preflight`, `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> install is missing or incomplete` | the app lacks `node_modules/.package-lock.json`, npm's completion marker, as after an interrupted install | run `make fe-install`, then run the target again |
-| `make preflight` exits 2 naming `scripts/preflight.py` `_BROWSER_PATH` and the installed Playwright version (or unreadable metadata) | the browser probe failed, for example because Playwright moved its private registry module | update the probe in `scripts/preflight.py` or set `layers.frontend.journey.browser_executable` to an installed executable |
+| `make preflight` exits 2 with `node did not answer within the limit` or `node could not be started`, followed by the exception | the `node` on `PATH` timed out or could not start | check the `node` on `PATH`, then rerun `make preflight` |
+| `make preflight` exits 2 naming `scripts/preflight.py` `_BROWSER_PATH`, the installed Playwright version (or unreadable metadata), and the first non-blank stderr line when present | the browser probe exited nonzero or returned empty output, for example because Playwright moved its private registry module | update the probe in `scripts/preflight.py` or set `layers.frontend.journey.browser_executable` to an installed executable; this advice applies only to a nonzero probe exit or empty output |
 | `make fe-install` stops with `node major is <found>, and config/project.json toolchain.node_major is <configured>` | the Node on `PATH` is another major than the one every lockfile was resolved under | install that Node major, or change `toolchain.node_major`, run `make fe-install` and commit the regenerated lockfiles |
 | `make fe-install` stops with `node cannot be run` or `node --version printed` | Node.js is not on `PATH`, or the `node` found is not Node.js | install Node.js of the major `toolchain.node_major` names, then run the target again |
 | `test_frontend_lockfile_gate` says `<app>/package-lock.json exists but git does not track it` or `has no package-lock.json` | the app's lockfile was never committed, so CI's npm resolves a tree of its own | run `npm install` in the app and commit its `package-lock.json` |
