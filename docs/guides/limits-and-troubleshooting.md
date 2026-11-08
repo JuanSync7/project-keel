@@ -887,6 +887,14 @@ kept on purpose, such as a test fixture, with its reason.
 
 ## Symptom, cause, fix
 
+Browser registry probes in `scripts/preflight.py` read two positive integer
+limits from config/project.json `layers.frontend.journey` through the config
+loader: `probe_timeout_seconds` defaults to 10 seconds (at most
+`threading.TIMEOUT_MAX`), and `probe_stderr_max_chars` defaults to 240 characters.
+Wrong types or bounds refuse preflight with exit 14 (`CONFIG`). A cut stderr
+line ends in `...` within the character bound (one or two dots for bounds of
+1 or 2); a line exactly at the bound stays unchanged.
+
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | pre-commit fails with a syntax error before any check runs | the bare `python3` is older than the gate supports | install a newer `python3`, or run `make check` with the project interpreter |
@@ -932,7 +940,7 @@ kept on purpose, such as a test fixture, with its reason.
 | `make preflight`, `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: node is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
 | `make preflight`, `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> install is missing or incomplete` | the app lacks `node_modules/.package-lock.json`, npm's completion marker, as after an interrupted install | run `make fe-install`, then run the target again |
 | `make preflight` exits 2 with `node did not answer within the limit (<seconds> seconds)` or with `node could not be started` and the startup exception | the `node` on `PATH` timed out or could not start | check the `node` on `PATH`, then rerun `make preflight` |
-| `make preflight` exits 2 naming `scripts/preflight.py` `_BROWSER_PATH`, the installed Playwright version (or unreadable metadata), and the first stderr line containing `Error` or `error:` (else the first non-blank line), cut to 240 characters when present | the browser probe exited nonzero or returned empty output, for example because Playwright moved its private registry module | update the probe in `scripts/preflight.py` or set `layers.frontend.journey.browser_executable` to an installed executable; this advice applies only to a nonzero probe exit or empty output |
+| `make preflight` exits 2 naming `scripts/preflight.py` `_BROWSER_PATH`, the installed Playwright version (or unreadable metadata), and the first stderr line starting with an error class and colon (optionally a ` [CODE]` before the colon) or `error:` in any case (else the first non-blank line), bounded by `layers.frontend.journey.probe_stderr_max_chars` (default 240), with `...` marking a cut within that bound | the browser probe exited nonzero or returned empty output, for example because Playwright moved its private registry module | update the probe in `scripts/preflight.py` or set `layers.frontend.journey.browser_executable` to an installed executable; this advice applies only to a nonzero probe exit or empty output |
 | `make fe-install` stops with `node major is <found>, and config/project.json toolchain.node_major is <configured>` | the Node on `PATH` is another major than the one every lockfile was resolved under | install that Node major, or change `toolchain.node_major`, run `make fe-install` and commit the regenerated lockfiles |
 | `make fe-install` stops with `node cannot be run` or `node --version printed` | Node.js is not on `PATH`, or the `node` found is not Node.js | install Node.js of the major `toolchain.node_major` names, then run the target again |
 | `test_frontend_lockfile_gate` says `<app>/package-lock.json exists but git does not track it` or `has no package-lock.json` | the app's lockfile was never committed, so CI's npm resolves a tree of its own | run `npm install` in the app and commit its `package-lock.json` |

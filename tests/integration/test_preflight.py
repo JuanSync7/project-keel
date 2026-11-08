@@ -139,7 +139,7 @@ def test_incomplete_install_refuses_before_later_work(project, target, app):
         ),
         (
             "Error: " + "x" * 1000 + "TAIL_MUST_BE_OMITTED\n",
-            ("Error: " + "x" * 1000)[:240],
+            ("Error: " + "x" * 1000)[:237] + "...",
             "TAIL_MUST_BE_OMITTED",
         ),
     ],
@@ -150,7 +150,9 @@ def test_browser_probe_stderr_detail(project, stderr, expected, omitted, capsys)
 
     root, _cfg, _record, _bindir, _browser = project
 
-    status = preflight._probe_refused(str(root / "src/frontend/one"), "one", stderr)
+    status = preflight._probe_refused(
+        str(root / "src/frontend/one"), "one", stderr, 240
+    )
 
     captured = capsys.readouterr()
     assert status == 2
@@ -159,6 +161,120 @@ def test_browser_probe_stderr_detail(project, stderr, expected, omitted, capsys)
     assert expected + "): one;" in captured.err
     assert omitted not in captured.err
     assert "update the probe in scripts/preflight.py" in captured.err
+
+
+@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
+    import preflight
+
+    root, cfg, _record, bindir, _browser = project
+    cfg["layers"]["frontend"]["journey"][limit] = 37
+    _save(root, cfg)
+    real_run = subprocess.run
+    calls = []
+
+    def probe(command, **kwargs):
+        if command[0] != "node":
+            return real_run(command, **kwargs)
+        calls.append(kwargs)
+        if limit == "probe_timeout_seconds":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 1, "", "Error: " + "x" * 1000)
+
+    monkeypatch.setenv("PATH", str(bindir))
+    monkeypatch.setattr(preflight.subprocess, "run", probe)
+    status = preflight.main(argv=["src/frontend/one"], root=str(root))
+    captured = capsys.readouterr()
+    assert status == 2
+    assert len(calls) == 1
+    if limit == "probe_timeout_seconds":
+        assert calls[0]["timeout"] == 37
+        assert "37 seconds" in captured.err
+    else:
+        detail = captured.err.split("; Error: ", 1)[1].split("): ", 1)[0]
+        assert len("Error: " + detail) == 37
+        assert "x" * 38 not in captured.err
+
+
+@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+@pytest.mark.parametrize("value", ["37", True, 0, -1, 1.5, None])
+def test_browser_probe_wrong_limit_is_config(
+    project, limit, value, monkeypatch, capsys
+):
+    import preflight
+
+    root, cfg, _record, bindir, _browser = project
+    cfg["layers"]["frontend"]["journey"][limit] = value
+    _save(root, cfg)
+    monkeypatch.setenv("PATH", str(bindir))
+
+    status = preflight.main(argv=["src/frontend/one"], root=str(root))
+
+    captured = capsys.readouterr()
+    assert status == 14
+    assert "layers.frontend.journey." + limit in captured.err
+    assert "accepted:" in captured.err
+    assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "prefix,cause",
+    [
+        ("throw new Error(\n    ^\n", "Error: Cannot find module 'x'"),
+        (
+            "    at new NodeError (node:internal/errors:1:2)\n",
+            "TypeError [ERR_TEST]: failed",
+        ),
+        ("throw new Error(\n    ^\n", "ERROR: registry unavailable"),
+        # Holds `Error:` mid-line, so only the line-start anchor rejects it.
+        (
+            "Uncaught Error: thrown from a loader hook\n",
+            "Error: Cannot find module 'x'",
+        ),
+    ],
+    ids=["source-excerpt", "node-error-frame", "uppercase-error", "mid-line-error"],
+)
+def test_browser_probe_cause_beats_source(project, prefix, cause, capsys):
+    import preflight
+
+    root, _cfg, _record, _bindir, _browser = project
+    status = preflight._probe_refused(
+        str(root / "src/frontend/one"), "one", prefix + cause, 240
+    )
+    captured = capsys.readouterr()
+    assert status == 2
+    assert cause + "): one;" in captured.err
+    assert prefix.splitlines()[0].strip() not in captured.err
+
+
+@pytest.mark.parametrize("length,marked", [(240, False), (241, True)])
+def test_browser_probe_cut_mark(project, length, marked, capsys):
+    import preflight
+
+    root, _cfg, _record, _bindir, _browser = project
+    status = preflight._probe_refused(
+        str(root / "src/frontend/one"), "one", "x" * length, 240
+    )
+    captured = capsys.readouterr()
+    assert status == 2
+    detail = captured.err.split("; ", 1)[1].split("): one;", 1)[0]
+    assert len(detail) == 240
+    assert detail.endswith("...") is marked
+
+
+@pytest.mark.parametrize(
+    "bound,expected", [(1, "."), (2, ".."), (3, "..."), (7, "Erro...")]
+)
+def test_browser_probe_small_bound(project, bound, expected, capsys):
+    import preflight
+
+    root, _cfg, _record, _bindir, _browser = project
+    status = preflight._probe_refused(
+        str(root / "src/frontend/one"), "one", "Error: unavailable", bound
+    )
+    captured = capsys.readouterr()
+    assert status == 2
+    assert "; " + expected + "): one;" in captured.err
 
 
 @pytest.mark.parametrize(

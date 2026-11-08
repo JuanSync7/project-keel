@@ -29,10 +29,10 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 _BROWSER = ("layers", "frontend", "journey", "browser_executable")
-# Keep a failed probe's diagnostic short enough to leave its remedy visible.
-_PROBE_STDERR_MAX_CHARS = 240
+_PROBE_TIMEOUT = ("layers", "frontend", "journey", "probe_timeout_seconds")
+_PROBE_STDERR = ("layers", "frontend", "journey", "probe_stderr_max_chars")
 # Node prints loader frames before the cause; prefer Error classes or error: lines.
-_PROBE_ERROR_LINE = re.compile(r"Error|error:")
+_PROBE_ERROR_LINE = re.compile(r"^(?:\w*Error\b(?: \[\w+\])?|(?i:error)):")
 # Chromium's default headless journey uses the headless-shell executable, not
 # chromium.executablePath()'s full browser. Ask the installed, pinned runner's
 # registry so revision, platform and PLAYWRIGHT_BROWSERS_PATH stay its decision.
@@ -43,7 +43,7 @@ process.stdout.write(registry.findExecutable('chromium-headless-shell').executab
 """
 
 
-def _probe_refused(folder, app, stderr):
+def _probe_refused(folder, app, stderr, max_chars):
     """Refuse a failed browser probe with its installed runner version and remedy."""
     metadata = os.path.join(
         folder, "node_modules", "@playwright", "test", "package.json"
@@ -66,7 +66,10 @@ def _probe_refused(folder, app, stderr):
     detail = next(
         (line for line in lines if _PROBE_ERROR_LINE.search(line)),
         lines[0] if lines else "",
-    )[:_PROBE_STDERR_MAX_CHARS]
+    )
+    if len(detail) > max_chars:
+        mark = "..."[:max_chars]
+        detail = detail[: max_chars - len(mark)] + mark
     if detail:
         installed += "; " + config_loader.shown(detail, bare=True)
     return report(
@@ -82,9 +85,12 @@ def _browsers(root, apps, loaded):
     """Require each frontend journey's cached browser or configured executable."""
     if not apps:
         return ExitCode.SUCCESS
-    override = config_loader.resolve(
-        loaded, config_loader.rows(_BROWSER), config_loader.CONFIG_FILE
-    )[_BROWSER]
+    values = config_loader.resolve(
+        loaded,
+        config_loader.rows(_BROWSER, _PROBE_TIMEOUT, _PROBE_STDERR),
+        config_loader.CONFIG_FILE,
+    )
+    override = values[_BROWSER]
     for app in apps:
         folder = os.path.join(root, app)
         executable = override
@@ -98,7 +104,7 @@ def _browsers(root, apps, loaded):
                     stderr=subprocess.PIPE,
                     universal_newlines=True,
                     # A local registry lookup should be quick; a hung Node must not stall verify.
-                    timeout=10,
+                    timeout=values[_PROBE_TIMEOUT],
                 )
             except subprocess.TimeoutExpired as exc:
                 return report(
@@ -124,7 +130,7 @@ def _browsers(root, apps, loaded):
                     "install Node.js and run `make fe-install` and `make fe-browsers`, then rerun",
                 )
             if proc.returncode or not proc.stdout.strip():
-                return _probe_refused(folder, app, proc.stderr)
+                return _probe_refused(folder, app, proc.stderr, values[_PROBE_STDERR])
             executable = proc.stdout.strip()
         path = os.path.join(folder, executable)
         if not executable or not os.path.isfile(path) or not os.access(path, os.X_OK):

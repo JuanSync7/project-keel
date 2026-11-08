@@ -413,7 +413,9 @@
         "host": "127.0.0.1",
         "port": 4391,
         "server_timeout_ms": 120000,
-        "browser_executable": null
+        "browser_executable": null,
+        "probe_timeout_seconds": 10,
+        "probe_stderr_max_chars": 240
       }
     },
     "backend": {

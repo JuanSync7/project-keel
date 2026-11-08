@@ -1711,8 +1711,14 @@ without the probe command; if Node cannot start, it names the exception.
 Both advise checking `node` on `PATH`. If the browser
 probe exits nonzero or returns empty output, preflight names
 `scripts/preflight.py` `_BROWSER_PATH`, the installed Playwright version
-(or says it is unreadable), and the first stderr line containing `Error` or
-`error:` (else the first non-blank line), cut to 240 characters when present.
+(or says it is unreadable), and the first stderr line starting with an error
+class and colon (optionally a ` [CODE]` before the colon) or `error:` in any
+case, else the first non-blank line. The config/project.json keys
+`layers.frontend.journey.probe_timeout_seconds` (default 10) and
+`layers.frontend.journey.probe_stderr_max_chars` (default 240) bound the probe
+wait and the chosen stderr line. A cut ends in `...` within the character
+bound; a bound of 1 or 2 uses that many dots. A line at the bound is unchanged.
+Wrong-typed or out-of-bound limits exit 14 (`CONFIG`).
 Only these probe refusals advise updating the probe or setting
 `layers.frontend.journey.browser_executable` to an installed browser.
 
