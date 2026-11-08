@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. answer is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist, so a mistyped corpus is not answered from an empty context. Retrieval, synthesis and citations use the served levels from the derived checkout's config/project.json. Retrieval hands query_corpus that root alone as `--root`, so it reads the root's own corpus and files, and a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now): a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. answer is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist, so a mistyped corpus is not answered from an empty context. Checkout refusals use config_loader.checkout_name so clients see the checkout folder and relative file without the host path. Retrieval, synthesis and citations use the served levels from the derived checkout's config/project.json. Retrieval hands query_corpus that root alone as `--root`, so it reads the root's own corpus and files, and a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now): a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -228,7 +228,9 @@ def answer(
         )
     # Absolute, from the caller's directory: the retrieval child runs in this
     # checkout, and is handed the root alone, so it reads that root's corpus.
-    root, _ = corpus_level.checkout(root, corpus, _REPO)
+    root, _ = corpus_level.checkout(
+        root, corpus, _REPO, name=config_loader.checkout_name
+    )
     init = {
         "question": question,
         "model": model,

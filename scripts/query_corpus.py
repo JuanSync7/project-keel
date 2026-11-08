@@ -3,7 +3,7 @@
 title: Query corpus
 kind: script
 layer: n/a
-summary: Read-only retrieval over one checkout's wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool. `--root` or `--corpus` names the checkout, never both: scripts/corpus_level.py checkout derives the corpus from the root, or the root from a corpus at some directory's wiki/corpus.json, so a corpus is read only with the files of the checkout that keeps it, and both given, an empty `--root`, a corpus anywhere else, or a `--corpus` that does not exist, is refused with exit USAGE and nothing printed. It reads corpus.served_visibilities from that checkout's config/project.json, and a refused value names that checkout's folder and config/project.json without its absolute host path. It prints only nodes whose file in that checkout may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or a corpus that cannot be read (not UTF-8, not JSON, nested too deeply to parse, not a JSON object, or not the shape it reads: `nodes` not a list of objects each with a string `node_id`, or a field it reads of another type, checked once where the corpus is loaded, shape_fault), is refused with exit USAGE and nothing printed; a checkout with no corpus, named by `--root` or the default, prints `[]`, naming on stderr where its corpus would be; and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
+summary: Read-only retrieval over one checkout's wiki/corpus.json — the wiki_navigator's, practice_refactor's and doc_reviewer's tool. `--root` or `--corpus` names the checkout, never both: scripts/corpus_level.py checkout derives the corpus from the root, or the root from a corpus at some directory's wiki/corpus.json, so a corpus is read only with the files of the checkout that keeps it, and both given, an empty `--root`, a corpus anywhere else, or a `--corpus` that does not exist, is refused with exit USAGE and nothing printed. Every diagnostic names a checkout by its folder and a relative file, never its absolute host path; an OS read fault gives its reason without the exception filename. It reads corpus.served_visibilities from that checkout's config/project.json, and a refused value names that checkout's folder and config/project.json without its absolute host path. It prints only nodes whose file in that checkout may be served at a level in config/project.json corpus.served_visibilities as it stands on disk now (config_loader.is_served_now over corpus_level.stated_now, read once per file), so a file reclassified after the corpus was built, or one whose level cannot be read, is not printed, each printed node with every other node's id cut from its links, children and parent (config_loader.cut_hidden). A root that does not exist, or a corpus that cannot be read (not UTF-8, not JSON, nested too deeply to parse, not a JSON object, or not the shape it reads: `nodes` not a list of objects each with a string `node_id`, or a field it reads of another type, checked once where the corpus is loaded, shape_fault), is refused with exit USAGE and nothing printed; a checkout with no corpus, named by `--root` or the default, prints `[]`, naming on stderr where its corpus would be; and the count of nodes withheld because their file now states a stricter level, or none that can be read, goes to stderr.
 """
 
 from __future__ import annotations
@@ -220,7 +220,9 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
     try:
-        root, path = corpus_level.checkout(args.root, args.corpus, ROOT)
+        root, path = corpus_level.checkout(
+            args.root, args.corpus, ROOT, name=config_loader.checkout_name
+        )
     except corpus_level.NotACheckout as exc:
         what, on, next_step = exc.parts
         return report(ExitCode.USAGE, "query_corpus: " + what, on, next_step)
@@ -228,7 +230,7 @@ def main(argv=None) -> int:
         return report(
             ExitCode.USAGE,
             "query_corpus: the checkout whose corpus is read does not exist",
-            root,
+            config_loader.checkout_name(root),
             "pass --root a checkout that exists, or --corpus its %s, then rerun"
             % corpus_level.CORPUS_PATH,
         )
@@ -240,9 +242,13 @@ def main(argv=None) -> int:
         return report(
             ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "query_corpus: the levels a served node may carry cannot be read",
-            "; ".join(exc.lines)
-            or "corpus.served_visibilities in %s"
-            % (exc.path or config_loader.CONFIG_FILE),
+            "%s: %s"
+            % (
+                config_loader.checkout_name(root),
+                "; ".join(exc.lines)
+                or "corpus.served_visibilities in %s"
+                % (exc.path or config_loader.CONFIG_FILE),
+            ),
             "set corpus.served_visibilities to members of %s, then rerun"
             % ", ".join(config_loader.VISIBILITY_ORDER),
         )
@@ -250,7 +256,8 @@ def main(argv=None) -> int:
         # A checkout with no corpus yet has nothing to retrieve: an empty
         # answer, said on stderr so a mistyped root is not taken for one.
         print(
-            "query_corpus: no corpus at %s; `make site-data` builds it" % path,
+            "query_corpus: no corpus at %s; `make site-data` builds it"
+            % config_loader.checkout_name(root, corpus_level.CORPUS_PATH),
             file=sys.stderr,
         )
         print("[]")
@@ -258,7 +265,10 @@ def main(argv=None) -> int:
     try:
         with open(path, encoding="utf-8") as fh:
             corpus = json.load(fh)
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        # str(exc) repeats the absolute filename; keep only the OS reason.
+        corpus, fault = None, exc.strerror or "OS read error"
+    except ValueError as exc:
         # ValueError covers UnicodeDecodeError and json's own error.
         corpus, fault = None, str(exc)
     except RecursionError:  # noqa: DROP001 -- the fault is reported below through the exit helper
@@ -273,7 +283,8 @@ def main(argv=None) -> int:
         return report(
             ExitCode.USAGE,
             "query_corpus: the corpus cannot be read",
-            "%s (%s)" % (path, fault),
+            "%s (%s)"
+            % (config_loader.checkout_name(root, corpus_level.CORPUS_PATH), fault),
             "run `make site-data` in its checkout to rebuild it, then rerun",
         )
     nodes, withheld = served_now(corpus, served, root)
@@ -282,7 +293,7 @@ def main(argv=None) -> int:
             "query_corpus: withheld %d node(s) the corpus serves, whose file "
             "under %s now states a stricter level or none that can be read; "
             "`make site-data` rebuilds the corpus on the levels the files state"
-            % (withheld, root),
+            % (withheld, config_loader.checkout_name(root)),
             file=sys.stderr,
         )
     hits = rank(nodes, args.question, max_nodes=args.max_nodes)

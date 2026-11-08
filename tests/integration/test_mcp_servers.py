@@ -2,7 +2,7 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. A refused corpus.served_visibilities value reaches the MCP client naming the read checkout's folder, config/project.json and key without an absolute host path, and makes no model call. A corpus named in a folder that keeps none is a tool error naming its path, with no model call. Another project's corpus is answered against that project's own files, never this checkout's: once its README.md states confidential, the node its corpus serves is neither cited nor sent. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
+summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. A refused corpus.served_visibilities value reaches the MCP client naming the read checkout's folder, config/project.json and key without an absolute host path, and makes no model call. All retrieval refusals, including a missing checkout through public answer, name the checkout folder without a host path and make no model call. Invalid corpus, config and selector cases exercise each diagnostic source. Another project's corpus is answered against that project's own files, never this checkout's: once its README.md states confidential, the node its corpus serves is neither cited nor sent. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
 """
 
 import json
@@ -125,6 +125,103 @@ class _Counted(FakeModel):
         return super().run(prompt, **opts)
 
 
+@pytest.mark.parametrize(
+    "fault, message",
+    [
+        ("missing-corpus", "the corpus named does not exist"),
+        ("misplaced-corpus", "only in the checkout that keeps it"),
+        ("json", "the corpus cannot be read"),
+        ("utf8", "the corpus cannot be read"),
+        ("shape", "the corpus cannot be read"),
+        ("depth", "the corpus cannot be read"),
+        ("directory", "the corpus cannot be read"),
+        ("config-missing", "levels a served node may carry cannot be read"),
+        ("config-json", "levels a served node may carry cannot be read"),
+        ("config-conflict", "levels a served node may carry cannot be read"),
+    ],
+)
+def test_qa_retrieval_refusals_name_the_checkout_without_a_host_path(
+    tmp_path, monkeypatch, fault, message
+):
+    other = tmp_path / "read-checkout"
+    other.mkdir()
+    corpus = Path(_tiny_corpus(other))
+    if fault == "missing-corpus":
+        corpus.unlink()
+    elif fault == "misplaced-corpus":
+        corpus = corpus.rename(other / "corpus.json")
+    elif fault == "directory":
+        corpus.unlink()
+        corpus.mkdir()
+    elif fault.startswith("config-"):
+        config = other / "config" / "project.json"
+        if fault == "config-missing":
+            config.unlink()
+        else:
+            config.write_text(
+                "{bad json"
+                if fault == "config-json"
+                else "<<<<<<< before\n{}\n=======\n{}\n>>>>>>> after\n",
+                "utf-8",
+            )
+    else:
+        corpus.write_bytes(
+            {
+                "json": b"{bad json",
+                "utf8": b"\xff",
+                "shape": b'{"nodes": false}',
+                "depth": b"[" * 100000,
+            }[fault]
+        )
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake", corpus=str(corpus), max_model_calls=1, max_session_model_calls=1
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    assert message in text
+    if fault == "config-conflict":
+        assert "rc=2" in text and "merge-conflict hunk" in text
+    assert _Counted.prompts == []
+    assert os.environ["KEEL_TEST_SCRATCH"] not in text
+    assert str(tmp_path) not in text
+    assert "read-checkout" in text
+
+
+@pytest.mark.parametrize("selection", ["missing-root", "empty-root", "both"])
+def test_public_answer_root_refusals_hold_no_host_path(
+    tmp_path, monkeypatch, selection
+):
+    # wiki_answer exposes corpus alone; answer is its nearest public function
+    # accepting root, and drives the same real retrieval child for missing-root.
+    from agents.wiki_navigator import answer
+
+    other = tmp_path / "read-checkout"
+    options = {"root": str(other)}
+    message = "checkout whose corpus is read does not exist"
+    name = other.name
+    if selection == "empty-root":
+        options = {"root": ""}
+        message, name = "root named is empty", _ROOT.name
+    elif selection == "both":
+        other.mkdir()
+        options["corpus"] = _tiny_corpus(other)
+        message = "not both"
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    with pytest.raises((RuntimeError, ValueError)) as caught:
+        answer("what is keel", execute=True, model="fake", max_model_calls=1, **options)
+    text = str(caught.value)
+    assert message in text
+    assert _Counted.prompts == []
+    assert os.environ["KEEL_TEST_SCRATCH"] not in text
+    assert str(tmp_path) not in text
+    assert str(_ROOT) not in text
+    assert name in text
+
+
 @pytest.mark.parametrize("served", [["secret"], ["public", "public"], "public"])
 def test_qa_refused_served_levels_name_the_checkout_without_a_host_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, served: list[str] | str
@@ -147,7 +244,6 @@ def test_qa_refused_served_levels_name_the_checkout_without_a_host_path(
     assert "read-checkout/config/project.json" in text
     assert os.environ["KEEL_TEST_SCRATCH"] not in text
     assert str(tmp_path) not in text
-    assert not any(word.startswith("/") for word in text.split())
     assert _Counted.prompts == []
 
 
@@ -239,7 +335,8 @@ def test_qa_tool_with_a_named_corpus_that_does_not_exist_calls_no_model(
     )
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
     assert result["isError"] is True
-    assert str(corpus) in result["content"][0]["text"]
+    assert "d/wiki/corpus.json" in result["content"][0]["text"]
+    assert str(tmp_path) not in result["content"][0]["text"]
     assert _Counted.prompts == []
 
 

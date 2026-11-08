@@ -2,10 +2,11 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming it. b's wiki/ made a symlink to a's is b's corpus, read with b's files, since the checkout is worked out from the path as written. A corpus that parses but is not the shape query_corpus reads (`nodes` not a list, a node not an object, a field it reads of the wrong type), or one nested too deeply to parse, is refused with USAGE as an unparseable one is, naming the fault, where each once ended in a traceback.
+summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming its folder. All diagnostic paths name the checkout folder and relative file without its absolute host path, including OS exception filenames and successful empty-corpus warnings. b's wiki/ made a symlink to a's is b's corpus, read with b's files, since the checkout is worked out from the path as written. A corpus that parses but is not the shape query_corpus reads (`nodes` not a list, a node not an object, a field it reads of the wrong type), or one nested too deeply to parse, is refused with USAGE as an unparseable one is, naming the fault, where each once ended in a traceback.
 """
 
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -320,7 +321,8 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     nodes, guide, linked, err = printed()
     assert nodes and not guide
     # The guide's two nodes, `pubguide` and `pubguide#part`, are counted.
-    assert "withheld 2 node(s)" in err and str(tmp_path) in err
+    assert "withheld 2 node(s)" in err and tmp_path.name in err
+    assert str(tmp_path) not in err
     assert not linked & {
         n["node_id"] for n in corpus["nodes"] if n["path"] == reclassify.GUIDE
     }
@@ -375,7 +377,8 @@ def test_a_corpus_is_answered_against_its_own_checkouts_files(
         ["zebra", "--corpus", str(a / "wiki" / "corpus.json")], capsys
     )
     assert code is qc.ExitCode.SUCCESS and not ids & _GUIDE_IDS
-    assert "withheld 2 node(s)" in err and str(a) in err
+    assert "withheld 2 node(s)" in err and "under a " in err
+    assert str(tmp_path) not in err
     code, ids, _ = _main(["zebra", "--corpus", "wiki/corpus.json"], capsys)
     assert code is qc.ExitCode.SUCCESS and ids == _GUIDE_IDS
     code, ids, _ = _main(["zebra", "--root", str(a)], capsys)
@@ -409,7 +412,8 @@ def test_a_folder_with_no_corpus_of_its_own_prints_nothing_of_anothers(
     root = tmp_path / folder
     code, ids, err = _main(["zebra", "--root", str(root)], capsys)
     assert code is qc.ExitCode.SUCCESS and ids == set()
-    assert str(root / "wiki" / "corpus.json") in err and "make site-data" in err
+    assert f"{root.name}/wiki/corpus.json" in err and "make site-data" in err
+    assert str(tmp_path) not in err
 
 
 def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch, capsys):
@@ -421,7 +425,8 @@ def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch, ca
     corpus = readme / "wiki" / "corpus.json"
     code, ids, err = _main(["zebra", "--corpus", str(corpus)], capsys)
     assert code is qc.ExitCode.USAGE and ids is None
-    assert str(corpus) in err and "make site-data" in err
+    assert f"{corpus.parent.parent.name}/wiki/corpus.json" in err
+    assert str(tmp_path) not in err and "make site-data" in err
 
 
 @pytest.mark.parametrize(
@@ -437,7 +442,8 @@ def test_a_corpus_that_cannot_be_read_is_refused(tmp_path, monkeypatch, capsys, 
     corpus.write_bytes(text)
     code, ids, err = _main(["zebra", "--root", str(a)], capsys)
     assert code is qc.ExitCode.USAGE and ids is None
-    assert str(corpus) in err and "make site-data" in err
+    assert f"{corpus.parent.parent.name}/wiki/corpus.json" in err
+    assert str(tmp_path) not in err and "make site-data" in err
 
 
 def _zebra(**fields):
@@ -492,7 +498,8 @@ def test_a_corpus_not_of_the_shape_it_reads_is_refused(
     corpus.write_bytes(text)
     code, ids, err = _main(["zebra", "--root", str(a)], capsys)
     assert code is qc.ExitCode.USAGE and ids is None, err
-    assert str(corpus) in err and fault in err and "make site-data" in err, err
+    assert f"{a.name}/wiki/corpus.json" in err and fault in err, err
+    assert str(tmp_path) not in err and "make site-data" in err
 
 
 def test_an_empty_root_is_refused(tmp_path, monkeypatch, capsys):
@@ -502,6 +509,7 @@ def test_an_empty_root_is_refused(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(qc, "ROOT", str(a))
     code, ids, err = _main(["zebra", "--root", ""], capsys)
     assert code is qc.ExitCode.USAGE and ids is None and "root named is empty" in err
+    assert a.name in err and str(tmp_path) not in err
 
 
 def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, capsys):
@@ -514,6 +522,7 @@ def test_a_root_and_a_corpus_given_together_are_refused(tmp_path, monkeypatch, c
     code, ids, err = _main(argv, capsys)
     assert code is qc.ExitCode.USAGE and ids is None
     assert "not both" in err
+    assert a.name in err and b.name in err and str(tmp_path) not in err
 
 
 @pytest.mark.parametrize(
@@ -530,7 +539,8 @@ def test_a_corpus_outside_a_checkouts_wiki_is_refused(
     shutil.copy(str(a / "wiki" / "corpus.json"), str(corpus))
     code, ids, err = _main(["zebra", "--corpus", str(corpus)], capsys)
     assert code is qc.ExitCode.USAGE and ids is None
-    assert str(corpus) in err and "wiki/corpus.json" in err
+    assert corpus.name in err and "wiki/corpus.json" in err
+    assert str(tmp_path) not in err
 
 
 def test_a_missing_root_is_refused_before_its_corpus_is_looked_for(
@@ -542,4 +552,35 @@ def test_a_missing_root_is_refused_before_its_corpus_is_looked_for(
     monkeypatch.setattr(qc, "ROOT", str(a))
     root = tmp_path / "nowhere"
     code, ids, err = _main(["zebra", "--root", str(root)], capsys)
-    assert code is qc.ExitCode.USAGE and ids is None and str(root) in err
+    assert code is qc.ExitCode.USAGE and ids is None and root.name in err
+    assert str(tmp_path) not in err
+
+
+@pytest.mark.parametrize("fault", ["absent", "json", "directory"])
+def test_config_read_refusal_names_the_checkout(tmp_path, capsys, fault):
+    config = tmp_path / "config" / "project.json"
+    config.parent.mkdir()
+    if fault == "json":
+        config.write_text("{bad json", "utf-8")
+    elif fault == "directory":
+        config.mkdir()
+    assert qc.main(["zebra", "--root", str(tmp_path)]) is qc.ExitCode.CONFIG
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert tmp_path.name in captured.err and "config/project.json" in captured.err
+    assert str(tmp_path) not in captured.err
+    assert os.environ["KEEL_TEST_SCRATCH"] not in captured.err
+
+
+def test_corpus_oserror_does_not_repeat_the_host_path(tmp_path, capsys):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
+    path = _corpus_file(tmp_path)
+    path.mkdir()
+    assert qc.main(["zebra", "--root", str(tmp_path)]) is qc.ExitCode.USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"{tmp_path.name}/wiki/corpus.json" in captured.err
+    assert "Is a directory" in captured.err
+    assert str(tmp_path) not in captured.err
+    assert os.environ["KEEL_TEST_SCRATCH"] not in captured.err

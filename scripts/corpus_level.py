@@ -2,7 +2,7 @@
 title: corpus_level — the levels a file states, read the way the corpus build reads them, and the checkout a corpus is read in
 kind: script
 layer: n/a
-summary: The one reader of the visibility a file states on disk. `split_frontmatter` and `docstring_meta` are the corpus build's frontmatter and module-docstring grammars. `read_readme` is the one read of the level a README.md states, a README that cannot be read standing for UNREADABLE_README, whose UNREADABLE_VISIBILITY is a value outside CONVENTIONS §1's vocabulary. `readmes_upward` names each README.md from a directory up to the root, and `readme_chain` is the chain a file takes its level from: its walked directory's, then, for a symlink to a file elsewhere in the root, its real directory's. scripts/check_structure.py re-exports these, so check_A and scripts/jobs/build_corpus.py, which ranks a node over check_structure served_chain, judge a README.md by the same reader. `stated_now(root, relpath)` reads the file at *relpath* again and returns its own level followed by each README.md's on its readme_chain, or None when the file cannot be read, is a Markdown file with no frontmatter, a Python file that does not parse or has no docstring, or any other kind of file, so a reader that checks a node's file now (CONVENTIONS §1 lists them) decides with `config_loader.is_served_now` on the level the file states now as well as the corpus's. `CORPUS_PATH` is where a checkout keeps its corpus, and `checkout(root, corpus, default)` is every corpus reader's one way to name what it reads: it derives the corpus from a root, or the root from a corpus at some directory's CORPUS_PATH (*default* when neither is given), and raises NotACheckout, a ValueError carrying report()'s three parts, for both given, an empty root, or a corpus anywhere else, since no rule can tell a stale copy or another project from the real checkout by the files it holds, and for a corpus named that does not exist, so only a root, given or the default, can name a checkout with no corpus yet. It imports nothing of the project, so the module reached as `corpus_level` and as `scripts.corpus_level` holds the same pure functions; ranking the levels is scripts/config_loader.py's. Stdlib-only and 3.6-safe; it reads files and writes none.
+summary: The one reader of the visibility a file states on disk. `split_frontmatter` and `docstring_meta` are the corpus build's frontmatter and module-docstring grammars. `read_readme` is the one read of the level a README.md states, a README that cannot be read standing for UNREADABLE_README, whose UNREADABLE_VISIBILITY is a value outside CONVENTIONS §1's vocabulary. `readmes_upward` names each README.md from a directory up to the root, and `readme_chain` is the chain a file takes its level from: its walked directory's, then, for a symlink to a file elsewhere in the root, its real directory's. scripts/check_structure.py re-exports these, so check_A and scripts/jobs/build_corpus.py, which ranks a node over check_structure served_chain, judge a README.md by the same reader. `stated_now(root, relpath)` reads the file at *relpath* again and returns its own level followed by each README.md's on its readme_chain, or None when the file cannot be read, is a Markdown file with no frontmatter, a Python file that does not parse or has no docstring, or any other kind of file, so a reader that checks a node's file now (CONVENTIONS §1 lists them) decides with `config_loader.is_served_now` on the level the file states now as well as the corpus's. `CORPUS_PATH` is where a checkout keeps its corpus, and `checkout(root, corpus, default)` is every corpus reader's one way to name what it reads: it derives the corpus from a root, or the root from a corpus at some directory's CORPUS_PATH (*default* when neither is given), and raises NotACheckout, a ValueError carrying report()'s three parts, for both given, an empty root, or a corpus anywhere else, since no rule can tell a stale copy or another project from the real checkout by the files it holds, and for a corpus named that does not exist, so only a root, given or the default, can name a checkout with no corpus yet. Its optional `name` callback formats refusal paths for clients without changing the paths it reads; by default it preserves the caller's path spelling. It imports nothing of the project, so the module reached as `corpus_level` and as `scripts.corpus_level` holds the same pure functions; ranking the levels is scripts/config_loader.py's. Stdlib-only and 3.6-safe; it reads files and writes none.
 effect: read-only
 """
 
@@ -13,7 +13,7 @@ effect: read-only
 
 import ast
 import os
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 __all__ = [
     "CORPUS_PATH",
@@ -58,8 +58,16 @@ class NotACheckout(ValueError):
         self.parts = (what, on, next_step)
 
 
+def _path_name(root: str, relpath: str) -> str:
+    """The local path spelling when no client-facing formatter is given."""
+    return os.path.join(root, relpath) if relpath else root
+
+
 def checkout(
-    root: Optional[str], corpus: Optional[str], default: str
+    root: Optional[str],
+    corpus: Optional[str],
+    default: str,
+    name: Callable[[str, str], str] = _path_name,
 ) -> Tuple[str, str]:
     """(the checkout, its corpus), both absolute, a relative path taken from
     the caller's directory and no symlink resolved, so a wiki/ linked into
@@ -69,11 +77,22 @@ def checkout(
     *default* is the checkout. Raises NotACheckout for both given, since two
     choices could pair one checkout's corpus with another's files, for an
     empty root, for a corpus that is not at some directory's CORPUS_PATH,
-    and for a corpus named that does not exist."""
+    and for a corpus named that does not exist. *name* formats a checkout
+    and relative path in refusals only; it never changes the read paths."""
     if root is not None and corpus is not None:
         raise NotACheckout(
             "give a root or a corpus, not both",
-            "root %s, corpus %s" % (root, corpus),
+            "root %s, corpus %s"
+            % (
+                name(root, ""),
+                name(
+                    os.path.dirname(os.path.dirname(corpus)),
+                    os.path.join(
+                        os.path.basename(os.path.dirname(corpus)),
+                        os.path.basename(corpus),
+                    ),
+                ),
+            ),
             "pass the checkout as the root, or its %s as the corpus" % CORPUS_PATH,
         )
     if root == "":
@@ -82,7 +101,8 @@ def checkout(
         raise NotACheckout(
             "the root named is empty",
             "root ''",
-            "pass the checkout's path, or leave the root out for %s" % default,
+            "pass the checkout's path, or leave the root out for %s"
+            % name(default, ""),
         )
     if corpus is None:
         root = os.path.abspath(default if root is None else root)
@@ -94,7 +114,7 @@ def checkout(
     if os.path.join(root, CORPUS_PATH) != corpus:
         raise NotACheckout(
             "a corpus is read only in the checkout that keeps it",
-            corpus,
+            name(os.path.dirname(corpus), os.path.basename(corpus)),
             "move it to its checkout's %s, or pass that checkout as the root"
             % CORPUS_PATH,
         )
@@ -104,7 +124,7 @@ def checkout(
     if not os.path.exists(corpus):
         raise NotACheckout(
             "the corpus named does not exist",
-            corpus,
+            name(root, CORPUS_PATH),
             "run `make site-data` in its checkout, or name a corpus that exists",
         )
     return root, corpus
