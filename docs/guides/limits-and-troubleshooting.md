@@ -928,8 +928,10 @@ loader: `timeout_seconds` defaults to 10 seconds (at most
 `threading.TIMEOUT_MAX`), and `stderr_max_chars` defaults to 240 characters.
 Wrong types or bounds refuse preflight with exit 14 (`CONFIG`). A cut stderr
 line ends in `...` within the character bound (one or two dots for bounds of
-1 or 2); a line exactly at the bound stays unchanged. The browser runner does
-not read these limits; its settings live in `layers.frontend.journey`.
+1 or 2); a line exactly at the bound stays unchanged.
+`src/frontend/astro/playwright.config.ts` and
+`src/frontend/react-vite/playwright.config.ts` read the browser runner's
+settings from `layers.frontend.journey`.
 
 ## Symptom, cause, fix
 
