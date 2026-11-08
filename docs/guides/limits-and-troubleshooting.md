@@ -939,11 +939,8 @@ exit 14 (`CONFIG`).
 the character bound.
 For a bound of 1 or 2, `_probe_refused` uses that many dots.
 `_probe_refused` leaves a line exactly at the bound unchanged.
-In `tests/integration/test_gate_scope.py`,
-`test_every_frontend_app_wires_both_suites` checks
-`src/frontend/astro/playwright.config.ts` and
-`src/frontend/react-vite/playwright.config.ts` for `journey` and a property
-access for every declared `layers.frontend.journey` key.
+See [the gate's journey source check](deterministic-checks.md#the-gates-evidence-record)
+for the evidence about the browser runner's settings.
 
 ## Symptom, cause, fix
 

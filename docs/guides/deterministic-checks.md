@@ -1717,13 +1717,14 @@ case, else the first non-blank line.
 The [browser registry probe limits](limits-and-troubleshooting.md#browser-registry-probe-limits)
 section documents the keys, types, bounds, defaults, effects, configuration
 refusal code and stderr cut rules.
-In `tests/integration/test_gate_scope.py`,
-`test_every_frontend_app_wires_both_suites` checks
-`src/frontend/astro/playwright.config.ts` and
-`src/frontend/react-vite/playwright.config.ts` for `journey` and a property
-access for every declared `layers.frontend.journey` key.
 Only these probe refusals advise updating the probe or setting
 `layers.frontend.journey.browser_executable` to an installed browser.
+
+In `tests/integration/test_gate_scope.py`,
+`test_every_frontend_app_wires_both_suites` checks each frontend app the
+Makefile's `FE_APPS` glob (`src/frontend/*/package.json`) finds for a
+`playwright.config.ts` containing `journey` and a property access for every
+declared `layers.frontend.journey` key not starting with `_`.
 
 **What it holds.** `config/evidence/gate-record.schema.json` (config/project.json
 `evidence.schema`) defines every field and describes each one, and
