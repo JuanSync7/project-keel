@@ -9,6 +9,7 @@ effect: read-only
 
 import contextlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -37,7 +38,36 @@ process.stdout.write(registry.findExecutable('chromium-headless-shell').executab
 """
 
 
+def _probe_refused(folder, app):
+    """Refuse a failed browser probe with its installed runner version and remedy."""
+    metadata = os.path.join(
+        folder, "node_modules", "@playwright", "test", "package.json"
+    )
+    try:
+        with open(metadata, encoding="utf-8") as stream:
+            version = json.load(stream)["version"]
+    except (OSError, ValueError, KeyError, TypeError):
+        version = None
+    if isinstance(version, str) and version.strip():
+        installed = "installed Playwright version %s" % config_loader.shown(
+            version, bare=True
+        )
+    else:
+        installed = (
+            "installed Playwright version is unreadable at %s"
+            % config_loader.shown(metadata, bare=True)
+        )
+    return report(
+        ExitCode.USAGE,
+        "scripts/preflight.py _BROWSER_PATH probe failed (%s)" % installed,
+        app,
+        "update the probe in scripts/preflight.py or set "
+        "layers.frontend.journey.browser_executable to an installed executable, then rerun",
+    )
+
+
 def _browsers(root, apps, loaded):
+    """Require each frontend journey's cached browser or configured executable."""
     if not apps:
         return ExitCode.SUCCESS
     override = config_loader.resolve(
@@ -55,9 +85,12 @@ def _browsers(root, apps, loaded):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     universal_newlines=True,
+                    # A local registry lookup should be quick; a hung Node must not stall verify.
                     timeout=10,
                 )
             except (OSError, subprocess.TimeoutExpired) as exc:
+                if not (isinstance(exc, FileNotFoundError) and exc.filename == "node"):
+                    return _probe_refused(folder, app)
                 return report(
                     ExitCode.USAGE,
                     "node cannot locate the journey browser (%s)"
@@ -65,13 +98,8 @@ def _browsers(root, apps, loaded):
                     app,
                     "install Node.js and run `make fe-install` and `make fe-browsers`, then rerun",
                 )
-            if proc.returncode:
-                return report(
-                    ExitCode.USAGE,
-                    "the journey browser runner is not installed or cannot locate its cache",
-                    app,
-                    "run `make fe-install` and `make fe-browsers`, then rerun",
-                )
+            if proc.returncode or not proc.stdout.strip():
+                return _probe_refused(folder, app)
             executable = proc.stdout.strip()
         path = os.path.join(folder, executable)
         if not executable or not os.path.isfile(path) or not os.access(path, os.X_OK):
@@ -87,15 +115,17 @@ def _browsers(root, apps, loaded):
 
 
 def _refused(root):
+    """Report that preflight refused a required local install."""
     return report(
         ExitCode.USAGE,
         "a required local install is unavailable",
         root,
-        "follow the install advice above, then rerun make preflight",
+        "follow the advice above, then rerun make preflight",
     )
 
 
 def main(argv=None, root=None):
+    """Check local verify requirements, returning success silently or refusing with advice."""
     args = sys.argv[1:] if argv is None else argv
     if args == ["--help"]:
         sys.stdout.write(

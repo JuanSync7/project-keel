@@ -9,7 +9,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -59,9 +59,11 @@ a task unless you pass `--trust`
 copier accepts any git URL or local path in place of `gh:JuanSync7/project-keel`.
 
 With a frontend stack, run `make fe-install` and then `make fe-browsers` before
-the first `make verify`. A fresh project has no `node_modules`, so
-`make test-fe` exits 2 naming the app and `make fe-install` rather than pass
-over tests that never ran, and the browser journey fails until
+the first `make verify`. The shared frontend guard requires each app's
+`node_modules/.package-lock.json`, the completion marker npm writes at
+the end of installation. A fresh project or interrupted install lacks
+that marker, so `make preflight` and `make test-fe` exit 2 naming the app
+and `make fe-install`. The browser journey fails until
 `make fe-browsers` has downloaded its browser. With `frontend_stack` `none`,
 `make test-fe` exits 0 and says nothing.
 `tests/integration/test_copier_generation.py` generates each stack and checks
@@ -312,8 +314,11 @@ one. Give yours another value, then run `make exit-codes`.
 ### The frontend suites refuse an app they cannot run
 
 With a frontend app present, `make test-fe-unit` and `make test-fe-e2e` exit 2
-when `npm` or an app's `node_modules` is missing, naming the app and
-`make fe-install`, because a suite that ran nothing does not pass. Run
+when `npm` or `node` is missing or an app lacks
+`node_modules/.package-lock.json`, naming the app and `make fe-install`,
+because a suite that ran nothing does not pass. npm writes that marker
+when installation finishes; a non-empty directory without it is
+incomplete. `make preflight` and `make fe-browsers` share this guard. Run
 `make fe-install` and `make fe-browsers` after the update, before
 `make verify`. The update adds the `make test-fe`,
 `test-fe-unit` and `test-fe-e2e` entries to config/project.json

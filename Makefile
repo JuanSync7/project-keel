@@ -284,7 +284,7 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 # journey against its BUILT site, each app's npm scripts test:unit and test:e2e.
 # Guard and loop are one logical line, as in lint-fe above. Unlike lint-fe they
 # never skip: a suite that ran nothing must not pass, so with a frontend app
-# present a missing npm, or an app with no node_modules, ends the target with
+# present a missing npm/node, or a missing or incomplete app install, ends the target with
 # make's exit 2, naming the app and `make fe-install`. Every app is checked
 # before any runs, so the message names the first bare app rather than half a
 # run. A backend-only project (no FE_APPS) stays silent and exits 0. A verify
@@ -299,10 +299,11 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 test-fe: test-fe-unit test-fe-e2e ## [local] Run every frontend test suite (unit runner + browser journey)
 # All refusing FE targets share this guard so their advice cannot drift from
 # preflight. Keep it in the same shell as the loop: exit ends that shell only.
+# npm writes its hidden lockfile last, so a directory alone can be interrupted.
 define REQUIRE_FE_INSTALLS
 test -n "$(strip $(FE_APPS))" || exit 0; \
 for tool in npm node; do command -v "$$tool" >/dev/null 2>&1 || { echo "$@: $$tool is not on PATH, so no $(1) for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; done; \
-for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its $(2); run 'make fe-install', then run it again" >&2; exit 2; }; done;
+for app in $(FE_APPS); do [ -f "$$app/node_modules/.package-lock.json" ] || { echo "$@: $$app install is missing or incomplete (no node_modules/.package-lock.json), so its $(2); run 'make fe-install', then run it again" >&2; exit 2; }; done;
 endef
 
 # No prerequisites: even make -j must finish every install check before any

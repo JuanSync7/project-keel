@@ -64,6 +64,7 @@ def project(tmp_path):
         app = tmp_path / "src/frontend" / name
         registry = app / "node_modules/playwright-core/lib"
         registry.mkdir(parents=True)
+        (app / "node_modules/.package-lock.json").write_text("{}")
         (app / "package.json").write_text("{}")
         (app / "node_modules/playwright-core/package.json").write_text("{}")
         (registry / "coreBundle.js").write_text(
@@ -98,13 +99,67 @@ def _run(project, *goals):
 
 
 @pytest.mark.parametrize(
+    "target", ["preflight", "test-fe-unit", "test-fe-e2e", "fe-browsers"]
+)
+@pytest.mark.parametrize("app", ["one", "two"])
+def test_incomplete_install_refuses_before_later_work(project, target, app):
+    root, _cfg, _record, _bindir, _browser = project
+    modules = root / "src/frontend" / app / "node_modules"
+    (modules / ".package-lock.json").unlink()
+    assert any(modules.iterdir())
+
+    result = _run(project, target, "expensive")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "src/frontend/" + app + "/" in result.stderr, result.stderr
+    assert "install is missing or incomplete" in result.stderr, result.stderr
+    assert "run 'make fe-install'" in result.stderr, result.stderr
+    assert not (root / "expensive-started").exists()
+
+
+@pytest.mark.parametrize(
+    "package,version",
+    [
+        ('{"version": "9.8.7"}', "installed Playwright version 9.8.7"),
+        (None, "installed Playwright version is unreadable"),
+        ("broken json", "installed Playwright version is unreadable"),
+        ("{}", "installed Playwright version is unreadable"),
+        ('{"version": null}', "installed Playwright version is unreadable"),
+    ],
+)
+def test_broken_browser_probe_refuses_before_later_work(project, package, version):
+    if shutil.which("node") is None:
+        pytest.skip("browser probe failure needs Node.js")
+    root, _cfg, _record, _bindir, _browser = project
+    modules = root / "src/frontend/two/node_modules"
+    assert (modules / ".package-lock.json").is_file()
+    (modules / "playwright-core/lib/coreBundle.js").unlink()
+    if package is not None:
+        metadata = modules / "@playwright/test/package.json"
+        metadata.parent.mkdir(parents=True)
+        metadata.write_text(package)
+
+    result = _run(project, "preflight", "expensive")
+
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "src/frontend/two/" in result.stderr, result.stderr
+    assert "scripts/preflight.py _BROWSER_PATH probe failed" in result.stderr
+    assert version in result.stderr, result.stderr
+    assert "update the probe in scripts/preflight.py" in result.stderr
+    assert "layers.frontend.journey.browser_executable" in result.stderr
+    assert "make fe-install" not in result.stderr
+    assert "make fe-browsers" not in result.stderr
+    assert not (root / "expensive-started").exists()
+
+
+@pytest.mark.parametrize(
     "missing,diagnostic,remedy",
     [
         ("npm", "npm is not on PATH", "make fe-install"),
-        ("node", "node", "make fe-install"),
-        ("node-override", "node", "make fe-install"),
-        ("one", "one/ has no node_modules", "make fe-install"),
-        ("two", "two/ has no node_modules", "make fe-install"),
+        ("node", "node is not on PATH", "make fe-install"),
+        ("node-override", "node is not on PATH", "make fe-install"),
+        ("one", "one/ install is missing or incomplete", "make fe-install"),
+        ("two", "two/ install is missing or incomplete", "make fe-install"),
         ("python", "keel-preflight-absent", "pip install -e"),
         ("record", "no scanner record", "make secrets-install"),
         ("scanner", "recorded scanner", "make secrets-install"),

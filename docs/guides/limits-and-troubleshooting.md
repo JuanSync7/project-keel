@@ -198,9 +198,11 @@ a decision on whether it should fail instead.
 - `make lint-fe` and `make typecheck-fe` exit 0 when no frontend app is
   found, when `npm` is not installed, or when an app has no `node_modules`.
   Queued for a decision. The suites do not skip: with a frontend app,
-  `make test-fe-unit`, `make test-fe-e2e` and `make fe-browsers` exit 2 on a
-  missing `npm` or `node_modules`, and a browser missing from the cache is
-  red.
+  `make preflight`, `make test-fe-unit`, `make test-fe-e2e` and
+  `make fe-browsers` share a guard that exits 2 on missing `npm` or `node`,
+  or an app without `node_modules/.package-lock.json`. npm writes that
+  marker at the end of installation; a non-empty directory without it is
+  incomplete. A browser missing from the cache is red.
 - `make check-openapi` and `make check-aad` skip when FastAPI or pydantic is
   not installed. Queued for a decision. Under `make verify` they do not reach
   the skip: `make check-venv` runs first and fails a venv without the
@@ -927,7 +929,8 @@ kept on purpose, such as a test fixture, with its reason.
 | check_W says `.IGNORE makes make ignore recipe errors` | a makefile holds a `.IGNORE` rule, which lets every recipe it names, or every recipe, carry on past a failing line, including the guard's `exit 1` | delete the `.IGNORE` rule; put a `-` on the one line whose failure may be ignored |
 | a `[write]` target stops with `refusing '<target>': make is ignoring recipe errors` | make was run with `-i`, `--ignore-errors`, `MAKEFLAGS=i` or under a bare `.IGNORE:`, so the guard could not stop the target | run the target without that flag |
 | `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: npm is not on PATH` | Node.js is not installed or not on `PATH`, and a frontend app exists | install Node.js, run `make fe-install`, then run the target again |
-| `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> has no node_modules` | the app's packages are not installed, as in a fresh clone or a newly generated project | run `make fe-install`, then run the target again |
+| `make preflight`, `make test-fe-unit`, `make test-fe-e2e` or `make fe-browsers` exits 2 with `<target>: <app> install is missing or incomplete` | the app lacks `node_modules/.package-lock.json`, npm's completion marker, as after an interrupted install | run `make fe-install`, then run the target again |
+| `make preflight` exits 2 naming `scripts/preflight.py` `_BROWSER_PATH` and the installed Playwright version (or unreadable metadata) | the browser probe failed, for example because Playwright moved its private registry module | update the probe in `scripts/preflight.py` or set `layers.frontend.journey.browser_executable` to an installed executable |
 | `make fe-install` stops with `node major is <found>, and config/project.json toolchain.node_major is <configured>` | the Node on `PATH` is another major than the one every lockfile was resolved under | install that Node major, or change `toolchain.node_major`, run `make fe-install` and commit the regenerated lockfiles |
 | `make fe-install` stops with `node cannot be run` or `node --version printed` | Node.js is not on `PATH`, or the `node` found is not Node.js | install Node.js of the major `toolchain.node_major` names, then run the target again |
 | `test_frontend_lockfile_gate` says `<app>/package-lock.json exists but git does not track it` or `has no package-lock.json` | the app's lockfile was never committed, so CI's npm resolves a tree of its own | run `npm install` in the app and commit its `package-lock.json` |

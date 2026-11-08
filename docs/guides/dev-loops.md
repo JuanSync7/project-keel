@@ -354,9 +354,12 @@ own browser cache, at `PLAYWRIGHT_BROWSERS_PATH` when that is set, which
 config/project.json `child_env.names` passes to each `make verify` goal). No
 browser is downloaded under the gate: `make fe-browsers` downloads it, through
 each app's npm script `test:e2e:browsers`. Neither suite skips. With a frontend
-app present, a missing `npm` or an app without `node_modules` ends the suite
-with exit 2, naming the app and `make fe-install`, because a suite that ran
-nothing must not pass; only a project with no frontend app runs them silently.
+app present, a missing `npm` or `node`, or an app without
+`node_modules/.package-lock.json`, ends the suite with exit 2, naming the app
+and `make fe-install`, because a suite that ran nothing must not pass. npm
+writes that marker when installation finishes; a non-empty directory without
+it is incomplete. `make preflight` and `make fe-browsers` share the suites'
+guard. Only a project with no frontend app runs them silently.
 CI runs `make fe-install`, `make fe-browsers` and then `make test-fe`.
 `tests/integration/test_gate_scope.py` holds every app to both scripts, both
 configs and a file in each suite. These suites are not for the backend: its

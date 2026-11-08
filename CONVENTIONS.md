@@ -1189,6 +1189,16 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   `scripts/run_make_target.py`, which runs only a target labelled inside
   `make_targets.gate_effects` and fails one that changed the tree (§7).
 
+`make preflight`, `make test-fe-unit`, `make test-fe-e2e` and `make fe-browsers`
+share the Makefile's `REQUIRE_FE_INSTALLS` guard. Each frontend app needs
+`node_modules/.package-lock.json`, the marker npm writes when installation
+finishes; a non-empty directory without it is an incomplete install. The
+guard refuses with exit 2, naming the app and `make fe-install` before later
+work runs. A failed Playwright browser probe names `scripts/preflight.py`
+`_BROWSER_PATH` and the installed Playwright version (or unreadable metadata),
+with advice to update the probe or set
+`layers.frontend.journey.browser_executable`.
+
 These are conventions an agent follows, not gated by a structural check today: no
 check verifies the test mirror, that a test came first, or that it exercises the
 code. The real gate is `make verify` (a red suite fails it); TDD itself is a

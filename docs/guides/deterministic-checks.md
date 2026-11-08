@@ -1701,6 +1701,16 @@ recipe runs `scripts/gate_evidence.py`, which runs each goal (`preflight`, `chec
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.
 
+`make preflight` refuses missing local installs before those goals run. Its
+frontend guard is shared with `make test-fe-unit`, `make test-fe-e2e` and
+`make fe-browsers`: each app must have `node_modules/.package-lock.json`,
+the marker npm writes at the end of an install. A directory without that
+marker is missing or incomplete, and the refusal names the app and
+`make fe-install`. If the browser probe fails, preflight names
+`scripts/preflight.py` `_BROWSER_PATH` and the installed Playwright version
+(or says it is unreadable). Update the probe or set
+`layers.frontend.journey.browser_executable` to an installed browser.
+
 **What it holds.** `config/evidence/gate-record.schema.json` (config/project.json
 `evidence.schema`) defines every field and describes each one, and
 `tests/integration/test_gate_evidence_record.py` validates a real record against
