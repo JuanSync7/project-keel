@@ -5,6 +5,7 @@ layer: n/a
 summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts.
 """
 
+import importlib
 import subprocess
 import sys
 from pathlib import Path
@@ -226,3 +227,57 @@ def test_keels_run_make_target_carries_resource_limits_and_starts(tmp_path):
         timeout=child_timeout(),
     )
     assert started.returncode == 0, started.stderr
+
+
+@pytest.mark.parametrize(
+    "module, constant, entries",
+    [
+        (
+            "test_empty_selection",
+            "_SHIPPED",
+            ["tests/conftest.py", "scripts/check_python_version.py"],
+        ),
+        ("test_exit_codes_through_make", "_GATE_SCRIPTS", ["gate_evidence.py"]),
+        ("test_gate_evidence_record", "_SCRIPTS", ["gate_evidence.py"]),
+        ("test_requirement_traceability", "_SCRIPTS", ["trace_requirements.py"]),
+        ("test_launcher", "_SCRIPTS", ["launch.py", "long_scripts.py"]),
+        ("test_evals_gate", "_SCRIPTS", ["run_evals.py"]),
+        ("test_finish_update", "_SHIPPED", ["scripts/jobs/finish_update.py"]),
+        (
+            "test_copier_update",
+            "_TOY_SHIPPED",
+            ["scripts/jobs/resolve_stamp_conflicts.py"],
+        ),
+    ],
+)
+def test_copy_seeds_name_entry_files_instead_of_their_imports(
+    module, constant, entries
+):
+    listed = getattr(importlib.import_module(module), constant)
+    assert [rel for rel in listed if rel.endswith(".py")] == entries
+
+
+def _assert_complete(root, copied):
+    missing = {
+        imported
+        for _importer, _line, imported in source_tree.import_edges(
+            root, [rel for rel in copied if rel.endswith(".py")], ["scripts/", ""]
+        )
+        if imported not in copied
+    }
+    assert not missing, "copy list misses imports: %s" % sorted(missing)
+
+
+def test_gate_copy_carries_transitive_shell_gate_and_detects_an_incomplete_list(
+    tmp_path,
+):
+    entry = "scripts/gate_evidence.py"
+    transitive = "scripts/shell_gate.py"
+    direct = source_tree.import_edges(_ROOT, [entry], ["scripts/", ""])
+    assert transitive not in {imported for _src, _line, imported in direct}
+    copied = script_copy.copy_with_imports(tmp_path, _ROOT, [entry])
+    assert transitive in copied
+    _assert_complete(_ROOT, copied)
+    with pytest.raises(AssertionError, match=r"copy list misses imports:.*shell_gate"):
+        _assert_complete(_ROOT, [rel for rel in copied if rel != transitive])
+    assert sorted(_bytes(tmp_path)) == copied

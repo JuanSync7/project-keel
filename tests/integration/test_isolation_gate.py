@@ -286,8 +286,7 @@ def test_a_worker_that_dies_leaves_the_exemption_check_unjudged_and_red(tmp_path
 def _recording_project(tmp_path, workers):
     """A scratch project that can record the expiring tier's findings."""
     root = _project(tmp_path, ["reach"], workers=workers)
-    for rel in ("scripts/expiring_tier.py", "scripts/expiring_tier_data.py"):
-        shutil.copy(str(_ROOT / rel), str(root / rel))
+    script_copy.copy_with_imports(root, _ROOT, ["scripts/expiring_tier.py"])
     return root
 
 

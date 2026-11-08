@@ -39,16 +39,8 @@ pytestmark = [
 
 _MANIFEST = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
 _LAUNCHER = _MANIFEST["launcher"]
-# The launcher, the search script and the stdlib siblings they import, git_tree's
-# own included: what a generated project runs.
-_SCRIPTS = (
-    "launch.py",
-    "long_scripts.py",
-    "exit_codes.py",
-    "git_tree.py",
-    "child_env.py",
-    "config_loader.py",
-)
+# Both commands are entry files; script_copy derives their imported modules.
+_SCRIPTS = ("launch.py", "long_scripts.py")
 _COMMAND = ("python3", "-c", "pass")
 _KEY = " ".join(_COMMAND)
 

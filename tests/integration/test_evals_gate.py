@@ -29,17 +29,10 @@ import script_copy  # noqa: E402
 pytestmark = pytest.mark.integration
 
 _CONFIG = load_config(_ROOT)
-# What the CLI imports when it runs in a project: the harness, the doers and
-# backends it drives, the CLI and the stdlib siblings git_tree needs; the
-# modules those import are copied with them.
+# Runtime datasets and configuration need whole trees; script_copy derives
+# the Python modules imported by the CLI.
 _TREES = ("evals", "models", "agents", "runtimes", "config")
-_SCRIPTS = (
-    "run_evals.py",
-    "git_tree.py",
-    "child_env.py",
-    "config_loader.py",
-    "exit_codes.py",
-)
+_SCRIPTS = ("run_evals.py",)
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 
 

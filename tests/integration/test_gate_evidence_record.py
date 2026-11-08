@@ -35,18 +35,8 @@ pytestmark = pytest.mark.integration
 
 _MANIFEST = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
 _EVIDENCE = _MANIFEST["evidence"]
-# The writer and the siblings it imports, what a generated project runs;
-# tests/script_copy.py adds any import this list misses.
-_SCRIPTS = (
-    "gate_evidence.py",
-    "git_tree.py",
-    "child_env.py",
-    "check_structure.py",
-    "config_loader.py",
-    "exit_codes.py",
-    "run_date.py",
-    "shell_gate.py",
-)
+# The writer is an entry file; script_copy derives every imported module.
+_SCRIPTS = ("gate_evidence.py",)
 # A test run under the gate runner carries the outer make's state; a scratch make
 # must start from none of it.
 _MAKE_INHERITANCE = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "RALPH")

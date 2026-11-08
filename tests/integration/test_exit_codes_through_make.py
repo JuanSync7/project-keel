@@ -148,18 +148,8 @@ def test_under_k_the_error_line_is_not_make_s_last_line(tmp_path):
     assert _ERROR_LINE.match(proc.stdout.splitlines()[-1]) is None, proc.stdout
 
 
-# The driver keel's `verify` recipe runs and the siblings it imports;
-# tests/script_copy.py adds any import this list misses.
-_GATE_SCRIPTS = (
-    "gate_evidence.py",
-    "git_tree.py",
-    "child_env.py",
-    "check_structure.py",
-    "config_loader.py",
-    "exit_codes.py",
-    "run_date.py",
-    "shell_gate.py",
-)
+# The recipe names its driver; script_copy derives every imported module.
+_GATE_SCRIPTS = ("gate_evidence.py",)
 # A test run under the gate runner carries the outer make's state; the scratch
 # gate must start from none of it.
 _MAKE_INHERITANCE = ("MAKEFLAGS", "MFLAGS", "MAKELEVEL", "MAKEOVERRIDES", "RALPH")

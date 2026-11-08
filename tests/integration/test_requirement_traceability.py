@@ -35,19 +35,8 @@ import script_copy  # noqa: E402
 pytestmark = pytest.mark.integration
 
 _CLI = "trace_requirements.py"
-# The command and the siblings it imports; tests/script_copy.py adds any it misses.
-_SCRIPTS = (
-    _CLI,
-    "traceability.py",
-    "pytest_markers.py",
-    "git_tree.py",
-    "child_env.py",
-    "check_structure.py",
-    "config_loader.py",
-    "exit_codes.py",
-    "run_date.py",
-    "shell_gate.py",
-)
+# The CLI is an entry file; script_copy derives every imported module.
+_SCRIPTS = (_CLI,)
 _IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 _GAPS_WHERE = "%s %s" % (tr.MANIFEST, tr.GAPS_KEY)
 _EMPTY_WHERE = "%s %s" % (tr.MANIFEST, tr.EMPTY_KEY)

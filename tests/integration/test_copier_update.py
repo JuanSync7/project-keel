@@ -1082,12 +1082,6 @@ def test_the_noop_update_leaves_the_recorded_revision_alone(unmoved):
 _TOY_JOB = "scripts/jobs/resolve_stamp_conflicts.py"
 _TOY_SHIPPED = (
     _TOY_JOB,
-    "scripts/jobs/conflict_guard.py",
-    "scripts/jobs/review_docs.py",
-    "scripts/child_env.py",
-    "scripts/config_loader.py",
-    "scripts/exit_codes.py",
-    "scripts/run_date.py",
     "config/project.json",
 )
 _TOY_MIGRATION = (

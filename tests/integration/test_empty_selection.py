@@ -30,23 +30,13 @@ pytestmark = [
 
 # What a test-tier recipe needs to run in a project of its own, beside the
 # Makefile and every makefile it includes (tests/makefile_copy.py): pytest's
-# configuration, the suite's conftest and the helpers it imports, the
-# scripts those reach, and the manifest they read.
+# configuration, the suite's conftest and the version-check entry script.
+# Imports are derived; pytest configuration and the manifest are runtime data.
 _SHIPPED = (
     "pyproject.toml",
     "config/project.json",
     "tests/conftest.py",
-    "tests/selection_guard.py",
-    "tests/hermetic_git.py",
-    "tests/isolation_guard.py",
-    "scripts/check_structure.py",
     "scripts/check_python_version.py",
-    "scripts/child_env.py",
-    "scripts/config_loader.py",
-    "scripts/exit_codes.py",
-    "scripts/git_tree.py",
-    "scripts/run_date.py",
-    "scripts/shell_gate.py",
 )
 
 _PASS = "def test_passes():\n    assert True\n"
