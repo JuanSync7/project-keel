@@ -101,12 +101,15 @@ def marker(line, mark):
 
 
 def conflict_lines(text):
-    """The 1-based line of the opening marker of each complete hunk in *text*,
-    in order. Lenient on purpose: a guard must see every hunk a merge could
-    leave. An opener starts the candidate again until a separator is seen;
-    after one it is content until a close completes the hunk. So an opener
-    inside the incoming side cannot hide its hunk, and a stray opener above a
-    hunk is not the line reported for it
+    """One 1-based line for each complete hunk in *text*, in order: the last
+    opener before the hunk's separator. Lenient on purpose: a guard must see
+    every hunk a merge could leave. An opener starts the candidate again until
+    a separator is seen; after one it is content until a close completes the
+    hunk, so an opener inside the incoming side cannot hide its hunk. Line by
+    line, a stray opener above a hunk and an opener inside its own or base
+    side are the same marker sequence, so the line is the hunk's opener
+    unless one of those precedes the separator: then it is the interior
+    opener, inside the hunk, or a stray opener that a stray separator follows
     (scripts/jobs/resolve_stamp_conflicts.py is the strict reader, because it
     writes)."""
     found = []
