@@ -47,7 +47,7 @@ def _stub(folder, name, body):
 
 def _copy(tmp_path, sources):
     """A copy of this project whose config sets install_sources to *sources*,
-    with one stub app that already has node_modules."""
+    with one stub app whose npm completion marker records an installed app."""
     work = tmp_path / "work"
     makefile_copy.copy_makefiles(work, _ROOT)
     shutil.copytree(
@@ -61,6 +61,7 @@ def _copy(tmp_path, sources):
     (work / config_loader.CONFIG_FILE).write_text(json.dumps(config, indent=2))
     app = work / "src" / "frontend" / "stub"
     (app / "node_modules").mkdir(parents=True)
+    (app / "node_modules/.package-lock.json").write_text("{}")
     (app / "package.json").write_text(json.dumps({"name": "stub"}))
     return work, config["toolchain"]["node_major"]
 

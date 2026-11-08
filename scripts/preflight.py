@@ -52,7 +52,12 @@ def _probe_refused(folder, app, stderr, max_chars):
     try:
         with open(metadata, encoding="utf-8") as stream:
             version = json.load(stream)["version"]
-    except (OSError, ValueError, KeyError, TypeError):
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ):  # noqa: DROP001 -- metadata only enriches the refusal naming its unreadable path
         version = None
     if isinstance(version, str) and version.strip():
         installed = "installed Playwright version %s" % config_loader.shown(

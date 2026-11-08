@@ -242,6 +242,7 @@ def _fe_app(tmp_path, name="webapp", *, node_modules=True):
     app.mkdir(parents=True)
     if node_modules:
         (app / "node_modules").mkdir()
+        (app / "node_modules/.package-lock.json").write_text("{}")
     (app / "package.json").write_text(
         json.dumps(
             {
@@ -330,7 +331,12 @@ def test_fe_suite_refuses_an_app_without_node_modules(tmp_path, target):
     bare = _fe_app(tmp_path, "bare", node_modules=False)
     r = _run_make(target, ready + " " + bare, str(bindir) + ":/usr/bin:/bin")
     assert r.returncode == 2 and "Error 2" in r.stderr, r.stdout + r.stderr
-    assert target + ": " + bare + " has no node_modules" in r.stderr, r.stderr
+    assert (
+        target
+        + ": "
+        + bare
+        + " install is missing or incomplete (no node_modules/.package-lock.json)"
+    ) in r.stderr, r.stderr
     assert _FE_INSTALL in r.stderr, r.stderr
     assert not log.exists(), "npm ran before the refusal: %s" % log.read_text()
 
