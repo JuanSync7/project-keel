@@ -212,6 +212,17 @@ _READERS = (
         ),
     ),
     (
+        "scripts/preflight.py",
+        "settings",
+        (),
+        (
+            14,
+            "",
+            "preflight: the project settings are refused: config/project.json does not exist; "
+            "fix config/project.json, then rerun make preflight\n",
+        ),
+    ),
+    (
         "scripts/child_exec.py",
         "environment",
         ("probe.sh",),

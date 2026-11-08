@@ -134,15 +134,15 @@ def main(argv=None, root=None):
         return ExitCode.SUCCESS
     root = ROOT if root is None else root
     try:
+        loaded = config_loader.read(root)
         # Imports needing the project floor happen only after the 3.6-safe guard.
         with contextlib.redirect_stdout(io.StringIO()):
             if check_python_version.main() != ExitCode.SUCCESS:
                 return _refused(root)
             import check_venv
 
-            if check_venv.main(root=root) != ExitCode.SUCCESS:
+            if check_venv.main(root=root, loaded=loaded) != ExitCode.SUCCESS:
                 return _refused(root)
-        loaded = config_loader.read(root)
         status = scan_secrets.check_install(root, scan_secrets.settings(root))
         if status != ExitCode.SUCCESS:
             return _refused(root)
@@ -154,8 +154,14 @@ def main(argv=None, root=None):
         if _browsers(root, args, loaded) != ExitCode.SUCCESS:
             return _refused(root)
         return ExitCode.SUCCESS
+    except config_loader.ConfigError as exc:
+        return report(
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
+            "preflight: the project settings are refused",
+            "; ".join(exc.lines),
+            "fix config/project.json, then rerun make preflight",
+        )
     except (
-        config_loader.ConfigError,
         ChildEnvError,
         git_tree.PathEscape,
         git_tree.NoGitError,
