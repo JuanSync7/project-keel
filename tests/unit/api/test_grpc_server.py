@@ -55,6 +55,17 @@ class _FakeServer:
         self.events.append(("stop", grace))
 
 
+def _load_server():
+    spec = importlib.util.spec_from_file_location("keel_grpc_server", _SERVER)
+    module = importlib.util.module_from_spec(spec)
+    # server.py puts src/ first on sys.path at import, and a later in-process
+    # `from app import app` would then find the src/app package.
+    with pytest.MonkeyPatch.context() as import_patch:
+        import_patch.setattr(sys, "path", sys.path.copy())
+        spec.loader.exec_module(module)
+    return module
+
+
 @pytest.fixture
 def grpc_server(monkeypatch):
     """api/grpc/server.py loaded against fake grpc modules; `.made` lists the
@@ -73,9 +84,7 @@ def grpc_server(monkeypatch):
     monkeypatch.setitem(sys.modules, "grpc", fake_grpc)
     monkeypatch.setitem(sys.modules, "thing_pb2", types.ModuleType("thing_pb2"))
     monkeypatch.setitem(sys.modules, "thing_pb2_grpc", stubs)
-    spec = importlib.util.spec_from_file_location("keel_grpc_server", _SERVER)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_server()
     module.made = made
     module.caps = []
     # The real cap would bound the test process itself.
@@ -97,6 +106,13 @@ def _project(tmp_path, grpc_block):
         json.dumps({"transports": {"grpc": grpc_block}}), encoding="utf-8"
     )
     return str(tmp_path)
+
+
+def test_loading_the_server_restores_the_import_path(grpc_server, monkeypatch):
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    before = sys.path.copy()
+    _load_server()
+    assert sys.path == before
 
 
 def test_serve_listens_on_the_configured_port_with_the_configured_workers(

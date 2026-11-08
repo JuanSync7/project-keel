@@ -967,6 +967,9 @@ def test_every_manifest_reader_has_cases():
 def _prepare_reader(tmp_path, monkeypatch, module, route):
     if not (_ROOT / module).is_file():
         pytest.skip("this generated project does not ship %s" % module)
+    # Snapshot before any reader inserts paths, using the same restoration as
+    # the sibling-directory prepends below.
+    monkeypatch.syspath_prepend(str(_ROOT / "scripts"))
     name = Path(module).stem
     if module.startswith(("api/", "mcp/", "scripts/agent_surface/")):
         if module == "api/grpc/server.py":
@@ -1036,6 +1039,10 @@ def _prepare_reader(tmp_path, monkeypatch, module, route):
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text("# probe\n", encoding="utf-8")
     if name == "export_openapi":
+        monkeypatch.syspath_prepend(str(_ROOT / "api/rest_fastapi"))
+        # Restore either the previous module or its absence after this case.
+        monkeypatch.setitem(sys.modules, "app", sys.modules.get("app"))
+        monkeypatch.delitem(sys.modules, "app")
         monkeypatch.setattr(reader, "_OUT", str(tmp_path / "openapi.json"))
     if name == "generate_aad_schema":
         monkeypatch.syspath_prepend(str(_ROOT / "api/rest_fastapi"))
@@ -1059,6 +1066,33 @@ def _prepare_reader(tmp_path, monkeypatch, module, route):
                 reader.expiring_tier, "read_baseline", lambda *_args: {}
             )
     return reader
+
+
+@pytest.mark.parametrize("cached", [False, True], ids=["absent", "cached"])
+def test_export_openapi_uses_its_sibling_app(tmp_path, monkeypatch, capsys, cached):
+    monkeypatch.syspath_prepend(str(_ROOT / "api/rest_fastapi"))
+    monkeypatch.syspath_prepend(str(_ROOT / "src"))
+    monkeypatch.setitem(sys.modules, "app", sys.modules.get("app"))
+    monkeypatch.delitem(sys.modules, "app")
+    if cached:
+        importlib.import_module("app")
+    before_path = sys.path.copy()
+    before_app = sys.modules.get("app")
+    (tmp_path / "config").mkdir()
+
+    with monkeypatch.context() as reader_patch:
+        reader = _prepare_reader(
+            tmp_path, reader_patch, "api/rest_fastapi/export_openapi.py", "no-read"
+        )
+        assert reader.main([]) is ExitCode.SUCCESS
+        assert (tmp_path / "openapi.json").is_file()
+        output = capsys.readouterr()
+        assert output.err == ""
+        assert output.out == "wrote %s/openapi.json\n" % tmp_path
+
+    assert sys.path == before_path
+    assert sys.modules.get("app") is before_app
+    assert ("app" in sys.modules) is cached
 
 
 @pytest.mark.parametrize("payload, expected", _REFUSALS)

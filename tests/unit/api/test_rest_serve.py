@@ -33,7 +33,9 @@ _SERVE = _ROOT / "api" / "rest_fastapi" / "serve.py"
 def _load_serve(path):
     spec = importlib.util.spec_from_file_location("keel_rest_serve", path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with pytest.MonkeyPatch.context() as import_patch:
+        import_patch.setattr(sys, "path", sys.path.copy())
+        spec.loader.exec_module(module)
     return module
 
 
@@ -92,6 +94,14 @@ def serve(monkeypatch):
     module = _load_serve(_SERVE)
     module.runs, module.caps = runs, caps
     return module
+
+
+def test_loading_serve_restores_the_import_path(monkeypatch):
+    # Contain the regression itself if the loader stops restoring the path.
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+    before = sys.path.copy()
+    _load_serve(_SERVE)
+    assert sys.path == before
 
 
 def test_uvicorn_gets_the_app_the_address_and_the_configured_grace(serve):
