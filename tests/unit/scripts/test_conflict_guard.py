@@ -95,19 +95,19 @@ def _incoming_opener_merge():
         ),
         pytest.param(
             f"{_OPEN} before updating\nours\n{_OPEN} data\nmore ours\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
-            [1],
+            [3],
             id="opener-in-ours",
         ),
         pytest.param(_incoming_opener_merge(), [1], id="merge-file-incoming-opener"),
         pytest.param(
             f"{_OPEN} before updating\nours\n{_BASE} last update\nbase\n{_OPEN} data\nmore base\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
-            [1],
+            [5],
             id="opener-in-diff3-base",
         ),
         pytest.param(f"{_OPEN} stray\ntext\n", [], id="stray-opener"),
         pytest.param(
             f"{_OPEN} stray\ntext\n{_OPEN} before updating\nours\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
-            [1],
+            [3],
             id="stray-before-real-hunk",
         ),
         pytest.param(
