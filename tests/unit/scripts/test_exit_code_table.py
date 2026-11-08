@@ -1017,7 +1017,9 @@ def test_a_hung_shell_is_stopped_at_the_bound_with_every_child(tmp_path, monkeyp
     pipes, so a runner that killed the shell alone and read them to their
     end would wait out the child; its read after the kill is bounded, and
     the child is still alive when it gives up."""
-    monkeypatch.setattr(sys.modules[__name__], "_SH_TIMEOUT_SECONDS", 1)
+    # The bound must outlast the shell reaching its echo: 1 s did not under a
+    # loaded full verify, which killed the shell before it wrote the pid file.
+    monkeypatch.setattr(sys.modules[__name__], "_SH_TIMEOUT_SECONDS", 5)
     pidfile = tmp_path / "child.pid"
     body = "sleep 30 &\necho $! > '%s'\nwait" % pidfile
     with pytest.raises(subprocess.TimeoutExpired):
