@@ -125,6 +125,10 @@ def test_symlinked_entry_preflights_the_identity_the_app_reads(
     linked_api = entry_root / "api" / "rest_fastapi"
     linked_api.symlink_to(real_api, target_is_directory=True)
     monkeypatch.setattr(sys, "path", sys.path.copy())
+    # Import the scratch copy, then restore any worker's cached transport modules.
+    for name in ("schemas", "app"):
+        monkeypatch.setitem(sys.modules, name, sys.modules.get(name))
+        monkeypatch.delitem(sys.modules, name)
 
     # Import the actual app through the link: its reader rejects the real root.
     with pytest.raises(IdentityUnreadable, match="must be an object"):
@@ -138,3 +142,29 @@ def test_symlinked_entry_preflights_the_identity_the_app_reads(
     assert len(output.err.splitlines()) == 1
     assert "identity is refused" in output.err and "repair" in output.err
     assert "Traceback" not in output.err
+
+
+@pytest.mark.parametrize("reload", [False, True])
+@pytest.mark.parametrize("cached", [False, True], ids=["absent", "cached"])
+def test_symlinked_entry_restores_modules(
+    serve, tmp_path, monkeypatch, capsys, reload, cached
+):
+    for name in ("schemas", "app"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+    if cached:
+        spec = importlib.util.spec_from_file_location(
+            "schemas", _SERVE.parent / "schemas.py"
+        )
+        schemas = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(schemas)
+        monkeypatch.setitem(sys.modules, "schemas", schemas)
+        monkeypatch.setitem(sys.modules, "app", types.ModuleType("app"))
+    before = {name: sys.modules.get(name) for name in ("schemas", "app")}
+
+    with monkeypatch.context() as case_patch:
+        test_symlinked_entry_preflights_the_identity_the_app_reads(
+            serve, tmp_path, case_patch, capsys, reload
+        )
+
+    for name, module in before.items():
+        assert sys.modules.get(name) is module, name
