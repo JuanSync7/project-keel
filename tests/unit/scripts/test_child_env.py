@@ -579,6 +579,15 @@ def _keel_policy():
     return policy
 
 
+def test_keels_policy_hands_a_child_its_login_shell(parent):
+    """Keel's policy copies SHELL. Without it bash, /bin/sh on many hosts, asks
+    the account database for the login shell at every start: 0.6 s through a
+    directory service, once per shell a child starts."""
+    parent.setenv("SHELL", "/bin/sh")
+    env = child_env.build_child_env(root=str(_ROOT))
+    assert env.get("SHELL") == "/bin/sh"
+
+
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 def test_keels_policy_holds_back_every_repository_variable_git_names(monkeypatch):
     """Keel's two lists are git's own: every name `--local-env-vars` prints is
