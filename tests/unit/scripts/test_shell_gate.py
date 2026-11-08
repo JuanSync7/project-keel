@@ -34,7 +34,13 @@ _ROLES = ("linter", "formatter", "test_runner")
 def _shell_config():
     """keel's shell block, which the fixture copies into each project, so a
     test reads every value it asserts and types none."""
-    fields = _ROLES + ("script_suffixes", "shebang_shells", "test_suffixes")
+    fields = _ROLES + (
+        "enabled",
+        "no_scripts",
+        "script_suffixes",
+        "shebang_shells",
+        "test_suffixes",
+    )
     keys = config_loader.rows(*[("shell", f) for f in fields])
     got = config_loader.resolve(
         config_loader.read(str(_ROOT)), keys, config_loader.CONFIG_FILE
@@ -46,8 +52,12 @@ _CFG = _shell_config()
 # Kept before the fixture patches it out, for the tests of the lookup order.
 _REAL_INTERPRETER_DIR = shell_gate._interpreter_dir
 _LINTER, _FORMATTER, _RUNNER = (_CFG[r] for r in _ROLES)
-_REAL_LINTER = shutil.which(
-    _LINTER, path=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]
+_REAL_LINTER = (
+    shutil.which(
+        _LINTER, path=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]
+    )
+    if _LINTER
+    else None
 )
 
 # The stub stands in for every tool: it records what it was handed and answers
@@ -198,12 +208,86 @@ def test_lint_follows_the_documented_helper_source(project):
     assert call["argv"] == ["-x", "--source-path=SCRIPTDIR", "scripts/report.sh"]
 
 
-@pytest.mark.skipif(_REAL_LINTER is None, reason="ShellCheck is not installed")
+# The decision cases pin `enabled`: this module ships into generated projects,
+# where a `shell: no` answer sets it false and would change every outcome.
+_ON = dict(_CFG, enabled=True)
+
+
+@pytest.mark.parametrize("reason", [None, "no shell yet"])
+def test_real_linter_decision_runs_an_installed_tool(reason):
+    cfg = dict(_ON, no_scripts=reason)
+    tool = "/tools/" + _LINTER
+    looked_up = []
+
+    def lookup(name):
+        looked_up.append(name)
+        return tool
+
+    assert _real_linter_decision(cfg, lookup) == ("run", tool)
+    assert looked_up == [cfg["linter"]]
+
+
+def test_real_linter_decision_skips_a_missing_tool_with_the_configured_reason():
+    cfg = dict(_ON, no_scripts="no shell yet")
+    assert _real_linter_decision(cfg, lambda name: None) == (
+        "skip",
+        "shell.no_scripts: %s" % config_loader.quoted("no shell yet"),
+    )
+
+
+def test_real_linter_decision_fails_a_missing_tool_without_a_reason():
+    cfg = dict(_ON, no_scripts=None)
+    outcome, message = _real_linter_decision(cfg, lambda name: None)
+    assert outcome == "fail"
+    assert cfg["linter"] in message
+    assert shell_gate.INSTALL_ADVICE[cfg["linter"]] in message
+
+
+def test_real_linter_decision_fails_without_a_configured_linter():
+    def lookup(name):
+        pytest.fail("an unconfigured linter must not be looked up")
+
+    assert _real_linter_decision(dict(_ON, linter=None), lookup) == (
+        "fail",
+        "shell.linter is not configured",
+    )
+
+
+@pytest.mark.parametrize("linter", [None, _LINTER])
+def test_real_linter_decision_skips_while_the_shell_gate_is_off(linter):
+    def lookup(name):
+        pytest.fail("a gate that is off must not look its linter up")
+
+    cfg = dict(_CFG, enabled=False, linter=linter, no_scripts=None)
+    assert _real_linter_decision(cfg, lookup) == ("skip", "shell.enabled is false")
+
+
+def _real_linter_decision(cfg, lookup):
+    """Choose run, skip or fail from project config and a tool lookup."""
+    # An adopter who answered `shell: no` runs no shell gate, so no linter is owed.
+    if not cfg["enabled"]:
+        return "skip", "shell.enabled is false"
+    name = cfg["linter"]
+    if not name:
+        return "fail", "shell.linter is not configured"
+    tool = lookup(name)
+    if tool is not None:
+        return "run", tool
+    if cfg["no_scripts"]:
+        return "skip", "shell.no_scripts: %s" % config_loader.quoted(cfg["no_scripts"])
+    return "fail", "%s is not installed; %s" % (name, shell_gate.INSTALL_ADVICE[name])
+
+
 def test_the_documented_helper_source_lints_with_real_shellcheck(project, monkeypatch):
+    outcome, detail = _real_linter_decision(_CFG, lambda name: _REAL_LINTER)
+    if outcome == "skip":
+        pytest.skip(detail)
+    if outcome == "fail":
+        pytest.fail(detail)
     _documented_source(project)
     # Search the real tool's directory before the fixture's stub-only PATH.
     monkeypatch.setattr(
-        shell_gate, "_interpreter_dir", lambda: str(Path(_REAL_LINTER).parent)
+        shell_gate, "_interpreter_dir", lambda: str(Path(detail).parent)
     )
     assert project.run("lint") == ExitCode.SUCCESS
     assert project.calls() == []

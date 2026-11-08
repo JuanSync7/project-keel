@@ -27,6 +27,7 @@ from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 __all__ = [
     "HELPER_SH",
+    "INSTALL_ADVICE",
     "SCRIPT",
     "TEST",
     "Classified",
@@ -78,7 +79,7 @@ _ADAPTERS = {
 # The test runner's flag that prints the number of tests and runs none.
 _COUNT_FLAG = {"bats": "--count"}
 # How to install each adapter's tool, for the BACKEND_ABSENT next step.
-_INSTALL = {
+INSTALL_ADVICE = {
     "shellcheck": "install ShellCheck (a distribution package, or the "
     "shellcheck-py wheel into this virtual environment)",
     "shfmt": "install shfmt (a distribution package, or the shfmt-py wheel into "
@@ -237,7 +238,7 @@ def _missing_tool(cfg, role):
         ExitCode.BACKEND_ABSENT,
         "the %s %s (shell.%s) is not installed" % (role.replace("_", " "), name, role),
         "the interpreter's directory and PATH",
-        _INSTALL[name] + ", then rerun",
+        INSTALL_ADVICE[name] + ", then rerun",
     )
 
 

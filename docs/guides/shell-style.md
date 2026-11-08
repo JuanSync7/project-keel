@@ -124,6 +124,15 @@ form above resolves to the helper in the same directory. No
 hide the helper from the linter. `make check-exit-codes` also holds the
 generated helper to the enum.
 
+The real-tool case in `tests/unit/scripts/test_shell_gate.py` runs the
+installed linter on the documented helper source. While `shell.enabled`
+is false it skips and runs nothing. Otherwise an unset `shell.linter`
+fails it, and an installed linter runs. A missing linter skips the case
+only while `shell.no_scripts` holds a reason, which the skip quotes, and
+fails it with `scripts/shell_gate.py`'s `INSTALL_ADVICE` when the reason
+is null. So a project whose shell gate is on and that ships shell scripts
+never passes the case over zero runs.
+
 The gate fails `exit 3`, `exit $?`, a bare `exit`, a `return` of a number,
 `eval`, and a command named by an expansion (`$x 3`), each at its file and
 line, because it cannot tell what they end with. It also fails a line that
