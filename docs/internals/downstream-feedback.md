@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -3841,8 +3841,9 @@ On 2026-10-22 the maintainer approved this order. Positions 1 to 9 come from the
 | 93 | KEEL-TESTLOOP-1 | No target reruns only failed or changed tests while iterating, and `--lf`/`--ff` need the pytest cache plugin that lane briefs turn off with `-p no:cacheprovider`. pytest-testmon waits on the maintainer's install decision. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S2 |
 | 94 | KEEL-SLOWTEST-1 | There is no `slow` marker and no `--durations` report, so a slow test is found only by timing a whole run. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S3 |
 | 95 | KEEL-CICACHE-1 | CI runs setup-python with no pip cache, so every run installs everything; path filters are left out until each is derived from what a check reads. Reported by project-jarvis 2026-11-07 | planned: CMP-23.S4 |
-| 96 | KEEL-PKGGATE-2 | `tests/integration/test_test_package_imports.py` resolves the `sys.path` roots tests add, but it reads a name rebound after use at its last value, keeps only the last branch of an if/else assignment, and does not see `sys.path[:0] =`, `sys.path = [...] + sys.path`, `.extend` or `monkeypatch.syspath_prepend`, so a root added those ways is missed with no failure. None occurs in the tests today. Ruling: refuse by file and line every `sys.path` mutation form it does not resolve. Found by the review of the CMP-22.S2 gate | planned |
+| 96 | KEEL-PKGGATE-2 | `tests/integration/test_test_package_imports.py` resolves the `sys.path` roots tests add, but it reads a name rebound after use at its last value, keeps only the last branch of an if/else assignment, and does not see `sys.path[:0] =`, `sys.path = [...] + sys.path`, `.extend` or `monkeypatch.syspath_prepend`, so a root added those ways is missed with no failure. None occurs in the tests today. Ruling: refuse by file and line every `sys.path` mutation form it does not resolve. Found by the review of the CMP-22.S2 gate | done: every listed form is resolved or refused by file and line; reaching `sys.path` through another name, `getattr` or `site.addsitedir` still passes, and none occurs in the tests |
 | 97 | KEEL-TIMEOUT-2 | Eight more tests in `tests/integration` run a generated project's suite under a 900 s limit, as the gate-evidence test did before KEEL-TIMEOUT-1 cut it from 1644 s to 29 s. Ruling: time each alone, and give each the cheapest goal that still proves its claim before raising any limit | planned |
+| 98 | KEEL-PREFLIGHT-1 | `make verify` runs its goals in order and the frontend goal last, so a checkout without its git-ignored local installs (`src/frontend/*/node_modules`, `.secret-scan/scanner.json`) learns it only after the 1 h 43 min Python suite: a fresh worktree lost one full run on `node_modules` after 9973 Python tests passed. Ruling: verify first runs a preflight that checks every local install its goals need and refuses in seconds, naming the install target to run | planned |
 
 The CMP-7 opening pass proposes the rows below. Their positions are proposals that the maintainer has not approved, and each row joins the table above only when the maintainer gives it a position. They start at 44 because position 43 is KEEL-VIS-2's.
 
