@@ -146,15 +146,15 @@ def _report(state):
     summary_gaps = tuple(n["node_id"] for n in _ungapped(corpus))
     # Owner gaps come from the declared accountability_report tool (its CLI),
     # not a re-implemented predicate here -- read-only, so safe in dry-run too.
-    rc, ar_out, err = _run(
-        ["scripts/accountability_report.py", "--corpus", _CORPUS, "--json"]
-    )
-    # accountability_report.py:117-119 deliberately succeeds without JSON
-    # before a corpus exists, so only its fixed notice may skip the reader.
-    no_corpus = "no corpus at %s; run build_corpus.py first." % _CORPUS
-    if rc == 0 and ar_out.rstrip("\n") == no_corpus:
+    corpus_path = os.path.join(state["root"], _CORPUS)
+    # accountability_report's absent-corpus branch emits prose, so skip the
+    # call on the same absence test rather than couple to its notice wording.
+    if not os.path.exists(corpus_path):
         owner_gaps = ()
     else:
+        rc, ar_out, err = _run(
+            ["scripts/accountability_report.py", "--corpus", corpus_path, "--json"]
+        )
         owners = tool_reports.read_report(
             "scripts/accountability_report.py",
             rc,

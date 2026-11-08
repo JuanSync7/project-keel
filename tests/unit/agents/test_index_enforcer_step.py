@@ -47,6 +47,30 @@ def test_summarize_gap_sends_the_real_prompt_and_strips_the_reply():
     assert "title: Ingest\npath: src/ingest.py\n---\ndef ingest(): ..." in prompt
 
 
+def test_owner_report_uses_the_corpus_under_the_agent_root(tmp_path, monkeypatch):
+    corpus = tmp_path / "wiki" / "corpus.json"
+    corpus.parent.mkdir()
+    corpus.write_text('{"nodes": []}', "utf-8")
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        return (
+            (0, "[]", "")
+            if args[0] == "scripts/accountability_report.py"
+            else (0, "", "")
+        )
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    enforce(root=str(tmp_path))
+    owner_calls = [
+        args for args in calls if args[0] == "scripts/accountability_report.py"
+    ]
+    assert owner_calls == [
+        ["scripts/accountability_report.py", "--corpus", str(corpus), "--json"]
+    ]
+
+
 @pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
 @pytest.mark.parametrize(
     "out",
@@ -74,8 +98,29 @@ def test_unreadable_owner_report_fails_the_run(tmp_path, monkeypatch, execute, o
 
 
 @pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
-def test_no_corpus_notice_is_not_a_failed_run(tmp_path, monkeypatch, execute):
-    """The tool's fixed successful no-corpus notice is a valid empty index."""
+def test_absent_corpus_skips_the_owner_tool(tmp_path, monkeypatch, execute):
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        return (
+            (0, "[]", "")
+            if args[0] == "scripts/accountability_report.py"
+            else (0, "", "")
+        )
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    report = enforce(root=str(tmp_path), execute=execute)
+    assert not any(args[0] == "scripts/accountability_report.py" for args in calls)
+    assert report.nodes == 0 and report.owner_gaps == ()
+    assert report.dry_run is not execute
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_existing_corpus_rejects_a_no_corpus_notice(tmp_path, monkeypatch, execute):
+    corpus = tmp_path / "wiki" / "corpus.json"
+    corpus.parent.mkdir()
+    corpus.write_text('{"nodes": []}', "utf-8")
 
     def run(args):
         if args[0] == "scripts/accountability_report.py":
@@ -83,15 +128,20 @@ def test_no_corpus_notice_is_not_a_failed_run(tmp_path, monkeypatch, execute):
         return 0, "", ""
 
     monkeypatch.setattr("agents.index_enforcer._brain._run", run)
-    report = enforce(root=str(tmp_path), execute=execute)
-    assert report.nodes == 0 and report.owner_gaps == ()
-    assert report.dry_run is not execute
+    with pytest.raises(ToolReportUnreadable, match="accountability_report"):
+        enforce(root=str(tmp_path), execute=execute)
 
 
-def test_no_corpus_notice_with_failed_status_fails_the_run(tmp_path, monkeypatch):
+def test_unreadable_owner_report_with_failed_status_fails_the_run(
+    tmp_path, monkeypatch
+):
+    corpus = tmp_path / "wiki" / "corpus.json"
+    corpus.parent.mkdir()
+    corpus.write_text('{"nodes": []}', "utf-8")
+
     def run(args):
         if args[0] == "scripts/accountability_report.py":
-            return 1, "no corpus at wiki/corpus.json; run build_corpus.py first.\n", ""
+            return 1, "not JSON", "owner report diagnostic"
         return 0, "", ""
 
     monkeypatch.setattr("agents.index_enforcer._brain._run", run)
