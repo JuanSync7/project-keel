@@ -885,7 +885,7 @@ A `secrets.scanner.exclusions` entry is never the fix for a real credential:
 it hides a finding and leaves the value where it was. It is for a fake value
 kept on purpose, such as a test fixture, with its reason.
 
-## Symptom, cause, fix
+## Browser registry probe limits
 
 Browser registry probes in `scripts/preflight.py` read two positive integer
 limits from config/project.json `layers.frontend.journey` through the config
@@ -894,6 +894,8 @@ loader: `probe_timeout_seconds` defaults to 10 seconds (at most
 Wrong types or bounds refuse preflight with exit 14 (`CONFIG`). A cut stderr
 line ends in `...` within the character bound (one or two dots for bounds of
 1 or 2); a line exactly at the bound stays unchanged.
+
+## Symptom, cause, fix
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|

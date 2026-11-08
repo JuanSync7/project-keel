@@ -197,6 +197,55 @@ def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
 
 
 @pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+def test_browser_probe_default_limit(project, limit, monkeypatch, capsys):
+    import preflight
+
+    root, cfg, _record, bindir, _browser = project
+    journey = cfg["layers"]["frontend"]["journey"]
+    del journey[limit]
+    _save(root, cfg)
+    path = ("layers", "frontend", "journey", limit)
+    default = next(row.default for row in config_loader.KEYS if row.path == path)
+    real_run = subprocess.run
+    calls = []
+
+    def probe(command, **kwargs):
+        if command[0] != "node":
+            return real_run(command, **kwargs)
+        calls.append(kwargs)
+        if limit == "probe_timeout_seconds":
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return subprocess.CompletedProcess(
+            command, 1, "", "Error: " + "x" * (default * 2)
+        )
+
+    monkeypatch.setenv("PATH", str(bindir))
+    monkeypatch.setattr(preflight.subprocess, "run", probe)
+
+    status = preflight.main(argv=["src/frontend/one"], root=str(root))
+
+    captured = capsys.readouterr()
+    assert status == 2
+    assert captured.out == ""
+    assert len(calls) == 1
+    key = ".".join(path)
+    default_line = (
+        "[using default] %s = %s  (not set; to change it, set %s in config/project.json)"
+        % (key, json.dumps(default), key)
+    )
+    assert [
+        line for line in captured.err.splitlines() if "[using default]" in line
+    ] == [default_line]
+    if limit == "probe_timeout_seconds":
+        assert calls[0]["timeout"] == default
+        assert "%s seconds" % default in captured.err
+    else:
+        detail = captured.err.split("; Error: ", 1)[1].split("): ", 1)[0]
+        assert len("Error: " + detail) == default
+        assert detail.endswith("...")
+
+
+@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
 @pytest.mark.parametrize("value", ["37", True, 0, -1, 1.5, None])
 def test_browser_probe_wrong_limit_is_config(
     project, limit, value, monkeypatch, capsys

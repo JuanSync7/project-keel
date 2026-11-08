@@ -32,6 +32,7 @@ _BROWSER = ("layers", "frontend", "journey", "browser_executable")
 _PROBE_TIMEOUT = ("layers", "frontend", "journey", "probe_timeout_seconds")
 _PROBE_STDERR = ("layers", "frontend", "journey", "probe_stderr_max_chars")
 # Node prints loader frames before the cause; prefer Error classes or error: lines.
+# Node's diagnostic grammar is parser code, not a project-tunable setting.
 _PROBE_ERROR_LINE = re.compile(r"^(?:\w*Error\b(?: \[\w+\])?|(?i:error)):")
 # Chromium's default headless journey uses the headless-shell executable, not
 # chromium.executablePath()'s full browser. Ask the installed, pinned runner's
