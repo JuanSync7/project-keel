@@ -223,8 +223,13 @@ def worktree_reader(root):
         full = os.path.join(root, relpath)
         if not os.path.isfile(full):
             return None
-        with open(full, encoding="utf-8") as fh:
-            return fh.read()
+        try:
+            with open(full, encoding="utf-8") as fh:
+                return fh.read()
+        except ValueError as exc:
+            raise AuditError(
+                "%s is not UTF-8; repair its text encoding" % relpath
+            ) from exc
 
     return read
 
@@ -237,7 +242,12 @@ def git_reader(sha):
     def read(relpath):
         if tree.get(relpath) != "blob":
             return None
-        return _blob(sha, relpath).decode("utf-8")
+        try:
+            return _blob(sha, relpath).decode("utf-8")
+        except ValueError as exc:
+            raise AuditError(
+                "%s is not UTF-8; repair its text encoding" % relpath
+            ) from exc
 
     return read
 

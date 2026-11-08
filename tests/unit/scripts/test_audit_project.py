@@ -36,6 +36,28 @@ copier = optional_deps.importorskip("copier", extra="template")
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize("reader_kind", ["worktree", "git"])
+@pytest.mark.parametrize(
+    "rel", ["copier.yml", "config/project.json.jinja", "config/project.json"]
+)
+def test_reader_utf8_refusal_names_file_and_repair(template, reader_kind, rel):
+    (template / rel).write_bytes(b"private-input@invalid\xff")
+    if rel == "config/project.json":
+        (template / "config/project.json.jinja").unlink()
+    if reader_kind == "git":
+        _commit_dest(template)
+        reader = ap.git_reader("HEAD")
+    else:
+        reader = ap.worktree_reader(str(template))
+    with pytest.raises(ap.AuditError) as caught:
+        ap.render_configs(reader, {})
+    message = str(caught.value)
+    assert rel in message
+    assert "UTF-8" in message and "repair" in message
+    assert "private-input" not in message
+    assert "\\xff" not in message
+
+
 @pytest.mark.parametrize(
     "files,named",
     [

@@ -2,7 +2,7 @@
 title: Serve the REST API
 kind: script
 layer: backend
-summary: The REST transport's entry, run by `make run-api`. It caps its address space at config/project.json `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory) and serves the app under uvicorn, which drains the connections in flight for `transports.serve.shutdown_grace_seconds` on the first SIGTERM or SIGINT; scripts/resource_limits.py shutdown_owner, installed around it, takes the signal uvicorn raises again once it has stopped, so a stop exits 0 with `REST server: stopping on <signal>` on stderr rather than dying by the signal. Under --reload uvicorn's reload supervisor owns the signals instead and the owner line is not written. A manifest hunk is USAGE (2); other loader refusals are CONFIG (14).
+summary: The REST transport's entry, run by `make run-api`. It caps its address space at config/project.json `transports.serve.memory_cap_mb` (scripts/resource_limits.py cap_memory) and serves the app under uvicorn, which drains the connections in flight for `transports.serve.shutdown_grace_seconds` on the first SIGTERM or SIGINT; scripts/resource_limits.py shutdown_owner, installed around it, takes the signal uvicorn raises again once it has stopped, so a stop exits 0 with `REST server: stopping on <signal>` on stderr rather than dying by the signal. Under --reload uvicorn's reload supervisor owns the signals instead and the owner line is not written. A manifest hunk is USAGE (2); other loader refusals and IdentityUnreadable are CONFIG (14), checked before the server or reload supervisor starts.
 """
 
 import argparse
@@ -16,9 +16,12 @@ _ROOT = os.path.dirname(os.path.dirname(_HERE))
 # export_openapi.py imports it.
 sys.path.insert(0, _ROOT)
 sys.path.insert(0, os.path.join(_ROOT, "scripts"))
+sys.path.insert(0, os.path.join(_ROOT, "src"))
 
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from scripts import config_loader, resource_limits  # noqa: E402
+
+from backend.shared import IdentityUnreadable, project_identity  # noqa: E402
 
 _LIMITS = "config/project.json transports.serve"
 
@@ -40,6 +43,17 @@ def main(argv=None):
             "the REST server's limits are refused",
             "; ".join(exc.lines),
             "set %s inside its bound" % _LIMITS,
+        )
+    try:
+        # The reload supervisor imports the app in a child, beyond this entry's
+        # exit helper; preflight the same domain reader before starting it.
+        project_identity(_ROOT)
+    except IdentityUnreadable as exc:
+        return report(
+            ExitCode.CONFIG,
+            "the REST server's identity is refused",
+            str(exc),
+            "repair config/project.json, then run again",
         )
     try:
         import uvicorn

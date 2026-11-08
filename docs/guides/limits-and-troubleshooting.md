@@ -751,6 +751,11 @@ The showcase reader raises `config_loader.ConfigUnreadable` for excessive nestin
 manifest, corpus or practices file.
 The refusal names the file and says to repair it or rebuild the corpus.
 Their existing absent-file and shallow-invalid-JSON fallbacks remain.
+The REST startup entry `api/rest_fastapi/serve.py` checks the identity through
+that shared reader before starting uvicorn or its reload supervisor.
+It reports `IdentityUnreadable` through the exit helper at exit 14 (`CONFIG`),
+naming config/project.json and its repair.
+Direct imports of `api/rest_fastapi/app.py` still raise the domain exception.
 
 The practice refactor agent raises `ConfigUnreadable` for excessive registry
 nesting or a registry without a `practices` list of objects.
@@ -766,6 +771,9 @@ A committed manifest nested beyond the decoder's limit raises `GitError`,
 which the job reports at exit 2 (`USAGE`).
 `scripts/audit_project.py` reports excessive YAML or JSON nesting through its
 existing `AuditError` or destination refusal at exit 2 (`USAGE`).
+Its worktree and git readers raise `AuditError` for non-UTF-8 template text,
+including copier.yml and config templates, naming the file and the encoding
+repair without printing its contents.
 Its default-cast refusal names the copier question and says to repair its
 type, value or nesting without printing the decoded value.
 

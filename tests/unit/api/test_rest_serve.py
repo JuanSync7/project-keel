@@ -6,6 +6,7 @@ summary: api/rest_fastapi/serve.py hands uvicorn the app, the host and port it w
 """
 
 import importlib.util
+import json
 import signal
 import sys
 import types
@@ -74,3 +75,21 @@ def test_a_limit_out_of_bound_is_config_before_anything_serves(
     assert serve.main(["--port", "8123"]) is ExitCode.CONFIG
     assert serve.runs == [] and serve.caps == []
     assert "transports.serve.memory_cap_mb" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("reload", [False, True])
+@pytest.mark.parametrize("manifest", ["[]", json.dumps({"name": 123}), "[" * 2000])
+def test_unreadable_identity_is_config_before_server_or_reload_starts(
+    serve, tmp_path, monkeypatch, capsys, reload, manifest
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(manifest, encoding="utf-8")
+    monkeypatch.setattr(serve, "_ROOT", str(tmp_path))
+    argv = ["--port", "8123"] + (["--reload"] if reload else [])
+    assert serve.main(argv) is ExitCode.CONFIG
+    assert serve.runs == [] and serve.caps == []
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert len(output.err.splitlines()) == 1
+    assert "config/project.json" in output.err and "repair" in output.err
+    assert "Traceback" not in output.err
