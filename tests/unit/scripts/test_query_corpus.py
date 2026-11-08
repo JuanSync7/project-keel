@@ -201,7 +201,8 @@ def test_another_checkouts_refused_level_names_its_config(tmp_path, capsys):
     assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.CONFIG
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert str(config) in captured.err
+    assert "%s/config/project.json" % tmp_path.name in captured.err
+    assert str(tmp_path) not in captured.err
     assert "corpus.served_visibilities" in captured.err
     assert "unreadable-readme" in captured.err
 
