@@ -29,8 +29,8 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 _BROWSER = ("layers", "frontend", "journey", "browser_executable")
-_PROBE_TIMEOUT = ("layers", "frontend", "journey", "probe_timeout_seconds")
-_PROBE_STDERR = ("layers", "frontend", "journey", "probe_stderr_max_chars")
+_PROBE_TIMEOUT = ("layers", "frontend", "browser_probe", "timeout_seconds")
+_PROBE_STDERR = ("layers", "frontend", "browser_probe", "stderr_max_chars")
 # Node prints loader frames before the cause; prefer Error classes or error: lines.
 # Node's diagnostic grammar is parser code, not a project-tunable setting.
 _PROBE_ERROR_LINE = re.compile(r"^(?:\w*Error\b(?: \[\w+\])?|(?i:error)):")

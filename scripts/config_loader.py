@@ -1492,14 +1492,14 @@ KEYS = tuple(
                 "the journey browser executable override, or null for the runner's cache",
             ),
             _row(
-                ("layers", "frontend", "journey", "probe_timeout_seconds"),
+                ("layers", "frontend", "browser_probe", "timeout_seconds"),
                 "int",
                 10,
                 "the seconds preflight waits for the journey browser registry probe",
                 accepts=(_at_least_one_second, "1 <= value <= " + _MOST_SECONDS_TEXT),
             ),
             _row(
-                ("layers", "frontend", "journey", "probe_stderr_max_chars"),
+                ("layers", "frontend", "browser_probe", "stderr_max_chars"),
                 "int",
                 240,
                 "the maximum characters preflight shows from a browser probe stderr line",

@@ -163,12 +163,12 @@ def test_browser_probe_stderr_detail(project, stderr, expected, omitted, capsys)
     assert "update the probe in scripts/preflight.py" in captured.err
 
 
-@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+@pytest.mark.parametrize("limit", ["timeout_seconds", "stderr_max_chars"])
 def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
     import preflight
 
     root, cfg, _record, bindir, _browser = project
-    cfg["layers"]["frontend"]["journey"][limit] = 37
+    cfg["layers"]["frontend"]["browser_probe"][limit] = 37
     _save(root, cfg)
     real_run = subprocess.run
     calls = []
@@ -177,7 +177,7 @@ def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
         if command[0] != "node":
             return real_run(command, **kwargs)
         calls.append(kwargs)
-        if limit == "probe_timeout_seconds":
+        if limit == "timeout_seconds":
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         return subprocess.CompletedProcess(command, 1, "", "Error: " + "x" * 1000)
 
@@ -187,7 +187,7 @@ def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert status == 2
     assert len(calls) == 1
-    if limit == "probe_timeout_seconds":
+    if limit == "timeout_seconds":
         assert calls[0]["timeout"] == 37
         assert "37 seconds" in captured.err
     else:
@@ -196,15 +196,15 @@ def test_browser_probe_configured_limit(project, limit, monkeypatch, capsys):
         assert "x" * 38 not in captured.err
 
 
-@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+@pytest.mark.parametrize("limit", ["timeout_seconds", "stderr_max_chars"])
 def test_browser_probe_default_limit(project, limit, monkeypatch, capsys):
     import preflight
 
     root, cfg, _record, bindir, _browser = project
-    journey = cfg["layers"]["frontend"]["journey"]
-    del journey[limit]
+    browser_probe = cfg["layers"]["frontend"]["browser_probe"]
+    del browser_probe[limit]
     _save(root, cfg)
-    path = ("layers", "frontend", "journey", limit)
+    path = ("layers", "frontend", "browser_probe", limit)
     default = next(row.default for row in config_loader.KEYS if row.path == path)
     real_run = subprocess.run
     calls = []
@@ -213,7 +213,7 @@ def test_browser_probe_default_limit(project, limit, monkeypatch, capsys):
         if command[0] != "node":
             return real_run(command, **kwargs)
         calls.append(kwargs)
-        if limit == "probe_timeout_seconds":
+        if limit == "timeout_seconds":
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         return subprocess.CompletedProcess(
             command, 1, "", "Error: " + "x" * (default * 2)
@@ -236,7 +236,7 @@ def test_browser_probe_default_limit(project, limit, monkeypatch, capsys):
     assert [
         line for line in captured.err.splitlines() if "[using default]" in line
     ] == [default_line]
-    if limit == "probe_timeout_seconds":
+    if limit == "timeout_seconds":
         assert calls[0]["timeout"] == default
         assert "%s seconds" % default in captured.err
     else:
@@ -245,7 +245,7 @@ def test_browser_probe_default_limit(project, limit, monkeypatch, capsys):
         assert detail.endswith("...")
 
 
-@pytest.mark.parametrize("limit", ["probe_timeout_seconds", "probe_stderr_max_chars"])
+@pytest.mark.parametrize("limit", ["timeout_seconds", "stderr_max_chars"])
 @pytest.mark.parametrize("value", ["37", True, 0, -1, 1.5, None])
 def test_browser_probe_wrong_limit_is_config(
     project, limit, value, monkeypatch, capsys
@@ -253,7 +253,7 @@ def test_browser_probe_wrong_limit_is_config(
     import preflight
 
     root, cfg, _record, bindir, _browser = project
-    cfg["layers"]["frontend"]["journey"][limit] = value
+    cfg["layers"]["frontend"]["browser_probe"][limit] = value
     _save(root, cfg)
     monkeypatch.setenv("PATH", str(bindir))
 
@@ -261,7 +261,7 @@ def test_browser_probe_wrong_limit_is_config(
 
     captured = capsys.readouterr()
     assert status == 14
-    assert "layers.frontend.journey." + limit in captured.err
+    assert "layers.frontend.browser_probe." + limit in captured.err
     assert "accepted:" in captured.err
     assert "Traceback" not in captured.err
 

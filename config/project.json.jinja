@@ -416,9 +416,12 @@
         "host": "127.0.0.1",
         "port": 4391,
         "server_timeout_ms": 120000,
-        "browser_executable": null,
-        "probe_timeout_seconds": 10,
-        "probe_stderr_max_chars": 240
+        "browser_executable": null
+      },
+      "browser_probe": {
+        "_comment": "Preflight's browser-registry probe reads these limits; the browser runner does not.",
+        "timeout_seconds": 10,
+        "stderr_max_chars": 240
       }
     },
 {%- endif %}
