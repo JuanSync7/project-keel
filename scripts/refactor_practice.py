@@ -86,7 +86,9 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="emit the report as JSON")
     args = ap.parse_args(argv)
     try:
-        root, _ = corpus_level.checkout(args.root, args.corpus, ROOT)
+        root, _ = corpus_level.checkout(
+            args.root, args.corpus, ROOT, name=config_loader.checkout_name
+        )
     except corpus_level.NotACheckout as exc:
         what, on, next_step = exc.parts
         return exit_codes.report(

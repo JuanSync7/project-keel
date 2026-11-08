@@ -2,7 +2,7 @@
 title: Unit — the level a file states on disk, read the corpus build's way
 kind: tests
 layer: n/a
-summary: scripts/corpus_level.py `stated_now` reads a Markdown file's frontmatter or a Python module's docstring again and returns its own level followed by each README.md's on its chain, the list build_corpus ranks; it returns None, never a level, for no path, a missing file, bytes that are not UTF-8, a Markdown file with no frontmatter, a module that does not parse or has no docstring, and any other kind of file. A README that cannot be read passes on UNREADABLE_VISIBILITY. A symlinked doc also takes the README.md chain of the directory it really is in, so it is not served once that README turns confidential, and a doc and a README.md saved with a UTF-8 byte-order mark state their levels. build_corpus gives a node config_loader.chain_level of the same list, so the build and a reader that checks a file now cannot disagree on a file's level.
+summary: scripts/corpus_level.py `stated_now` reads a Markdown file's frontmatter or a Python module's docstring again and returns its own level followed by each README.md's on its chain, the list build_corpus ranks; it returns None, never a level, for no path, a missing file, bytes that are not UTF-8, a Markdown file with no frontmatter, a module that does not parse or has no docstring, and any other kind of file. A README that cannot be read passes on UNREADABLE_VISIBILITY. A symlinked doc also takes the README.md chain of the directory it really is in, so it is not served once that README turns confidential, and a doc and a README.md saved with a UTF-8 byte-order mark state their levels. build_corpus gives a node config_loader.chain_level of the same list, so the build and a reader that checks a file now cannot disagree on a file's level. Checkout callers must supply the naming rule; both-selector refusals name the absolute corpus checkout or the caller's directory for relative and bare paths without a host path.
 """
 
 import json
@@ -151,12 +151,19 @@ def test_a_root_gives_its_own_corpus_and_a_corpus_its_own_checkout(
     own = str(tmp_path / "b" / "wiki" / "corpus.json")
     (tmp_path / "b" / "wiki").mkdir(parents=True)
     Path(own).write_text("{}")
-    assert corpus_level.checkout("b", None, "/x") == (str(tmp_path / "b"), own)
-    assert corpus_level.checkout(None, "b/wiki/corpus.json", "/x") == (
+    assert corpus_level.checkout("b", None, "/x", name=config_loader.checkout_name) == (
         str(tmp_path / "b"),
         own,
     )
-    assert corpus_level.checkout(None, None, str(tmp_path / "b")) == (
+    assert corpus_level.checkout(
+        None, "b/wiki/corpus.json", "/x", name=config_loader.checkout_name
+    ) == (
+        str(tmp_path / "b"),
+        own,
+    )
+    assert corpus_level.checkout(
+        None, None, str(tmp_path / "b"), name=config_loader.checkout_name
+    ) == (
         str(tmp_path / "b"),
         own,
     )
@@ -173,9 +180,10 @@ def test_a_corpus_outside_a_checkouts_wiki_is_refused(tmp_path, monkeypatch, cor
     where a corpus lives."""
     monkeypatch.chdir(tmp_path)
     with pytest.raises(corpus_level.NotACheckout) as raised:
-        corpus_level.checkout(None, corpus, "/x")
+        corpus_level.checkout(None, corpus, "/x", name=config_loader.checkout_name)
     what, on, next_step = raised.value.parts
-    assert on == str(tmp_path / corpus)
+    assert on == f"{(tmp_path / corpus).parent.name}/{Path(corpus).name}"
+    assert str(tmp_path) not in str(raised.value)
     assert "wiki/corpus.json" in next_step
     assert isinstance(raised.value, ValueError)
 
@@ -199,7 +207,9 @@ def test_a_symlinked_corpus_is_the_checkout_that_holds_the_link(
         (tmp_path / "e" / "wiki" / "corpus.json").symlink_to(
             tmp_path / "a" / "wiki" / "corpus.json"
         )
-    assert corpus_level.checkout(None, "e/wiki/corpus.json", "/x") == (
+    assert corpus_level.checkout(
+        None, "e/wiki/corpus.json", "/x", name=config_loader.checkout_name
+    ) == (
         str(tmp_path / "e"),
         str(tmp_path / "e" / "wiki" / "corpus.json"),
     )
@@ -209,7 +219,7 @@ def test_an_empty_root_is_refused_not_read_as_the_default():
     """`root=""` is a root given blank, not a root left out, so it is refused
     rather than read as the default checkout."""
     with pytest.raises(corpus_level.NotACheckout) as raised:
-        corpus_level.checkout("", None, "/x")
+        corpus_level.checkout("", None, "/x", name=config_loader.checkout_name)
     assert all(part.strip() for part in raised.value.parts)
 
 
@@ -220,21 +230,52 @@ def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "d").mkdir()
     with pytest.raises(corpus_level.NotACheckout) as raised:
-        corpus_level.checkout(None, "d/wiki/corpus.json", "/x")
+        corpus_level.checkout(
+            None, "d/wiki/corpus.json", "/x", name=config_loader.checkout_name
+        )
     what, on, next_step = raised.value.parts
-    assert on == str(tmp_path / "d" / "wiki" / "corpus.json")
+    assert on == "d/wiki/corpus.json"
+    assert str(tmp_path) not in str(raised.value)
     assert "make site-data" in next_step
-    assert corpus_level.checkout("d", None, "/x") == (
+    assert corpus_level.checkout("d", None, "/x", name=config_loader.checkout_name) == (
         str(tmp_path / "d"),
         str(tmp_path / "d" / "wiki" / "corpus.json"),
     )
 
 
-def test_a_root_and_a_corpus_given_together_are_refused(tmp_path):
-    """Two independent choices could pair one checkout's corpus with another's
-    files, so a caller names one and the other is derived."""
+@pytest.mark.parametrize("selection", ["absolute", "relative", "bare"])
+def test_both_selectors_refusal_names_the_checkout(tmp_path, monkeypatch, selection):
+    caller = tmp_path / "caller-checkout"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    corpus, expected = {
+        "absolute": (
+            str(tmp_path / "read-checkout" / "wiki" / "corpus.json"),
+            "root reviewed-checkout, corpus read-checkout/wiki/corpus.json",
+        ),
+        "relative": (
+            "wiki/corpus.json",
+            "root reviewed-checkout, corpus caller-checkout/wiki/corpus.json",
+        ),
+        "bare": (
+            "corpus.json",
+            "root reviewed-checkout, corpus caller-checkout/corpus.json",
+        ),
+    }[selection]
     with pytest.raises(corpus_level.NotACheckout) as raised:
         corpus_level.checkout(
-            str(tmp_path / "a"), str(tmp_path / "a" / "wiki" / "corpus.json"), "/x"
+            str(tmp_path / "reviewed-checkout"),
+            corpus,
+            "/x",
+            name=config_loader.checkout_name,
         )
-    assert "not both" in str(raised.value)
+    what, on, next_step = raised.value.parts
+    assert "not both" in what
+    assert on == expected
+    assert str(tmp_path) not in str(raised.value)
+    assert "wiki/corpus.json" in next_step
+
+
+def test_checkout_requires_the_naming_rule():
+    with pytest.raises(TypeError, match="name"):
+        corpus_level.checkout(None, None, "/x")

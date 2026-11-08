@@ -165,3 +165,34 @@ def test_propose_reads_the_configured_levels(monkeypatch):
     seen = _Seen(json.dumps({"edits": [_EDIT]}))
     assert propose("exception-chaining", _PDEF, _NODE, backend=seen) is None
     assert seen.prompts == []
+
+
+def test_checkout_refusal_names_the_folder_without_host_path(tmp_path):
+    from agents.practice_refactor import refactor
+    from scripts import corpus_level
+
+    root = tmp_path / "reviewed-checkout"
+    corpus = tmp_path / "read-checkout" / "wiki" / "corpus.json"
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        refactor("p", root=str(root), corpus=str(corpus))
+    text = str(raised.value)
+    assert "not both" in text
+    assert "root reviewed-checkout, corpus read-checkout/wiki/corpus.json" in text
+    assert str(tmp_path) not in text
+
+
+def test_cli_checkout_refusal_names_the_folder_without_host_path(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts import refactor_practice as cli
+
+    root = tmp_path / "reviewed-checkout"
+    corpus = tmp_path / "read-checkout" / "wiki" / "corpus.json"
+    assert (
+        cli.main(["p", "--root", str(root), "--corpus", str(corpus)])
+        is cli.exit_codes.ExitCode.USAGE
+    )
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "reviewed-checkout" in captured.err
+    assert str(tmp_path) not in captured.err

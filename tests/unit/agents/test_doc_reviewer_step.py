@@ -69,3 +69,31 @@ def test_propose_sends_the_real_prompt_and_parses_the_spec():
 )
 def test_propose_returns_none_for_a_reply_it_cannot_apply(reply):
     assert propose(_RULES, _CHUNK, backend=_Seen(reply)) is None
+
+
+def test_checkout_refusal_names_the_folder_without_host_path(tmp_path):
+    from agents.doc_reviewer import review
+    from scripts import corpus_level
+
+    root = tmp_path / "reviewed-checkout"
+    corpus = tmp_path / "read-checkout" / "wiki" / "corpus.json"
+    with pytest.raises(corpus_level.NotACheckout) as raised:
+        review(root=str(root), corpus=str(corpus))
+    text = str(raised.value)
+    assert "not both" in text
+    assert "root reviewed-checkout, corpus read-checkout/wiki/corpus.json" in text
+    assert str(tmp_path) not in text
+
+
+def test_cli_checkout_refusal_names_the_folder_without_host_path(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts import doc_review as cli
+
+    root = tmp_path / "reviewed-checkout"
+    monkeypatch.setattr(cli, "ROOT", str(root))
+    assert cli.main(["--root", ""]) is cli.exit_codes.ExitCode.USAGE
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "reviewed-checkout" in captured.err
+    assert str(tmp_path) not in captured.err

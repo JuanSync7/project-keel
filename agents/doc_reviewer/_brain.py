@@ -531,7 +531,9 @@ def review(
         )
     # Absolute, from the caller's directory: a tool child runs in this
     # checkout. Each step reads the root's corpus, so only the root is kept.
-    root, _ = corpus_level.checkout(root, corpus, _REPO)
+    root, _ = corpus_level.checkout(
+        root, corpus, _REPO, name=config_loader.checkout_name
+    )
     if checkpointer is None and execute:
         checkpointer = FileCheckpointer(os.path.join(root, _CKPT_DIR))
     init = {
