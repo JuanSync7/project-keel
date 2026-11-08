@@ -83,6 +83,37 @@ def _zs():
     return list(cs.errors), list(cs.warnings)
 
 
+@pytest.mark.parametrize("field", ["n", "m"])
+def test_mentions_refuse_overlong_number_with_source(repo, field):
+    token = "CMP-" + "9" * 5000 if field == "n" else "CMP-1.S" + "9" * 5000
+    _doc(repo / "docs/bad.md", token, kind="doc")
+    errors, _ = _zs()
+    assert any("docs/bad.md:9:" in e and "is not a" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("field", ["n", "m"])
+def test_slice_rows_refuse_overlong_number_with_source(monkeypatch, field):
+    token = "CMP-" + "9" * 5000 + ".S1" if field == "n" else "CMP-1.S" + "9" * 5000
+    parsed = cs.parse_plan(
+        "## CMP-1\n\n| Slice |\n|---|\n| " + token + " |\n", _BLOCK, "demo"
+    )
+    monkeypatch.setattr(cs, "errors", [])
+    cs._judge_plan("docs/plan.md", parsed, _BLOCK)
+    assert len(cs.errors) == 1, cs.errors
+    assert "docs/plan.md:5:" in cs.errors[0] and "is not a" in cs.errors[0]
+
+
+def test_work_number_bound_preserves_whole_tokens():
+    grammar = cs.id_grammar(_BLOCK)
+    assert cs._mentions(["CMP-9999.S9999"], grammar, "demo") == [
+        (1, "CMP-9999.S9999", 9999, 9999)
+    ]
+    assert cs._mentions(["CMP-12345.S1 CMP-1.S12345"], grammar, "demo") == [
+        (1, "CMP-12345.S1", None, None),
+        (1, "CMP-1.S12345", None, None),
+    ]
+
+
 def _rerun(monkeypatch, root):
     _isolate(monkeypatch, root)
     return _zs()

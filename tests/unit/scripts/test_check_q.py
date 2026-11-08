@@ -41,6 +41,38 @@ def _find(files, extra_paths=()):
     return cs._crossref_findings(files, _tree_of(files) | set(extra_paths))
 
 
+def test_numbered_heading_refuses_overlong_number_with_source(monkeypatch):
+    monkeypatch.setattr(cs, "errors", [])
+    findings = _find(
+        {
+            "docs/target.md": "\n## " + "9" * 5000 + ". Title\n",
+            "use.md": "see docs/target.md " + _S + "1\n",
+        }
+    )
+    assert any("docs/target.md:2:" in e for e in findings + cs.errors)
+
+
+def test_citation_refuses_overlong_number_with_source():
+    findings = _find(
+        {"use.md": "\nsee " + _S + "9" * 5000 + "\n", "CONVENTIONS.md": _CONVENTIONS}
+    )
+    assert len(findings) == 1, findings
+    assert "use.md:2:" in findings[0] and "section" in findings[0]
+
+
+def test_four_digit_section_numbers_still_resolve():
+    assert (
+        _find({"doc.md": "## 9999. Title\n", "use.md": "doc.md " + _S + "9999\n"}) == []
+    )
+
+
+def test_five_digit_citation_is_not_truncated_to_four_digits():
+    findings = _find(
+        {"doc.md": "## 1234. Title\n", "use.md": "doc.md " + _S + "12345\n"}
+    )
+    assert len(findings) == 1 and "use.md:1:" in findings[0], findings
+
+
 # --- relative links -----------------------------------------------------------
 
 

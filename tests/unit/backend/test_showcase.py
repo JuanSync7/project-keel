@@ -397,6 +397,25 @@ def test_practice_items_absent_registry_is_graceful_empty():
     assert _sc().practice_items() == ()
 
 
+@pytest.mark.parametrize("row", ["private@invalid", "9" * 5000], ids=["text", "long"])
+def test_practice_row_refuses_invalid_number_without_echo(row):
+    from scripts import config_loader
+
+    sc = Showcase(
+        name="test",
+        project={},
+        corpus={},
+        practices={"practices": [{"row": row}]},
+        served_visibilities=_SERVED,
+    )
+    with pytest.raises(config_loader.ConfigUnreadable) as caught:
+        sc.practice_items()
+    message = "; ".join(caught.value.lines)
+    assert "config/practices.json" in message and "row" in message
+    assert "repair" in message and row not in message
+    assert row not in str(caught.value)
+
+
 def _project_with_profiles():
     p = _project()
     p["practices"] = {"profiles": {"cuda": True, "ai": False, "langgraph": False}}

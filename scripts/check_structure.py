@@ -3626,6 +3626,8 @@ _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
 _SECTION_CITE = re.compile(r"(?:`?([A-Za-z0-9_./-]+\.md)`?,?\s+)?§\s*(\d+)")
+# Ten thousand sections exceed a navigable document and stay below int's digit limit.
+_DOCUMENT_NUMBER = re.compile(r"\d{1,4}\Z")
 _CONVENTIONS_DOC = "CONVENTIONS.md"
 # Where a `§N` may appear: prose, and the code/config whose docstrings and help
 # strings cite the conventions (check_structure's own header does).
@@ -3957,13 +3959,19 @@ def _anchors(text):
     return anchors
 
 
-def _numbered_sections(text):
+def _numbered_sections(text, relpath="<document>"):
     """The N of every numbered heading (`N.` at any level) outside fenced code."""
     found = set()
-    for line in _unfenced_lines(text):
+    for lineno, line in enumerate(_unfenced_lines(text), 1):
         m = _NUMBERED_HEADING.match(line)
         if m:
-            found.add(int(m.group(1)))
+            if _DOCUMENT_NUMBER.fullmatch(m.group(1)):
+                found.add(int(m.group(1)))
+            else:
+                err(
+                    "%s:%d: numbered section exceeds four digits -- shorten the number"
+                    % (relpath, lineno)
+                )
     return found
 
 
@@ -4020,6 +4028,12 @@ def _citation_findings(relpath, text, files, tree, sections_of):
     base = posixpath.dirname(relpath)
     for m in _SECTION_CITE.finditer(text):
         lineno = text.count("\n", 0, m.start(2)) + 1
+        if not _DOCUMENT_NUMBER.fullmatch(m.group(2)):
+            errs.append(
+                "%s:%d: cited section exceeds four digits -- shorten the number"
+                % (relpath, lineno)
+            )
+            continue
         named, number = m.group(1), int(m.group(2))
         cite = " ".join(m.group(0).split())
         doc = _CONVENTIONS_DOC
@@ -4085,7 +4099,7 @@ def _crossref_findings(files, tree, scan=None):
     def sections_of(doc):
         if doc not in cache:
             text = files.get(doc)
-            cache[doc] = None if text is None else _numbered_sections(text)
+            cache[doc] = None if text is None else _numbered_sections(text, doc)
         return cache[doc]
 
     for relpath in sorted(files if scan is None else scan):
@@ -4757,7 +4771,7 @@ def check_T():
 
     def sections_of(path):
         text = _read_text(os.path.join(ROOT, path), err)
-        return None if text is None else _numbered_sections(text)
+        return None if text is None else _numbered_sections(text, path)
 
     for m in _mechanism_findings(practices, check_ids, tree, targets, sections_of):
         err(m)
@@ -5232,7 +5246,7 @@ def check_V():
 
     def sections_of(path):
         text = _read_text(os.path.join(ROOT, path), err)
-        return None if text is None else _numbered_sections(text)
+        return None if text is None else _numbered_sections(text, path)
 
     errs, warns_ = _effect_declaration_findings(
         modules, check_ids, tree, targets, sections_of
@@ -7676,7 +7690,8 @@ _WORK_PLAN_KINDS_FALLBACK = ("design",)
 _WORK_SLICE_COLUMN_FALLBACK = "Slice"
 # A number in an id is a positive integer without a leading zero, so CMP-01
 # and CMP-1 cannot both name campaign 1.
-_WORK_NUMBER = "[1-9][0-9]*"
+# Four digits cover 9999 campaigns/slices while bounding conversion and gap scans.
+_WORK_NUMBER = "[1-9][0-9]{0,3}"
 # What prose reads as a number when it looks for an id: any run that starts
 # with a digit, so CMP-1.S02 or CMP-1.S9a is read whole and judged malformed
 # instead of being read as the campaign CMP-1 it starts with.

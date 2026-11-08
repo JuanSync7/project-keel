@@ -2,7 +2,7 @@
 title: Showcase repository facade
 layer: backend
 public_api: yes
-summary: Loads the live repo (project facts + corpus) into a Showcase the API renders; JSON nested beyond the decoder's limit raises ConfigUnreadable naming the file and repair.
+summary: Loads the live repo (project facts + corpus) into a Showcase the API renders; JSON nested beyond the decoder's limit and invalid practice-row numbers raise ConfigUnreadable naming the file and repair without quoting the configured value.
 """
 
 from __future__ import annotations
@@ -178,15 +178,26 @@ class Showcase:
         Projected from the registry's ``practices`` array like ``model_adapters`` —
         so the read model stays pure and never imports the ``scripts/`` checks or
         the ``config/`` layer. Sorted by ``row``; empty when the registry is absent.
+        Invalid row text raises ConfigUnreadable without quoting its value.
         """
         out = []
         for p in self._practices.get("practices") or []:
             if not isinstance(p, dict):
                 continue
+            try:
+                row = int(p.get("row", 9999))
+            except ValueError:
+                # Conversion errors can quote credentials held in the registry.
+                raise config_loader.ConfigUnreadable(
+                    "config/practices.json",
+                    [
+                        "config/practices.json: invalid practice row; repair it with an integer"
+                    ],
+                ) from None
             out.append(
                 PracticeItem(
                     id=p.get("id", ""),
-                    row=int(p.get("row", 9999)),
+                    row=row,
                     scope=p.get("scope", ""),
                     tier=p.get("tier", ""),
                     status=p.get("status", ""),
