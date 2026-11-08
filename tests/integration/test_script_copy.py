@@ -243,10 +243,14 @@ def test_keels_run_make_target_carries_resource_limits_and_starts(tmp_path):
         ("test_launcher", "_SCRIPTS", ["launch.py", "long_scripts.py"]),
         ("test_evals_gate", "_SCRIPTS", ["run_evals.py"]),
         ("test_finish_update", "_SHIPPED", ["scripts/jobs/finish_update.py"]),
-        (
+        pytest.param(
             "test_copier_update",
             "_TOY_SHIPPED",
             ["scripts/jobs/resolve_stamp_conflicts.py"],
+            marks=pytest.mark.skipif(
+                not (_ROOT / "copier.yml").is_file(),
+                reason="template-only: copier.yml prunes tests/integration/test_copier_*.py",
+            ),
         ),
     ],
 )
