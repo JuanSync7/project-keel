@@ -3271,7 +3271,8 @@ class _Scanned(str):  # noqa: SLOT000 - str allows no slot for the visit count
         return super().__getitem__(k)
 
 
-def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
+@pytest.mark.parametrize("layout", ["interleaved", "grouped"])
+def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times(layout):
     """The scan of a held name walks the spans no command reads, the marks
     of the words and the text it counts lines in once, not once per use of
     the name: twice the comments, reads and mentions costs at most a little
@@ -3282,12 +3283,13 @@ def test_the_held_status_scan_visits_each_span_a_bounded_number_of_times():
     other means would pass it."""
 
     def visits(n):
+        if layout == "grouped":
+            # All comments before all reads reproduces queue row 70's shape.
+            body = "# a comment\n" * n + 'echo "$rc"\n' * n
+        else:
+            body = '# a comment\necho "$rc"\necho rc\n' * n
         text = _Scanned(
-            _SH_HEAD
-            + "false\nrc=$?\n"
-            + '# a comment\necho "$rc"\necho rc\n' * n
-            + 'exit_passthrough "$rc"\n'
-            + _SH_TAIL
+            _SH_HEAD + "false\nrc=$?\n" + body + 'exit_passthrough "$rc"\n' + _SH_TAIL
         )
         _commands, spans, bindings, marks = shell_commands(str(text))
         spans, marks = _Visits(spans), _Visits(marks)
