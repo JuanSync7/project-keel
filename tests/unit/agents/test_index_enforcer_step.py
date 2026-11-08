@@ -71,6 +71,40 @@ def test_owner_report_uses_the_corpus_under_the_agent_root(tmp_path, monkeypatch
     ]
 
 
+@pytest.mark.parametrize("relative", [False, True], ids=["absolute", "relative"])
+def test_every_tool_uses_the_absolute_agent_root(tmp_path, monkeypatch, relative):
+    root = tmp_path / "rel"
+    corpus = root / "wiki" / "corpus.json"
+    corpus.parent.mkdir(parents=True)
+    corpus.write_text('{"nodes": []}', "utf-8")
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        return (
+            (0, "[]", "")
+            if args[0] == "scripts/accountability_report.py"
+            else (0, "", "")
+        )
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    report = enforce(root="rel" if relative else str(root), execute=True)
+    assert calls == [
+        ["scripts/check_structure.py", "--root", str(root)],
+        [
+            "scripts/jobs/build_corpus.py",
+            "--root",
+            str(root),
+            "--out",
+            str(corpus),
+        ],
+        ["scripts/jobs/link_corpus.py", "--corpus", str(corpus)],
+        ["scripts/accountability_report.py", "--corpus", str(corpus), "--json"],
+    ]
+    assert report.corpus_path == "wiki/corpus.json"
+
+
 @pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
 @pytest.mark.parametrize(
     "out",

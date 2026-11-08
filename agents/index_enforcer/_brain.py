@@ -118,7 +118,7 @@ def _fillable(corpus, served):
 
 def _gate(state):
     """Read-only: run check_structure and capture its errors/warnings."""
-    _, out, _ = _run(["scripts/check_structure.py"])
+    _, out, _ = _run(["scripts/check_structure.py", "--root", state["root"]])
     return {
         "s_errors": tuple(ln[6:] for ln in out.splitlines() if ln.startswith("ERROR ")),
         "s_warnings": tuple(
@@ -129,13 +129,27 @@ def _gate(state):
 
 def _build(state):
     """Writes: (re)build the wiki corpus tree."""
-    _run(["scripts/jobs/build_corpus.py", "--out", _CORPUS])
+    _run(
+        [
+            "scripts/jobs/build_corpus.py",
+            "--root",
+            state["root"],
+            "--out",
+            os.path.join(state["root"], _CORPUS),
+        ]
+    )
     return {}  # no state update -- same empty-update form as _fill_one
 
 
 def _link(state):
     """Writes: add deterministic entity/keyword link edges to the corpus."""
-    _run(["scripts/jobs/link_corpus.py", "--corpus", _CORPUS])
+    _run(
+        [
+            "scripts/jobs/link_corpus.py",
+            "--corpus",
+            os.path.join(state["root"], _CORPUS),
+        ]
+    )
     return {}  # no state update -- same empty-update form as _fill_one
 
 
@@ -299,7 +313,7 @@ def enforce(
             "enforce(execute=True, fix_gaps=True) needs max_model_calls, "
             "the approved model-call count"
         )
-    root = root or _REPO
+    root = os.path.abspath(root or _REPO)
     # Read only when a fill is asked for: a run without fix_gaps never reaches
     # the fill step, so it needs no levels and fills nothing. A refused or
     # unreadable config raises config_loader.ConfigError before any step.
