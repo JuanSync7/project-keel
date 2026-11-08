@@ -118,6 +118,50 @@ def test_incomplete_install_refuses_before_later_work(project, target, app):
 
 
 @pytest.mark.parametrize(
+    "stderr,expected,omitted",
+    [
+        (
+            "\nnode:internal/modules/cjs/loader:1228\n"
+            "  throw err;\n\nError: Cannot find module 'x'\n"
+            "    at Function._resolveFilename (node:internal/modules/cjs/loader:1225:15)\n",
+            "Error: Cannot find module 'x'",
+            "node:internal/modules/cjs/loader:1228",
+        ),
+        (
+            "\n \t\n  registry unavailable  \nsecond line must be omitted\n",
+            "registry unavailable",
+            "second line must be omitted",
+        ),
+        (
+            "node:internal/modules/cjs/loader:1228\nerror: registry unavailable\n",
+            "error: registry unavailable",
+            "node:internal/modules/cjs/loader:1228",
+        ),
+        (
+            "Error: " + "x" * 1000 + "TAIL_MUST_BE_OMITTED\n",
+            ("Error: " + "x" * 1000)[:240],
+            "TAIL_MUST_BE_OMITTED",
+        ),
+    ],
+    ids=["loader-stack", "fallback", "lowercase-error", "bounded-error"],
+)
+def test_browser_probe_stderr_detail(project, stderr, expected, omitted, capsys):
+    import preflight
+
+    root, _cfg, _record, _bindir, _browser = project
+
+    status = preflight._probe_refused(str(root / "src/frontend/one"), "one", stderr)
+
+    captured = capsys.readouterr()
+    assert status == 2
+    assert captured.out == ""
+    assert len(captured.err.splitlines()) == 1
+    assert expected + "): one;" in captured.err
+    assert omitted not in captured.err
+    assert "update the probe in scripts/preflight.py" in captured.err
+
+
+@pytest.mark.parametrize(
     "package,version",
     [
         ('{"version": "9.8.7"}', "installed Playwright version 9.8.7"),
@@ -158,7 +202,7 @@ def test_broken_browser_probe_refuses_before_later_work(project, package, versio
         (
             "timeout",
             "node did not answer within the limit",
-            "timed out after 10 seconds",
+            "10 seconds",
             "check the node on PATH",
         ),
         (
@@ -221,6 +265,15 @@ def test_probe_failure_refuses_before_later_work(
     assert detail in captured.err, captured.err
     assert remedy in captured.err, captured.err
     assert "src/frontend/one" in captured.err
+    if failure == "timeout":
+        refusal = captured.err.splitlines()
+        assert len(refusal) == 2  # One probe refusal, then main's install summary.
+        assert diagnostic in refusal[0]
+        assert "10 seconds" in refusal[0]
+        assert preflight._BROWSER_PATH not in captured.err
+        assert "const bundle" not in captured.err
+        assert "require.resolve" not in captured.err
+        assert "['node', '-e'" not in captured.err
     if failure in ("timeout", "oserror"):
         assert "update the probe" not in captured.err
         assert "browser_executable" not in captured.err

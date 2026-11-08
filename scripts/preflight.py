@@ -11,6 +11,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -28,6 +29,10 @@ from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
 _BROWSER = ("layers", "frontend", "journey", "browser_executable")
+# Keep a failed probe's diagnostic short enough to leave its remedy visible.
+_PROBE_STDERR_MAX_CHARS = 240
+# Node prints loader frames before the cause; prefer Error classes or error: lines.
+_PROBE_ERROR_LINE = re.compile(r"Error|error:")
 # Chromium's default headless journey uses the headless-shell executable, not
 # chromium.executablePath()'s full browser. Ask the installed, pinned runner's
 # registry so revision, platform and PLAYWRIGHT_BROWSERS_PATH stay its decision.
@@ -57,7 +62,11 @@ def _probe_refused(folder, app, stderr):
             "installed Playwright version is unreadable at %s"
             % config_loader.shown(metadata, bare=True)
         )
-    detail = next((line.strip() for line in stderr.splitlines() if line.strip()), "")
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    detail = next(
+        (line for line in lines if _PROBE_ERROR_LINE.search(line)),
+        lines[0] if lines else "",
+    )[:_PROBE_STDERR_MAX_CHARS]
     if detail:
         installed += "; " + config_loader.shown(detail, bare=True)
     return report(
@@ -94,8 +103,7 @@ def _browsers(root, apps, loaded):
             except subprocess.TimeoutExpired as exc:
                 return report(
                     ExitCode.USAGE,
-                    "node did not answer within the limit (%s)"
-                    % config_loader.shown(str(exc), bare=True),
+                    "node did not answer within the limit (%s seconds)" % exc.timeout,
                     app,
                     "check the node on PATH, then rerun make preflight",
                 )
