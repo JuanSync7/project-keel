@@ -34,6 +34,7 @@ yaml = optional_deps.importorskip("yaml", extra="template")
 plumbum = optional_deps.importorskip("plumbum", extra="template")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "jobs"))
 
+import conflict_guard  # noqa: E402
 import review_docs  # noqa: E402
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -243,15 +244,34 @@ def test_update_leaves_no_conflicts(upgraded):
     _, project, _, _ = upgraded
     assert not list(project.rglob("*.rej"))
     assert not _git("diff", "--name-only", "--diff-filter=U", cwd=project).split()
-    marked = [
+    assert _conflicted_files(project) == []
+
+
+def _conflicted_files(project):
+    """The project-relative paths of files under *project* holding a conflict
+    hunk, outside .git and symlinks, judged by the marker grammar the update's
+    own jobs refuse on (scripts/jobs/conflict_guard.py)."""
+    return sorted(
         str(p.relative_to(project))
         for p in project.rglob("*")
         if p.is_file()
         and not p.is_symlink()
         and ".git/" not in str(p)
-        and b"<<<<<<<" in p.read_bytes()
-    ]
-    assert marked == []
+        # A binary file decodes lossily; a hunk is whole marker lines either way.
+        and conflict_guard.has_conflict(p.read_bytes().decode("utf-8", "replace"))
+    )
+
+
+def test_the_conflict_scan_names_a_hunk_and_not_a_quoted_marker(tmp_path):
+    """A shipped test may quote marker text as data (tests/integration/
+    test_mcp_servers.py does); only a hunk copier could have written counts."""
+    (tmp_path / "hunk.txt").write_text(
+        "<<<<<<< before updating\nours\n=======\ntheirs\n>>>>>>> after updating\n"
+    )
+    (tmp_path / "quoted.py").write_text(
+        'MARKS = "<<<<<<< before\\n{}\\n=======\\n{}\\n>>>>>>> after\\n"\n'
+    )
+    assert _conflicted_files(tmp_path) == ["hunk.txt"]
 
 
 def test_updated_project_still_passes_its_own_gate(upgraded):
