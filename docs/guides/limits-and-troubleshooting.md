@@ -742,6 +742,33 @@ Three more codes come from the tools around these scripts:
   script's own code is on the goal's own make line, printed before it
   (`tests/integration/test_exit_codes_through_make.py`).
 
+## Direct decoder refusals
+
+The backend identity reader raises `backend.shared.IdentityUnreadable` when
+config/project.json is nested beyond the decoder's limit, is not an object,
+or gives `name` a non-string value.
+The showcase reader raises `config_loader.ConfigUnreadable` for excessive nesting in its
+manifest, corpus or practices file.
+The refusal names the file and says to repair it or rebuild the corpus.
+Their existing absent-file and shallow-invalid-JSON fallbacks remain.
+
+The practice refactor agent raises `ConfigUnreadable` for excessive registry
+nesting or a registry without a `practices` list of objects.
+`scripts/refactor_practice.py` reports that error at exit 14 (`CONFIG`).
+A deeply nested model reply or an unreadable query, baseline or apply report
+raises `WalkRefused`, which that script reports at exit 2 (`USAGE`).
+The refusal names the input or tool and gives the repair or retry command.
+
+`scripts/jobs/declare_no_app.py` refuses a manifest edit it cannot decode,
+including excessive nesting and an app-object text match that is not JSON,
+through its existing `SettleError` at exit 1 (`FAILURE`).
+A committed manifest nested beyond the decoder's limit raises `GitError`,
+which the job reports at exit 2 (`USAGE`).
+`scripts/audit_project.py` reports excessive YAML or JSON nesting through its
+existing `AuditError` or destination refusal at exit 2 (`USAGE`).
+Its default-cast refusal names the copier question and says to repair its
+type, value or nesting without printing the decoded value.
+
 ## Lines the config loader writes
 
 A script that reads its config through `scripts/config_loader.py` writes two

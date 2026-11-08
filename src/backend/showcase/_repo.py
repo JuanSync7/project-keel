@@ -2,7 +2,7 @@
 title: Showcase repository facade
 layer: backend
 public_api: yes
-summary: Loads the live repo (project facts + corpus) into a Showcase the API renders.
+summary: Loads the live repo (project facts + corpus) into a Showcase the API renders; JSON nested beyond the decoder's limit raises ConfigUnreadable naming the file and repair.
 """
 
 from __future__ import annotations
@@ -298,6 +298,11 @@ def _read_json(path: str) -> dict[str, Any]:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         return data if isinstance(data, dict) else {}
+    except RecursionError as exc:
+        raise config_loader.ConfigUnreadable(
+            path,
+            ["%s is nested too deeply; repair the file or rebuild the corpus" % path],
+        ) from exc
     except (OSError, ValueError):  # noqa: DROP001 -- a missing corpus or registry renders as empty, as load_showcase documents
         return {}
 
@@ -313,6 +318,8 @@ def load_showcase(root: str, *, served_visibilities: Collection[str]) -> Showcas
     usable (empty corpus) so the overview/features/checks pages render and the
     operator sees that the index needs rebuilding (scripts/jobs/build_corpus.py).
     The practices registry is optional too (empty when absent).
+    A file nested beyond the JSON decoder's limit raises ConfigUnreadable,
+    naming the file and how to repair or rebuild it.
     """
     project = _read_json(os.path.join(root, "config", "project.json"))
     corpus = _read_json(os.path.join(root, "wiki", "corpus.json"))

@@ -26,7 +26,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts import config_loader, corpus_level
+from scripts import config_loader, corpus_level, tool_reports
 from scripts.resource_limits import run_tool
 
 __all__ = ["refactor", "propose", "RefactorReport", "WalkRefused"]
@@ -92,6 +92,9 @@ def _system_prompt():
 def _load_practice(corpus_root, practice):
     """Return the named practice's registry row (or None if unknown/unreadable).
 
+    Excessive nesting or a registry without a list of objects raises
+    ConfigUnreadable, so the caller reports the file and repair as CONFIG.
+
     config/practices.json is DATA read by path (json.load), never imported —
     the same way check_H reads project.json and the doers read this file.
     """
@@ -99,9 +102,21 @@ def _load_practice(corpus_root, practice):
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
+    except RecursionError as exc:
+        raise config_loader.ConfigUnreadable(
+            path, ["config/practices.json is nested too deeply; repair the registry"]
+        ) from exc
     except (OSError, ValueError):  # noqa: DROP001 -- an unreadable registry queries by the practice id, as _practice_query documents
         return None
-    for row in data.get("practices", []):
+    rows = data.get("practices", []) if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise config_loader.ConfigUnreadable(
+            path,
+            [
+                "config/practices.json needs a practices list of objects; repair the registry"
+            ],
+        )
+    for row in rows:
         if row.get("id") == practice:
             return row
     return None
@@ -155,6 +170,7 @@ def _parse_spec(reply, practice):
     Tolerates a ```json ...``` fence. Returns None on unparseable text, an
     empty edit list or a reply that names a gate, so a chunk the model can't
     safely edit is simply skipped — never a half-formed write.
+    Excessive nesting raises WalkRefused with a bounded-reply remedy.
     """
     text = reply.strip()
     if text.startswith("```"):
@@ -165,6 +181,12 @@ def _parse_spec(reply, practice):
         text = "\n".join(lines).strip()
     try:
         data = json.loads(text)
+    except RecursionError as exc:
+        raise WalkRefused(
+            "model reply cannot be decoded",
+            "the edit spec is nested too deeply",
+            "retry with a bounded edit spec",
+        ) from exc
     except ValueError:  # noqa: DROP001 -- a reply that is not JSON declines the chunk, as documented
         return None
     if not isinstance(data, dict):
@@ -241,6 +263,14 @@ def propose(
 # execute=True — a dry-run walks the graph and gates the baseline, nothing more.
 
 
+def _tool_report(tool, rc, out, err, root, container):
+    """Raise the agent's reported refusal when a tool gives no readable report."""
+    try:
+        return tool_reports.read_report(tool, rc, out, err, root, container=container)
+    except tool_reports.ToolReportUnreadable as exc:
+        raise WalkRefused(*exc.parts) from exc
+
+
 def _walk(state):
     """Read-only: walk the corpus KG for the practice's neighbourhood
     (query_corpus). A walk query_corpus refuses raises WalkRefused."""
@@ -264,10 +294,7 @@ def _walk(state):
             % (rc, state["root"], err.strip() or "it wrote nothing to stderr"),
             "fix what query_corpus names, then rerun",
         )
-    try:
-        hits = json.loads(out) if out.strip() else []
-    except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
-        hits = []
+    hits = _tool_report("query_corpus", rc, out, err, state["root"], container=list)
     # The preview prompt carries a chunk's text too, so the cut comes first.
     hits = _served_now(_served(hits), state["root"])
     preview = _propose_prompt(state["practice"], pdef, hits[0]) if hits else ""
@@ -288,14 +315,11 @@ def _baseline(state):
     A dirty tree yields a dirty refactor, so if the gate is already red the loop
     predicate (`_wants_refactor`) short-circuits to END and nothing is attempted.
     """
-    _, out, _ = _run(
+    rc, out, err = _run(
         ["scripts/run_make_target.py", state["gate"], "--json", "--dir", state["root"]],
         root=state["root"],
     )
-    try:
-        res = json.loads(out) if out.strip() else {}
-    except ValueError:  # noqa: DROP001 -- fails closed: a report that does not parse is not green, so nothing is refactored; KEEL-ERR-2 tells a tool report that does not parse from an empty one
-        res = {}
+    res = _tool_report("run_make_target", rc, out, err, state["root"], container=dict)
     return {"baseline_green": bool(res.get("ok"))}
 
 
@@ -340,7 +364,7 @@ def _apply(state):
         # --allow binds the apply to the chunk the model was shown, so the
         # reply's edits[].file cannot reach any other file; `propose` already
         # declined a chunk with no path, and an empty one binds to no file.
-        _, out, _ = _run(
+        rc, out, err = _run(
             [
                 "scripts/apply_refactor.py",
                 "--spec",
@@ -356,10 +380,9 @@ def _apply(state):
             stdin=json.dumps(spec),
             root=state["root"],
         )
-        try:
-            res = json.loads(out) if out.strip() else {}
-        except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
-            res = {}
+        res = _tool_report(
+            "apply_refactor", rc, out, err, state["root"], container=dict
+        )
         for recovered in res.get("recovered", []):
             logging.getLogger(__name__).info("Recovered refactor target: %s", recovered)
         if res.get("journal_conflict") or res.get("lock_busy"):

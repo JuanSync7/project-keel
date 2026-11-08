@@ -2,7 +2,7 @@
 title: Backend shared
 layer: backend
 public_api: yes
-summary: Domain-meaningful types/models shared across backend features — incl. the project's own identity (name/title) read from the manifest.
+summary: Domain-meaningful types/models shared across backend features, including the project's identity read from the manifest; excessive JSON nesting or an unusable identity shape raises IdentityUnreadable naming the repair.
 """
 
 from __future__ import annotations
@@ -10,7 +10,12 @@ from __future__ import annotations
 import json
 import os
 
-__all__ = ["display_title", "project_identity"]
+__all__ = ["display_title", "project_identity", "IdentityUnreadable"]
+
+
+class IdentityUnreadable(ValueError):
+    """The manifest cannot supply an identity; the message names its repair."""
+
 
 _MANIFEST = ("config", "project.json")
 
@@ -38,14 +43,29 @@ def project_identity(root: str) -> tuple[str, str]:
 
     Falls back to the root directory's own name, which is real information about
     an unnamed project, rather than to any hardcoded literal.
+    Excessive nesting, a non-object manifest or a non-string name raises
+    IdentityUnreadable naming the file and repair.
     """
     root = os.path.abspath(root)
     name = ""
     try:
         with open(os.path.join(root, *_MANIFEST), encoding="utf-8") as fh:
-            name = (json.load(fh) or {}).get("name") or ""
+            data = json.load(fh)
+    except RecursionError as exc:
+        raise IdentityUnreadable(
+            "config/project.json is nested too deeply; repair the manifest"
+        ) from exc
     except (OSError, ValueError):  # noqa: DROP001 -- an unnamed manifest falls back to the directory name, as documented
-        name = ""
+        data = {}
+    if not isinstance(data, dict):
+        raise IdentityUnreadable(
+            "config/project.json must be an object; repair the manifest"
+        )
+    name = data.get("name") or ""
+    if not isinstance(name, str):
+        raise IdentityUnreadable(
+            "config/project.json name must be a string; repair the manifest"
+        )
     if not name:
         name = os.path.basename(root)
     return name, display_title(name)

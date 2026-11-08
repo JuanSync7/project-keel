@@ -188,8 +188,10 @@ def settle(text, markers, targets):
     SettleError unless the result parses to exactly that manifest."""
     try:
         manifest = json.loads(text)
-    except ValueError as e:
-        raise SettleError("not JSON: %s" % e) from e
+    except (ValueError, RecursionError) as e:
+        raise SettleError(
+            "config/project.json cannot be decoded; repair its JSON and nesting"
+        ) from e
     present, app = _layers_app(manifest)
     make_targets = manifest.get("make_targets") if present else None
     if not isinstance(make_targets, dict):
@@ -209,7 +211,14 @@ def settle(text, markers, targets):
         edits.append((key, new))
     out = text
     if app is not None:
-        spans = [m.span(1) for m in _APP.finditer(out) if json.loads(m.group(1)) == app]
+        try:
+            spans = [
+                m.span(1) for m in _APP.finditer(out) if json.loads(m.group(1)) == app
+            ]
+        except (ValueError, RecursionError) as e:
+            raise SettleError(
+                "config/project.json app objects cannot be decoded; repair layers.app by hand"
+            ) from e
         if len(spans) != 1:
             raise SettleError("found %d objects equal to layers.app" % len(spans))
         start, end = spans[0]
@@ -218,8 +227,10 @@ def settle(text, markers, targets):
         out = _insert(out, key, new)
     try:
         result = json.loads(out)
-    except ValueError as e:
-        raise SettleError("the edit does not parse: %s" % e) from e
+    except (ValueError, RecursionError) as e:
+        raise SettleError(
+            "config/project.json edit cannot be decoded; repair the manifest by hand"
+        ) from e
     if result != expected:
         raise SettleError("the edit does not parse to the intended manifest")
     return out
@@ -257,6 +268,10 @@ def head_manifest(root):
     blob = _git(root, "cat-file", "blob", "HEAD:config/project.json")
     try:
         return json.loads(blob.decode("utf-8"))
+    except RecursionError as e:
+        raise GitError(
+            "HEAD:config/project.json is nested too deeply; repair the committed manifest"
+        ) from e
     except ValueError:  # noqa: DROP001 -- None when HEAD holds no manifest it can read, as documented
         return None
 

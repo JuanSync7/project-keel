@@ -7,7 +7,7 @@ summary: Mirrors src/backend/shared/. Exercises the project-identity derivation 
 
 import pytest
 
-from backend.shared import display_title
+from backend.shared import IdentityUnreadable, display_title, project_identity
 
 pytestmark = pytest.mark.unit
 
@@ -44,3 +44,13 @@ def test_display_title_does_not_reach_for_a_default():
     over with a literal in domain code.
     """
     assert display_title("") == ""
+
+
+@pytest.mark.parametrize(
+    "text", ["[1]", '{"name": [1]}', "[" * 2000 + "0" + "]" * 2000]
+)
+def test_identity_decode_refusal_names_manifest_and_repair(tmp_path, text):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(text, encoding="utf-8")
+    with pytest.raises(IdentityUnreadable, match=r"config/project.json.*repair"):
+        project_identity(str(tmp_path))

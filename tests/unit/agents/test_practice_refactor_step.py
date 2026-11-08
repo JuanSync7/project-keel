@@ -19,6 +19,56 @@ from models import ModelBackend  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
+
+@pytest.mark.parametrize(
+    "text", ["[1]", '{"practices": [1]}', "[" * 2000 + "0" + "]" * 2000]
+)
+def test_registry_decode_refusal_names_file_and_repair(tmp_path, text):
+    import importlib
+
+    from scripts import config_loader
+
+    brain = importlib.import_module("agents.practice_refactor._brain")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "practices.json").write_text(text, encoding="utf-8")
+    with pytest.raises(config_loader.ConfigUnreadable, match=r"practices.json.*repair"):
+        brain._load_practice(str(tmp_path), "p")
+
+
+def test_model_decode_refusal_names_reply_and_retry():
+    with pytest.raises(RuntimeError, match=r"model reply.*retry"):
+        propose("p", {}, _NODE, backend=_Seen("[" * 2000 + "0" + "]" * 2000))
+
+
+@pytest.mark.parametrize(
+    "step,tool",
+    [
+        ("_walk", "query_corpus"),
+        ("_baseline", "run_make_target"),
+        ("_apply", "apply_refactor"),
+    ],
+)
+@pytest.mark.parametrize("text", ["[1]", "{", "[" * 2000 + "0" + "]" * 2000])
+def test_tool_decode_refusal_names_tool_and_rerun(
+    tmp_path, monkeypatch, step, tool, text
+):
+    import importlib
+
+    brain = importlib.import_module("agents.practice_refactor._brain")
+    monkeypatch.setattr(brain, "_run", lambda *args, **kwargs: (0, text, ""))
+    state = {
+        "root": str(tmp_path),
+        "practice": "p",
+        "max_nodes": 1,
+        "gate": "check",
+        "chunks": [_NODE],
+        "cursor": 0,
+        "spec": {"edits": [_EDIT]},
+    }
+    with pytest.raises(RuntimeError, match=tool + r".*rerun"):
+        getattr(brain, step)(state)
+
+
 _PDEF = {
     "id": "exception-chaining",
     "title": "Chain exceptions",

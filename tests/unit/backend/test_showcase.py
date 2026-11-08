@@ -11,6 +11,20 @@ import pytest
 
 from backend.showcase import CHECKS, FEATURES, Showcase, to_jsonable
 
+
+def test_showcase_decode_refusal_names_file_and_repair(tmp_path):
+    from scripts import config_loader
+
+    from backend.showcase import load_showcase
+
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "corpus.json").write_text(
+        "[" * 2000 + "0" + "]" * 2000, encoding="utf-8"
+    )
+    with pytest.raises(config_loader.ConfigUnreadable, match=r"corpus.json.*rebuild"):
+        load_showcase(str(tmp_path), served_visibilities={"internal"})
+
+
 pytestmark = pytest.mark.unit
 
 # config/project.json `corpus.served_visibilities` as keel ships it.

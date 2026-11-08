@@ -296,8 +296,10 @@ def render_configs(reader, answers):
         raise AuditError("the template has no copier.yml")
     try:
         spec = yaml.safe_load(spec_text)
-    except yaml.YAMLError as exc:
-        raise AuditError("copier.yml is not valid YAML: %s" % exc) from exc
+    except (ValueError, RecursionError, OverflowError, yaml.YAMLError) as exc:
+        raise AuditError(
+            "copier.yml cannot be decoded; repair its YAML and nesting"
+        ) from exc
     if not isinstance(spec, dict):
         raise AuditError("copier.yml is not a mapping")
     suffix = spec.get("_templates_suffix", ".jinja")
@@ -323,10 +325,10 @@ def render_configs(reader, answers):
     def cast(value, qtype, what):
         try:
             return _cast(yaml, value, qtype)
-        except _DATA_ERRORS + (yaml.YAMLError,) as exc:
+        except _DATA_ERRORS + (RecursionError, OverflowError, yaml.YAMLError) as exc:
             raise AuditError(
-                "%s: cannot cast to %s (%s: %s)"
-                % (what, qtype, type(exc).__name__, exc)
+                "%s: cannot cast the default; repair the question's type, value or nesting"
+                % what
             ) from exc
 
     questions = [
@@ -377,8 +379,10 @@ def render_configs(reader, answers):
             continue
         try:
             configs[rel] = json.loads(text)
-        except ValueError as exc:
-            raise AuditError("%s renders to invalid JSON: %s" % (rel, exc)) from exc
+        except (ValueError, RecursionError) as exc:
+            raise AuditError(
+                "%s renders to invalid JSON; repair its template and nesting" % rel
+            ) from exc
     return configs, sorted(notes)
 
 
@@ -502,8 +506,8 @@ def _load_dest(dest, yaml):
         try:
             with open(path, encoding="utf-8") as fh:
                 answers = yaml.safe_load(fh)
-        except (OSError, ValueError, yaml.YAMLError) as exc:
-            problems.append("%s: unreadable (%s)" % (ANSWERS, exc))
+        except (OSError, ValueError, RecursionError, OverflowError, yaml.YAMLError):
+            problems.append("%s: unreadable; repair its YAML and nesting" % ANSWERS)
         else:
             if not isinstance(answers, dict):
                 problems.append("%s: not a mapping" % ANSWERS)
@@ -529,8 +533,8 @@ def _load_dest(dest, yaml):
             manifest = json.load(fh)
     except FileNotFoundError:
         problems.append("%s: missing" % MANIFEST)
-    except (OSError, ValueError) as exc:
-        problems.append("%s: unreadable (%s)" % (MANIFEST, exc))
+    except (OSError, ValueError, RecursionError):
+        problems.append("%s: unreadable; repair its JSON and nesting" % MANIFEST)
     else:
         if not isinstance(manifest, dict):
             problems.append("%s: not a JSON object" % MANIFEST)
@@ -780,6 +784,8 @@ def migration_jobs(snap, yaml):
     try:
         with open(os.path.join(snap, "copier.yml"), encoding="utf-8") as fh:
             data = yaml.safe_load(fh)
+    except (RecursionError, OverflowError) as exc:
+        raise AuditError("copier.yml is nested too deeply; repair its YAML") from exc
     except (OSError, ValueError, yaml.YAMLError):  # noqa: DROP001 -- None when copier.yml cannot be read, as documented; the refusal then names no job
         return None
     entries = data.get("_migrations") if isinstance(data, dict) else None
@@ -992,8 +998,15 @@ def predict(dest, yaml, scratch, today, not_checked):
     for rel in rels:
         _copy_entry(dest, rel, root, not_checked)
     answers_path = _copy_path(root, ANSWERS)
-    with open(answers_path, encoding="utf-8") as fh:
-        answers = yaml.safe_load(fh)
+    try:
+        with open(answers_path, encoding="utf-8") as fh:
+            answers = yaml.safe_load(fh)
+    except (OSError, ValueError, RecursionError, OverflowError, yaml.YAMLError) as exc:
+        raise AuditError(
+            "%s cannot be decoded in the copy; repair its YAML and nesting" % ANSWERS
+        ) from exc
+    if not isinstance(answers, dict):
+        raise AuditError("%s is not a mapping in the copy; repair its YAML" % ANSWERS)
     answers["_src_path"] = snap
     os.remove(answers_path)
     with open(answers_path, "w", encoding="utf-8") as fh:
@@ -1386,6 +1399,8 @@ def _read_dest_json(dest, rel):
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
+    except RecursionError as exc:
+        raise AuditError("%s is nested too deeply; repair its JSON" % rel) from exc
     except (OSError, ValueError):
         return _UNUSABLE
     return data if isinstance(data, dict) else _UNUSABLE

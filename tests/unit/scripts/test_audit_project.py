@@ -35,6 +35,93 @@ copier = optional_deps.importorskip("copier", extra="template")
 
 pytestmark = pytest.mark.unit
 
+
+@pytest.mark.parametrize(
+    "files,named",
+    [
+        ({"copier.yml": "x: " + "[" * 2000 + "0" + "]" * 2000}, "copier.yml"),
+        (
+            {"copier.yml": "{}", "config/project.json": "[" * 2000 + "0" + "]" * 2000},
+            "config/project.json",
+        ),
+        (
+            {
+                "copier.yml": "x:\n  type: yaml\n  default: '"
+                + "[" * 2000
+                + "0"
+                + "]" * 2000
+                + "'"
+            },
+            "copier.yml",
+        ),
+        ({"copier.yml": "x:\n  type: int\n  default: secret@invalid"}, "copier.yml"),
+    ],
+)
+def test_render_decode_refusal_names_file_and_repair(files, named):
+    with pytest.raises(ap.AuditError) as caught:
+        ap.render_configs(files.get, {})
+    message = str(caught.value)
+    assert named in message
+    assert "repair" in message
+    assert "secret@invalid" not in message
+
+
+@pytest.mark.parametrize("rel", [ap.ANSWERS, ap.MANIFEST])
+def test_dest_decode_refusal_names_file_and_repair(tmp_path, rel):
+    import yaml
+
+    (tmp_path / "config").mkdir()
+    (tmp_path / ap.ANSWERS).write_text(
+        "_src_path: template\n_commit: sha\n", encoding="utf-8"
+    )
+    (tmp_path / ap.MANIFEST).write_text("{}", encoding="utf-8")
+    (tmp_path / rel).write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
+    with pytest.raises(ap._Refusal) as caught:
+        ap._load_dest(str(tmp_path), yaml)
+    assert rel in str(caught.value)
+    assert "repair" in str(caught.value)
+
+
+def test_migration_decode_refusal_names_file_and_repair(tmp_path):
+    import yaml
+
+    (tmp_path / "copier.yml").write_text(
+        "[" * 2000 + "0" + "]" * 2000, encoding="utf-8"
+    )
+    with pytest.raises(ap.AuditError, match=r"copier.yml.*repair"):
+        ap.migration_jobs(str(tmp_path), yaml)
+
+
+def test_config_decode_refusal_names_file_and_repair(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / ap.MANIFEST).write_text("[" * 2000 + "0" + "]" * 2000, encoding="utf-8")
+    with pytest.raises(ap.AuditError, match=r"config/project.json.*repair"):
+        ap._read_dest_json(str(tmp_path), ap.MANIFEST)
+
+
+@pytest.mark.parametrize("text", ["[", "[1]", "[" * 2000 + "0" + "]" * 2000])
+def test_copied_answers_decode_refusal_names_file_and_repair(
+    tmp_path, monkeypatch, text
+):
+    import datetime
+
+    import yaml
+
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    (dest / ap.ANSWERS).write_text(text, encoding="utf-8")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    monkeypatch.setattr(ap, "_dest_paths", lambda root: [ap.ANSWERS])
+    monkeypatch.setattr(
+        ap.template_snapshot,
+        "snapshot_working_tree",
+        lambda *args, **kwargs: (str(tmp_path), []),
+    )
+    with pytest.raises(ap.AuditError, match=r"copier-answers.yml.*repair"):
+        ap.predict(str(dest), yaml, str(scratch), datetime.date(2026, 11, 8), [])
+
+
 TODAY = "2026-09-02"
 # Every check letter, read from check_structure.py's own definitions rather than
 # from the audit's LETTERS, so a letter the audit forgot to run shows as a

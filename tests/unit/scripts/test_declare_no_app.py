@@ -88,6 +88,27 @@ def test_settle_is_a_fixed_point():
     assert _settled(once) == once
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[" * 2000 + "0" + "]" * 2000,
+        _TEXT.replace('"_comment":', '"unrelated": {"app": {"x": "}"}}, "_comment":'),
+    ],
+)
+def test_settle_decode_refusal_names_manifest_and_repair(text):
+    with pytest.raises(dna.SettleError, match=r"config/project.json.*repair"):
+        _settled(text)
+
+
+def test_head_decode_refusal_names_manifest_and_repair(monkeypatch):
+    replies = iter(
+        [b"sha", b"config/project.json", ("[" * 2000 + "0" + "]" * 2000).encode()]
+    )
+    monkeypatch.setattr(dna, "_git", lambda *args: next(replies))
+    with pytest.raises(dna.GitError, match=r"config/project.json.*repair"):
+        dna.head_manifest("unused")
+
+
 def test_an_entry_already_declared_is_kept_as_written():
     text = _TEXT.replace(
         '"empty_test_selections": {}', '"empty_test_selections": {"smoke": "mine"}'
