@@ -7,6 +7,8 @@ summary: api/rest_fastapi/serve.py hands uvicorn the app, the host and port it w
 
 import importlib.util
 import json
+import runpy
+import shutil
 import signal
 import sys
 import types
@@ -21,9 +23,18 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 from exit_codes import ExitCode  # noqa: E402
 from scripts import config_loader, resource_limits  # noqa: E402
 
+from backend.shared import IdentityUnreadable  # noqa: E402
+
 pytestmark = pytest.mark.unit
 
 _SERVE = _ROOT / "api" / "rest_fastapi" / "serve.py"
+
+
+def _load_serve(path):
+    spec = importlib.util.spec_from_file_location("keel_rest_serve", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture
@@ -42,9 +53,7 @@ def serve(monkeypatch):
     monkeypatch.setattr(
         resource_limits, "cap_memory", lambda mb: caps.append(mb) or "memory cap: seen"
     )
-    spec = importlib.util.spec_from_file_location("keel_rest_serve", _SERVE)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load_serve(_SERVE)
     module.runs, module.caps = runs, caps
     return module
 
@@ -92,4 +101,40 @@ def test_unreadable_identity_is_config_before_server_or_reload_starts(
     assert output.out == ""
     assert len(output.err.splitlines()) == 1
     assert "config/project.json" in output.err and "repair" in output.err
+    assert "Traceback" not in output.err
+
+
+@pytest.mark.parametrize("reload", [False, True])
+def test_symlinked_entry_preflights_the_identity_the_app_reads(
+    serve, tmp_path, monkeypatch, capsys, reload
+):
+    real_root = tmp_path / "real"
+    real_api = real_root / "api" / "rest_fastapi"
+    real_api.mkdir(parents=True)
+    for name in ("serve.py", "app.py", "schemas.py"):
+        shutil.copyfile(_SERVE.parent / name, real_api / name)
+    (real_root / "config").mkdir()
+    (real_root / "config/project.json").write_text("[]", encoding="utf-8")
+
+    entry_root = tmp_path / "entry"
+    (entry_root / "api").mkdir(parents=True)
+    (entry_root / "config").mkdir()
+    (entry_root / "config/project.json").write_text(
+        json.dumps({"name": "decoy"}), encoding="utf-8"
+    )
+    linked_api = entry_root / "api" / "rest_fastapi"
+    linked_api.symlink_to(real_api, target_is_directory=True)
+    monkeypatch.setattr(sys, "path", sys.path.copy())
+
+    # Import the actual app through the link: its reader rejects the real root.
+    with pytest.raises(IdentityUnreadable, match="must be an object"):
+        runpy.run_path(str(linked_api / "app.py"))
+    linked_serve = _load_serve(linked_api / "serve.py")
+    argv = ["--port", "8123"] + (["--reload"] if reload else [])
+    assert linked_serve.main(argv) is ExitCode.CONFIG
+    assert serve.runs == [] and serve.caps == []
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert len(output.err.splitlines()) == 1
+    assert "identity is refused" in output.err and "repair" in output.err
     assert "Traceback" not in output.err

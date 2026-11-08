@@ -8,8 +8,9 @@ summary: The REST transport's entry, run by `make run-api`. It caps its address 
 import argparse
 import os
 import sys
+from pathlib import Path
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
+_HERE = str(Path(__file__).resolve().parent)
 _ROOT = os.path.dirname(os.path.dirname(_HERE))
 # The repository root, so the shared limits import as `scripts.resource_limits`,
 # and the scripts directory, so the exit helper imports as `exit_codes`, as
