@@ -553,8 +553,8 @@ _READERS = (
         (
             14,
             "",
-            "query_corpus: the levels a served node may carry cannot be read: config/project.json does not "
-            "exist; set corpus.served_visibilities to members of public, internal, confidential, "
+            "query_corpus: the levels a served node may carry cannot be read: <checkout>: config/project.json "
+            "does not exist; set corpus.served_visibilities to members of public, internal, confidential, "
             "restricted, then rerun\n",
         ),
     ),
@@ -1199,10 +1199,11 @@ def test_job_entry_guard_classifies_manifest(tmp_path, module, argv, payload, ex
 def test_an_absent_manifest_keeps_the_readers_previous_path(
     tmp_path, capsys, monkeypatch, module, route, argv, expected
 ):
-    """Pin cf7ca3e's exit and both messages, including its raised absent paths.
+    """Pin each reader's exit and both messages, including raised absent paths.
 
-    The historical results live in _READERS so generated projects need no
-    template git history. External agents remain at the same read boundary.
+    Expected text lives in _READERS so generated projects need no template
+    git history. Corpus diagnostics name the checkout folder, not its host path.
+    External agents remain at the same read boundary.
     """
     (tmp_path / "config").mkdir()
     reader = _prepare_reader(tmp_path, monkeypatch, module, route)
@@ -1221,8 +1222,12 @@ def test_an_absent_manifest_keeps_the_readers_previous_path(
     captured = capsys.readouterr()
     actual = (
         code,
-        captured.out.replace(str(tmp_path), "<root>"),
-        captured.err.replace(str(tmp_path), "<root>"),
+        captured.out.replace(str(tmp_path), "<root>").replace(
+            tmp_path.name, "<checkout>"
+        ),
+        captured.err.replace(str(tmp_path), "<root>").replace(
+            tmp_path.name, "<checkout>"
+        ),
     )
     assert actual == expected
 

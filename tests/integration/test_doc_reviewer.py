@@ -415,14 +415,19 @@ def test_no_rules_refuse_an_execute_run_and_show_in_a_dry_runs_preview(
 def test_an_unreadable_corpus_refuses_the_real_rule_retrieval(tmp_path):
     """End to end with the real query_corpus: a corpus that is not JSON is
     refused there with USAGE, and _retrieve raises RulesRefused naming that
-    exit status and the corpus, never a traceback's exit 1."""
+    exit status and the corpus by checkout folder, with no host path in the
+    query diagnostic, never a traceback's exit 1."""
     _project(tmp_path)
     corpus = tmp_path / "wiki" / "corpus.json"
     corpus.write_text("{not json")
     brain = sys.modules[_BRAIN]
     with pytest.raises(RulesRefused, match="query_corpus exited 2") as raised:
         brain._retrieve({"root": str(tmp_path), "chunks": [], "execute": False})
-    assert str(corpus) in str(raised.value)
+    query_error = str(raised.value).split("query_corpus: ", 1)[1]
+    assert str(tmp_path) not in query_error
+    assert query_error.startswith(
+        f"the corpus cannot be read: {tmp_path.name}/wiki/corpus.json ("
+    )
 
 
 @pytest.mark.parametrize("execute", [False, True])
