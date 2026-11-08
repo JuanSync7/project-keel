@@ -34,6 +34,11 @@ from ._models import (
     Transport,
 )
 
+# config/practices.json `practices[].row` for an entry that omits it
+# (docs/reference/settings.md). A KEYS row in scripts/config_loader.py walks
+# object keys only and cannot name a key inside each `practices` entry.
+_UNNUMBERED_ROW = 9999
+
 
 class Showcase:
     """A read model of the template as a product, assembled from in-memory data.
@@ -178,16 +183,16 @@ class Showcase:
         Projected from the registry's ``practices`` array like ``model_adapters`` —
         so the read model stays pure and never imports the ``scripts/`` checks or
         the ``config/`` layer. Sorted by ``row``; empty when the registry is absent.
-        Invalid row text raises ConfigUnreadable without quoting its value.
+        A non-integer row raises ConfigUnreadable without quoting its value.
         """
         out = []
         for p in self._practices.get("practices") or []:
             if not isinstance(p, dict):
                 continue
-            try:
-                row = int(p.get("row", 9999))
-            except ValueError:
-                # Conversion errors can quote credentials held in the registry.
+            row = p.get("row", _UNNUMBERED_ROW)
+            # bool is an int subclass, and int() would read "2" or truncate 1.5.
+            if type(row) is not int:
+                # The value can be a credential pasted into the registry.
                 raise config_loader.ConfigUnreadable(
                     "config/practices.json",
                     [

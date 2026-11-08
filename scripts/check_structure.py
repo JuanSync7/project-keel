@@ -3960,19 +3960,32 @@ def _anchors(text):
 
 
 def _numbered_sections(text, relpath="<document>"):
-    """The N of every numbered heading (`N.` at any level) outside fenced code."""
-    found = set()
+    """(section numbers, findings) for numbered headings outside fenced code."""
+    found, findings = set(), []
     for lineno, line in enumerate(_unfenced_lines(text), 1):
         m = _NUMBERED_HEADING.match(line)
         if m:
             if _DOCUMENT_NUMBER.fullmatch(m.group(1)):
                 found.add(int(m.group(1)))
             else:
-                err(
+                findings.append(
                     "%s:%d: numbered section exceeds four digits -- shorten the number"
                     % (relpath, lineno)
                 )
-    return found
+    return found, findings
+
+
+def _sections_in_file(path):
+    """Read section numbers and report each malformed heading once per run."""
+    text = _read_text(os.path.join(ROOT, path), err)
+    if text is None:
+        return None
+    sections, findings = _numbered_sections(text, path)
+    for finding in findings:
+        # Q may already have reported the heading before T or V reaches it.
+        if finding not in errors:
+            err(finding)
+    return sections
 
 
 def _resolve_link(base, path):
@@ -4099,7 +4112,11 @@ def _crossref_findings(files, tree, scan=None):
     def sections_of(doc):
         if doc not in cache:
             text = files.get(doc)
-            cache[doc] = None if text is None else _numbered_sections(text, doc)
+            if text is None:
+                cache[doc] = None
+            else:
+                cache[doc], findings = _numbered_sections(text, doc)
+                errs.extend(findings)
         return cache[doc]
 
     for relpath in sorted(files if scan is None else scan):
@@ -4769,11 +4786,9 @@ def check_T():
     makefile = _optional_text("Makefile")
     targets = set(_make_rules(makefile)) if makefile else set()
 
-    def sections_of(path):
-        text = _read_text(os.path.join(ROOT, path), err)
-        return None if text is None else _numbered_sections(text, path)
-
-    for m in _mechanism_findings(practices, check_ids, tree, targets, sections_of):
+    for m in _mechanism_findings(
+        practices, check_ids, tree, targets, _sections_in_file
+    ):
         err(m)
 
 
@@ -5244,12 +5259,8 @@ def check_V():
     makefile = _optional_text("Makefile")
     targets = set(_make_rules(makefile)) if makefile else set()
 
-    def sections_of(path):
-        text = _read_text(os.path.join(ROOT, path), err)
-        return None if text is None else _numbered_sections(text, path)
-
     errs, warns_ = _effect_declaration_findings(
-        modules, check_ids, tree, targets, sections_of
+        modules, check_ids, tree, targets, _sections_in_file
     )
     # A refused shell block is check_O's error; here it leaves no file to read.
     shell, _ = _shell_files(WRITER_ROOTS)
@@ -5261,7 +5272,7 @@ def check_V():
         if text is not None:
             scripts[relpath] = text
     sh_errs, sh_warns = _shell_effect_findings(
-        scripts, check_ids, tree, targets, sections_of
+        scripts, check_ids, tree, targets, _sections_in_file
     )
     for m in errs + sh_errs:
         err(m)

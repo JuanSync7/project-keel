@@ -397,23 +397,59 @@ def test_practice_items_absent_registry_is_graceful_empty():
     assert _sc().practice_items() == ()
 
 
-@pytest.mark.parametrize("row", ["private@invalid", "9" * 5000], ids=["text", "long"])
-def test_practice_row_refuses_invalid_number_without_echo(row):
+def _with_practice(practice):
+    return Showcase(
+        name="test",
+        project={},
+        corpus={},
+        practices={"practices": [practice]},
+        served_visibilities=_SERVED,
+    )
+
+
+@pytest.mark.parametrize(
+    "row",
+    [None, [], {}, True, False, 1.5, 1.0, "2", "private@invalid", "9" * 5000],
+    ids=[
+        "null",
+        "list",
+        "object",
+        "true",
+        "false",
+        "float",
+        "whole-float",
+        "numeric-text",
+        "text",
+        "long-text",
+    ],
+)
+def test_practice_row_refuses_non_integer_without_echo(row, capsys):
     from scripts import config_loader
 
+    with pytest.raises(config_loader.ConfigUnreadable) as caught:
+        _with_practice({"row": row}).practice_items()
+    assert caught.value.path == "config/practices.json"
+    assert caught.value.lines == [
+        "config/practices.json: invalid practice row; repair it with an integer"
+    ]
+    assert "private@invalid" not in str(caught.value)
+    assert "private@invalid" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("row", [0, -1, 7, 9999])
+def test_practice_row_keeps_integers(row):
+    assert _with_practice({"row": row}).practice_items()[0].row == row
+
+
+def test_practice_row_missing_takes_row_9999():
     sc = Showcase(
         name="test",
         project={},
         corpus={},
-        practices={"practices": [{"row": row}]},
+        practices={"practices": [{"id": "unnumbered"}, {"id": "last", "row": 9998}]},
         served_visibilities=_SERVED,
     )
-    with pytest.raises(config_loader.ConfigUnreadable) as caught:
-        sc.practice_items()
-    message = "; ".join(caught.value.lines)
-    assert "config/practices.json" in message and "row" in message
-    assert "repair" in message and row not in message
-    assert row not in str(caught.value)
+    assert [p.id for p in sc.practice_items()] == ["last", "unnumbered"]
 
 
 def _project_with_profiles():

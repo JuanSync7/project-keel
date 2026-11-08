@@ -92,6 +92,40 @@ def test_a_clean_tree_is_clean(tmp_path):
     assert cs.run_checks(str(_tree(tmp_path))) == []
 
 
+def test_bad_numbered_heading_is_reported_once_across_checks(tmp_path):
+    root = _tree(tmp_path)
+    (root / "docs/target.md").write_text("## 12345. Bad\n\n## 1. Valid\n")
+    reference = "doc:docs/target.md \u00a71"
+    (root / "docs/use.md").write_text("docs/target.md \u00a71\n")
+    (root / "config/practices.json").write_text(
+        json.dumps(
+            {
+                "practices": [
+                    {"id": name, "enforced_by": [reference]} for name in ("one", "two")
+                ]
+            }
+        )
+    )
+    (root / "scripts").mkdir()
+    for name in ("one", "two"):
+        (root / ("scripts/" + name + ".py")).write_text(
+            '"""\ntitle: writer\nsummary: writer\neffect: writes\n'
+            "rerun: fixed-point\nrerun_proof: "
+            + reference
+            + '\n"""\nopen("out", "w")\n'
+        )
+    for _ in range(2):
+        findings = cs.run_checks(str(root))
+        messages = [
+            message
+            for _, tier, message in findings
+            if tier == "error" and "numbered section exceeds" in message
+        ]
+        assert messages == [
+            "docs/target.md:1: numbered section exceeds four digits -- shorten the number"
+        ]
+
+
 @pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
 def test_a_directory_at_a_config_path_is_one_refusal_per_run(tmp_path, filename):
     root = _tree(tmp_path)
