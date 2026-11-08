@@ -243,7 +243,9 @@ def test_a_named_corpus_that_does_not_exist_is_refused(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("selection", ["absolute", "relative", "bare"])
+@pytest.mark.parametrize(
+    "selection", ["absolute", "relative", "bare", "deeper", "other"]
+)
 def test_both_selectors_refusal_names_the_checkout(tmp_path, monkeypatch, selection):
     caller = tmp_path / "caller-checkout"
     caller.mkdir()
@@ -261,6 +263,14 @@ def test_both_selectors_refusal_names_the_checkout(tmp_path, monkeypatch, select
             "corpus.json",
             "root reviewed-checkout, corpus caller-checkout/corpus.json",
         ),
+        "deeper": (
+            "a/b/wiki/corpus.json",
+            "root reviewed-checkout, corpus b/wiki/corpus.json",
+        ),
+        "other": (
+            str(tmp_path / "read-checkout" / "wiki" / "other.json"),
+            "root reviewed-checkout, corpus read-checkout/wiki/other.json",
+        ),
     }[selection]
     with pytest.raises(corpus_level.NotACheckout) as raised:
         corpus_level.checkout(
@@ -277,5 +287,7 @@ def test_both_selectors_refusal_names_the_checkout(tmp_path, monkeypatch, select
 
 
 def test_checkout_requires_the_naming_rule():
+    """A new caller must supply the naming rule so it cannot leave it out
+    and print a host path in a refusal."""
     with pytest.raises(TypeError, match="name"):
         corpus_level.checkout(None, None, "/x")
