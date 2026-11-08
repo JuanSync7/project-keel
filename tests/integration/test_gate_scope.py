@@ -291,7 +291,7 @@ def test_fe_gate_skips_when_npm_is_absent(tmp_path, target):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("target", _FE_REFUSING)
+@pytest.mark.parametrize("target", _FE_REFUSING + ["preflight"])
 def test_fe_suite_refuses_when_npm_is_absent(tmp_path, target):
     """A frontend suite that could not run tested nothing, so it exits 2, the
     refusal code run-web uses, naming itself, the app and the fix. PATH is an
@@ -311,6 +311,7 @@ def _recording_npm(tmp_path):
     """A directory holding an `npm` that records each call and exits 0."""
     bindir = tmp_path / "fakebin"
     bindir.mkdir()
+    (bindir / "node").symlink_to("/bin/sh")
     log = tmp_path / "npm-calls.log"
     npm = bindir / "npm"
     npm.write_text('#!/bin/sh\necho "$*" >> %s\nexit 0\n' % shlex.quote(str(log)))
@@ -319,7 +320,7 @@ def _recording_npm(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
-@pytest.mark.parametrize("target", _FE_REFUSING)
+@pytest.mark.parametrize("target", _FE_REFUSING + ["preflight"])
 def test_fe_suite_refuses_an_app_without_node_modules(tmp_path, target):
     """Every app is checked before any suite runs, so one installed app ahead of
     an uninstalled one runs nothing: the refusal names the uninstalled app and

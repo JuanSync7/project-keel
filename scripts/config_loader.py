@@ -1486,6 +1486,12 @@ KEYS = tuple(
                 accepts=_ONE_PATH_PART,
             ),
             _row(
+                ("layers", "frontend", "journey", "browser_executable"),
+                "str_or_null",
+                NONE,
+                "the journey browser executable override, or null for the runner's cache",
+            ),
+            _row(
                 ("shell", "enabled"),
                 "bool",
                 default=True,

@@ -31,6 +31,7 @@ __all__ = [
     "TEST",
     "Classified",
     "classify",
+    "check_install",
     "excluded_by",
     "kind",
     "settings",
@@ -230,6 +231,39 @@ def _find(name):
     return (here and shutil.which(name, path=here)) or shutil.which(name)
 
 
+def _missing_tool(cfg, role):
+    name = cfg[role]
+    return report(
+        ExitCode.BACKEND_ABSENT,
+        "the %s %s (shell.%s) is not installed" % (role.replace("_", " "), name, role),
+        "the interpreter's directory and PATH",
+        _INSTALL[name] + ", then rerun",
+    )
+
+
+def check_install(root, cfg):
+    """Check tools needed by shell gates, without counting or running tests."""
+    if not cfg["enabled"]:
+        return ExitCode.SUCCESS
+    unknown = _unknown_adapter(cfg)
+    if unknown is not None:
+        role, name = unknown
+        return report(
+            ExitCode.CONFIG,
+            "unknown shell adapter %s" % config_loader.quoted(name),
+            "%s.%s" % (_WHERE, role),
+            "configure an adapted shell tool",
+        )
+    scripts, tests, _stale = classify(root, cfg)
+    roles = (["linter", "formatter"] if scripts else []) + (
+        ["test_runner"] if tests else []
+    )
+    for role in roles:
+        if _find(cfg[role]) is None:
+            return _missing_tool(cfg, role)
+    return ExitCode.SUCCESS
+
+
 def _operands(paths):
     # A path that starts with `-` would read as an option, and not every
     # adapted tool takes `--` to end its options.
@@ -326,13 +360,7 @@ def _gate(mode, root, cfg):
         return ExitCode.SUCCESS
     exe = _find(name)
     if exe is None:
-        return report(
-            ExitCode.BACKEND_ABSENT,
-            "the %s %s (shell.%s) is not installed"
-            % (role.replace("_", " "), name, role),
-            "the interpreter's directory and PATH",
-            _INSTALL[name] + ", then rerun",
-        )
+        return _missing_tool(cfg, role)
     if mode == _TEST:
         count, why = _count_tests(exe, name, judged, root)
         if count is None:

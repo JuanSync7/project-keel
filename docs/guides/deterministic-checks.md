@@ -9,7 +9,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -32,7 +32,7 @@ CI) call them. Each script is self-describing (`--help`) and safe to re-run.
 ```bash
 make check        # fast structural gate — runs anywhere, incl. Python 3.6
 make check-all    # the full deterministic suite (needs the project interpreter)
-make verify       # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh (the everything gate)
+make verify       # preflight + check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh (the everything gate)
 ```
 
 Wire them once and forget:
@@ -1696,7 +1696,7 @@ does.
 `make verify` leaves one file saying what it judged: which gate ran, on which
 commit, with what result. Something outside the repository, such as
 project-jarvis, can read that file instead of scraping a log. The verify
-recipe runs `scripts/gate_evidence.py`, which runs each goal (`check-all`,
+recipe runs `scripts/gate_evidence.py`, which runs each goal (`preflight`, `check-all`,
 `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe`, `test-sh`) as its own make, in order. The writer then
 writes the record to `<evidence.dir>/<gate>.json`: `.evidence/verify.json`,
 with config/project.json `evidence.dir` = `.evidence`.

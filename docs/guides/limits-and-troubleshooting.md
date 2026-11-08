@@ -9,7 +9,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -522,6 +522,7 @@ and holds their conflict and duplicate-key paths to this contract.
 | `scripts/exit_code_table.py` | 0, 1, 2, 14 |
 | `scripts/gate_evidence.py` | 0, 2, 10, 14, 130, passes through |
 | `scripts/jobs/check_corpus.py` | 0, 1, 2, 14 |
+| `scripts/preflight.py` | 0, 2 |
 | `scripts/run_evals.py` | 0, 1, 2, 11, 14 |
 | `scripts/scan_secrets.py` | 0, 1, 2, 11, 13, 14 |
 | `scripts/shell_gate.py` | 0, 2, 11, 13, 14, passes through |

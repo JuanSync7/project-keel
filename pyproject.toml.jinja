@@ -12,7 +12,7 @@ dependencies = []
 
 [project.optional-dependencies]
 # The `dev` extra is every package the gate (`make verify`) imports, so
-# scripts/check_venv.py, the first goal of `make verify`, judges the venv against
+# scripts/check_venv.py, shared by preflight and check-all, judges the venv against
 # it and the extra each enabled transport names (config/project.json
 # transports.extras). It names `transport` as itself plus that extra rather than
 # repeating the three packages: the REST transport always ships, so its tests run

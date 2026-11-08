@@ -9,7 +9,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -1183,7 +1183,7 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   `- AC-<n>: <text>` line below it. A test names its unit with
   `@pytest.mark.req("REQ-0001#AC-1")`. A bare requirement id never covers a
   requirement that has numbered criteria.
-- **The gate is the judge.** "Done" means `make verify` (`check-all` + `secret-scan` + `lint` +
+- **The gate is the judge.** "Done" means `make verify` (`preflight` + `check-all` + `secret-scan` + `lint` +
   `typecheck` + `test` + `trace` + `eval` + `test-fe` + `test-sh`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through
   `scripts/run_make_target.py`, which runs only a target labelled inside

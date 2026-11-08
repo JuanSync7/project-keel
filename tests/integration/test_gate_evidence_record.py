@@ -342,6 +342,7 @@ def test_keels_verify_recipe_runs_the_driver_over_the_goals_check_w_reads():
     assert cmd.startswith("$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) "), cmd
     goals, unresolved = cs._recursions(cmd)
     assert goals == [
+        "preflight",
         "check-all",
         "secret-scan",
         "lint",

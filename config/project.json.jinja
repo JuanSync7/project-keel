@@ -203,6 +203,7 @@
     "write_shapes": [],
     "area_dir": null,
     "effect_proof_skip": {
+      "preflight": "a fresh clone has no recorded scanner or frontend dependencies, which is red by design; tests/integration/test_preflight.py proves refusal and a silent installed pass",
       "new": "generates a project outside the tree and needs DEST and a clean checkout",
       "audit-project": "audits another project's tree and needs DEST; the template checkout proves it read-only in tests/integration/test_copier_audit.py, a whole-tree hash of DEST with .git included (in a generated project the target is a stub naming the template)",
       "run-api": "a dev server that never exits",

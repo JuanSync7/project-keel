@@ -1,0 +1,215 @@
+"""
+title: Integration — verify refuses missing local installs before expensive goals
+summary: Drives the real preflight recipe on isolated projects with one missing install at a time, proves later work never starts, and checks the fully installed and backend-only cases without running verify.
+"""
+
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+import makefile_copy
+
+_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_ROOT / "scripts"))
+
+import check_structure as cs  # noqa: E402
+import config_loader  # noqa: E402
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def project(tmp_path):
+    makefile_copy.copy_makefiles(tmp_path, _ROOT)
+    shutil.copytree(_ROOT / "scripts", tmp_path / "scripts")
+    (tmp_path / "config").mkdir()
+    cfg = config_loader.read(str(_ROOT))
+    cfg["venv"]["extras"] = ["dev"]
+    cfg["transports"]["enabled"] = []
+    cfg["shell"]["enabled"] = False
+    cfg["layers"].setdefault("frontend", {}).setdefault("journey", {})[
+        "browser_executable"
+    ] = None
+    (tmp_path / "config/project.json").write_text(json.dumps(cfg))
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "probe"\nrequires-python = ">=3.10"\ndependencies = ["packaging"]\n[project.optional-dependencies]\ndev=[]\n'
+    )
+    scanner = Path(shutil.which("true"))
+    record = tmp_path / cfg["secrets"]["scanner"]["record_file"]
+    record.parent.mkdir(parents=True)
+    record.write_text(
+        json.dumps(
+            {
+                "name": cfg["secrets"]["scanner"]["name"],
+                "rev": cfg["secrets"]["scanner"]["rev"],
+                "path": str(scanner),
+                "sha256": hashlib.sha256(scanner.read_bytes()).hexdigest(),
+            }
+        )
+    )
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    for tool in ("npm", "shellcheck", "shfmt", "bats"):
+        (bindir / tool).symlink_to(scanner)
+    # Refusal cases need only tool presence; browser controls require real Node.
+    (bindir / "node").symlink_to(shutil.which("node") or "/bin/sh")
+    browser = tmp_path / "browser"
+    browser.symlink_to(scanner)
+    for name in ("one", "two"):
+        app = tmp_path / "src/frontend" / name
+        registry = app / "node_modules/playwright-core/lib"
+        registry.mkdir(parents=True)
+        (app / "package.json").write_text("{}")
+        (app / "node_modules/playwright-core/package.json").write_text("{}")
+        (registry / "coreBundle.js").write_text(
+            "exports.registry = { registry: { findExecutable: name => {\n"
+            'if (name !== "chromium-headless-shell") throw Error(name);\n'
+            "return {executablePath: () => " + json.dumps(str(browser)) + "}; }}};\n"
+        )
+    with (tmp_path / "Makefile").open("a") as stream:
+        stream.write("\nexpensive:\n\t@echo started > expensive-started\n")
+    return tmp_path, cfg, record, bindir, browser
+
+
+def _save(root, cfg):
+    (root / "config/project.json").write_text(json.dumps(cfg))
+
+
+def _run(project, *goals):
+    root, _cfg, _record, bindir, _browser = project
+    return subprocess.run(
+        [
+            shutil.which("make"),
+            "--no-print-directory",
+            *goals,
+            "PY=" + sys.executable + " -B",
+        ],
+        cwd=root,
+        env={"PATH": str(bindir), "HOME": str(root), "TMPDIR": str(root)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize(
+    "missing,diagnostic,remedy",
+    [
+        ("npm", "npm is not on PATH", "make fe-install"),
+        ("node", "node", "make fe-install"),
+        ("node-override", "node", "make fe-install"),
+        ("one", "one/ has no node_modules", "make fe-install"),
+        ("two", "two/ has no node_modules", "make fe-install"),
+        ("python", "keel-preflight-absent", "pip install -e"),
+        ("record", "no scanner record", "make secrets-install"),
+        ("scanner", "recorded scanner", "make secrets-install"),
+        ("digest", "changed after it was recorded", "make secrets-install"),
+        ("browser", "browser", "make fe-browsers"),
+        ("override", "custom-browser", "make fe-browsers"),
+        ("shellcheck", "shellcheck", "shellcheck-py wheel"),
+        ("shfmt", "shfmt", "shfmt-py wheel"),
+        ("bats", "bats", "install bats-core"),
+    ],
+)
+def test_missing_install_refuses_before_later_work(
+    project, missing, diagnostic, remedy, monkeypatch, capsys
+):
+    root, cfg, record, bindir, browser = project
+    if missing == "node-override":
+        (bindir / "node").unlink(missing_ok=True)
+        cfg["layers"]["frontend"]["journey"]["browser_executable"] = str(browser)
+        _save(root, cfg)
+    elif missing in ("npm", "node"):
+        (bindir / missing).unlink(missing_ok=True)
+    elif missing in ("one", "two"):
+        shutil.rmtree(root / "src/frontend" / missing / "node_modules")
+    elif missing == "python":
+        (root / "pyproject.toml").write_text(
+            '[project]\nname="probe"\ndependencies=["keel-preflight-absent"]\n[project.optional-dependencies]\ndev=[]\n'
+        )
+    elif missing == "record":
+        record.unlink()
+    elif missing in ("scanner", "digest"):
+        data = json.loads(record.read_text())
+        data["path" if missing == "scanner" else "sha256"] = (
+            "/absent/scanner" if missing == "scanner" else "wrong"
+        )
+        record.write_text(json.dumps(data))
+    elif missing == "browser":
+        if shutil.which("node") is None:
+            pytest.skip("cache-path discovery needs Node.js")
+        browser.unlink()
+    elif missing == "override":
+        cfg["layers"]["frontend"]["journey"]["browser_executable"] = str(
+            root / "custom-browser"
+        )
+        _save(root, cfg)
+    else:
+        cfg["shell"]["enabled"] = True
+        cfg["shell"]["no_scripts"] = None
+        _save(root, cfg)
+        (bindir / missing).unlink(missing_ok=True)
+        # A git listing is independent of a local tool's presence.
+        (root / "sample.sh").write_text("#!/bin/sh\ntrue\n")
+        (root / "sample.bats").write_text('@test "sample" { true; }\n')
+    if missing in ("shellcheck", "shfmt", "bats"):
+        import preflight
+        import shell_gate
+
+        monkeypatch.setattr(
+            shell_gate,
+            "classify",
+            lambda *_args: shell_gate.Classified(["sample.sh"], ["sample.bats"], []),
+        )
+        monkeypatch.setattr(shell_gate, "_interpreter_dir", lambda: str(bindir))
+        monkeypatch.setenv("PATH", str(bindir))
+        status = preflight.main(argv=[], root=str(root))
+        captured = capsys.readouterr()
+        result = subprocess.CompletedProcess([], status, captured.out, captured.err)
+    else:
+        result = _run(project, "preflight", "expensive")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert diagnostic in result.stderr, result.stderr
+    assert remedy in result.stderr, result.stderr
+    assert not (root / "expensive-started").exists()
+
+
+@pytest.mark.parametrize("frontend", [True, False])
+def test_preflight_passes_when_every_required_install_exists(project, frontend):
+    root, cfg, _record, bindir, _browser = project
+    if frontend and shutil.which("node") is None:
+        pytest.skip(
+            "the frontend control needs Node.js; the backend-only control still runs"
+        )
+    if not frontend:
+        shutil.rmtree(root / "src/frontend")
+        (bindir / "npm").unlink()
+        (bindir / "node").unlink(missing_ok=True)
+        del cfg["layers"]["frontend"]["journey"]
+        _save(root, cfg)
+    before = {
+        str(path.relative_to(root)): (path.read_bytes(), path.stat().st_mode)
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+    result = _run(project, "preflight")
+    after = {
+        str(path.relative_to(root)): (path.read_bytes(), path.stat().st_mode)
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    }
+    assert after == before
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == result.stderr == ""
+
+
+def test_verify_checks_installs_first():
+    rules = cs.make_target_rules((_ROOT / "Makefile").read_text())
+    verify = next(rule for rule in rules if rule.target == "verify")
+    assert verify.recursions[0] == "preflight", verify.recursions
+    assert cs.target_effects(str(_ROOT))["preflight"] == (("local",), None)

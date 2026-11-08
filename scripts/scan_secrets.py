@@ -205,6 +205,27 @@ def _recorded(root, cfg):
     return path, None
 
 
+def _missing_install(why, cfg):
+    return report(
+        ExitCode.BACKEND_ABSENT,
+        why,
+        "%s %s" % (cfg["name"], _shown(cfg["rev"])),
+        _INSTALL,
+    )
+
+
+def check_install(root, cfg):
+    """The recorded scanner's install verdict, without running a scan."""
+    git_tree.confined_path(root, os.path.join(root, cfg["record_file"]))
+    why = other_adapter(cfg)
+    if why is not None:
+        return report(ExitCode.CONFIG, why, "%s.name" % _WHERE, OTHER_ADAPTER_NEXT)
+    program, why = _recorded(root, cfg)
+    if program is None:
+        return _missing_install(why, cfg)
+    return ExitCode.SUCCESS
+
+
 def _refused(root, cfg):
     """The paths of the scanner's own config and ignore files a scan of *root*
     would sit beside: any git would commit, and any present at the root, where
@@ -336,9 +357,7 @@ def _scan(root, cfg, mode):
     # the commit hook, `make secret-scan` and CI judge with one checked build.
     program, why = _recorded(root, cfg)
     if program is None:
-        return report(
-            ExitCode.BACKEND_ABSENT, why, "%s %s" % (name, _shown(cfg["rev"])), _INSTALL
-        )
+        return _missing_install(why, cfg)
     staged = mode != _HISTORY
     # A scan of an empty stage passes over zero files, which proves nothing.
     if staged and not git_tree.staged_paths(root, repo_context=True):

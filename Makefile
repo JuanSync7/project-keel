@@ -51,7 +51,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts verify test trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts preflight verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
         fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -69,7 +69,7 @@ check-python: ## [local] Fail early with a clear message if PY is older than pyp
 
 # The venv's packages against pyproject.toml: the core dependencies, the extras
 # config/project.json venv.extras names and each enabled transport's extra. It is
-# check-all's first prerequisite, and check-all is verify's first goal (and CI's
+# check-all's first prerequisite, and preflight checks it before verify's goals (and CI's
 # own step), so a venv older than pyproject.toml stops the gate with the pip
 # command that fixes it instead of an import error, or a skipped suite, several
 # goals in. [local]: it reads installed metadata and never the network.
@@ -178,11 +178,11 @@ long-scripts: ## [local] Propose the scripts whose last run recorded by scripts/
 # leave an earlier green record standing. scripts/gate_evidence.py runs each goal,
 # passes the first failing code through and writes the record to config/project.json
 # evidence.dir (an ignored path, so [local] stays true). check_W reads the goals of
-# this `$(MAKE)` line, so the label still closes over all nine. make runs a
+# this `$(MAKE)` line, so the label still closes over all ten. make runs a
 # `$(MAKE)` line even under -n; the driver reads -n/-q/-t from MAKEFLAGS and writes
 # nothing then. It runs the goals in sequence, so -j does not parallelise them.
-verify: ## [local] Run all gates (all checks + secret scan + lint + types + tests + traceability + evals + frontend tests + shell tests) and write their evidence record to config/project.json evidence.dir
-	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) check-all secret-scan lint typecheck test trace eval test-fe test-sh
+verify: ## [local] Check local installs first, then run all gates (all checks + secret scan + lint + types + tests + traceability + evals + frontend tests + shell tests) and write their evidence record to config/project.json evidence.dir
+	$(PY) scripts/gate_evidence.py --gate $@ -- $(MAKE) preflight check-all secret-scan lint typecheck test trace eval test-fe test-sh
 
 # JUNIT_XML is empty unless scripts/gate_evidence.py sets it per goal: pytest then
 # writes its own junit report, the only source of the evidence record's test
@@ -297,15 +297,26 @@ typecheck-fe: ## [local] Type-check frontend apps (tsc / astro check)
 # the host, port, timeout and browser come from config/project.json
 # layers.frontend.journey, read by each app's runner config.
 test-fe: test-fe-unit test-fe-e2e ## [local] Run every frontend test suite (unit runner + browser journey)
+# All refusing FE targets share this guard so their advice cannot drift from
+# preflight. Keep it in the same shell as the loop: exit ends that shell only.
+define REQUIRE_FE_INSTALLS
+test -n "$(strip $(FE_APPS))" || exit 0; \
+for tool in npm node; do command -v "$$tool" >/dev/null 2>&1 || { echo "$@: $$tool is not on PATH, so no $(1) for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its $(2); run 'make fe-install', then run it again" >&2; exit 2; }; done;
+endef
+
+# No prerequisites: even make -j must finish every install check before any
+# gate starts. The evidence driver sequences this first goal before the rest.
+preflight: ## [local] Refuse missing local installs before any verify gate runs, naming the remedy
+	@$(if $(strip $(FE_APPS)),$(call REQUIRE_FE_INSTALLS,frontend gate can run,frontend gates cannot run),:)
+	@{ $(PY) scripts/check_python_version.py; } >/dev/null
+	@$(PY) scripts/preflight.py $(FE_APPS)
+
 test-fe-unit: ## [local] Run each frontend app's unit tests (npm script test:unit)
-	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no frontend unit test ran for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
-	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its unit tests did not run; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	@$(call REQUIRE_FE_INSTALLS,frontend unit test ran,unit tests did not run) \
 	for app in $(FE_APPS); do echo "unit tests: $$app"; (cd $$app && npm run --silent test:unit) || exit 1; done
 test-fe-e2e: ## [local] Run each frontend app's browser journey headless against its built site (npm script test:e2e)
-	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no frontend browser journey ran for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
-	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its browser journey did not run; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	@$(call REQUIRE_FE_INSTALLS,frontend browser journey ran,browser journey did not run) \
 	for app in $(FE_APPS); do echo "browser journey: $$app"; (cd $$app && npm run --silent test:e2e) || exit 1; done
 
 # Each lockfile is resolved under one Node major, config/project.json
@@ -327,9 +338,7 @@ fe-install: ## [tree,read] Install frontend deps for all FE apps, after checking
 # read after the refusals, so a host with no npm is refused before any Python runs.
 FE_BROWSER_FLAGS =
 fe-browsers: ## [read] Download the browser each frontend app's journey drives (npm script test:e2e:browsers), from install_sources.browser_download_host when set
-	@test -n "$(strip $(FE_APPS))" || exit 0; \
-	command -v npm >/dev/null 2>&1 || { echo "$@: npm is not on PATH, so no journey browser was downloaded for $(strip $(FE_APPS)); install Node.js and run 'make fe-install', then run it again" >&2; exit 2; }; \
-	for app in $(FE_APPS); do [ -d "$$app/node_modules" ] || { echo "$@: $$app has no node_modules, so its journey browser was not downloaded; run 'make fe-install', then run it again" >&2; exit 2; }; done; \
+	@$(call REQUIRE_FE_INSTALLS,journey browser was downloaded,journey browser was not downloaded) \
 	host=$$($(PY) scripts/install_sources.py browser_download_host) || exit $$?; \
 	if [ -n "$$host" ]; then PLAYWRIGHT_DOWNLOAD_HOST=$$host; export PLAYWRIGHT_DOWNLOAD_HOST; fi; \
 	for app in $(FE_APPS); do echo "journey browser: $$app"; (cd $$app && npm run --silent test:e2e:browsers -- $(FE_BROWSER_FLAGS)) || exit 1; done

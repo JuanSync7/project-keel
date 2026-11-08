@@ -9,7 +9,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -34,7 +34,7 @@ Every loop below ends each pass at the **same gate**, and "done" means the gate 
 green — never a self-assessment:
 
 ```
-make verify   # check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh   (the full bar)
+make verify   # preflight + check-all + secret-scan + lint + typecheck + test + trace + eval + test-fe + test-sh   (the full bar)
 make test     # pytest over the whole suite on tests.workers parallel workers (tiers: unit · integration · e2e · smoke)
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
@@ -114,6 +114,14 @@ on the model's claim of success rather than a real exit code is unsafe — gate 
 the exit code, always (see the deterministic-checks catalogue:
 [deterministic-checks.md](deterministic-checks.md)).
 
+`make verify` runs `make preflight` before its gates. A missing Python requirement,
+scanner record, frontend dependency, journey browser or applicable shell tool
+refuses before the tests start. The message names the missing install and its
+existing install target, or reuses the Python check's pip advice or the shell
+check's tool advice when no target exists. `make preflight` runs no gate and installs nothing. A backend-only
+project needs neither npm nor a journey browser. The browser check reads the
+installed runner's cache path; it does not launch a browser or judge system libraries.
+
 ### Which tier to run when
 
 The tiers below are the Makefile targets, smallest first. The tiers do not
@@ -125,7 +133,7 @@ it alone is the judge of "done".
 | Inner loop | `make check`, then `pytest <file> -k <name>` or `make unit` | structure and frontmatter; the one test you are driving, or every `unit`-marked test | after each edit in a TDD pass |
 | Before a commit | `make lint`, `make typecheck`, `make check-all` | ruff and the format check; mypy strict over the `pyproject.toml` `[tool.mypy]` roots; every deterministic check | before each commit |
 | Before a merge | `make integration`, `make e2e` | the tests that start child processes, render projects and drive transports | when a change reaches what those tests drive |
-| Full gate | `make verify` | `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe` and `test-sh`, with the evidence record | before you call a slice done |
+| Full gate | `make verify` | `preflight`, `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe` and `test-sh`, with the evidence record | before you call a slice done |
 
 The `integration` tier holds most of the suite's time, so the inner loop leaves it
 out. The full gate never does: a slice is done only when `make verify` exits 0.
