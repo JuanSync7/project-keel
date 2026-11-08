@@ -70,7 +70,7 @@ _ROLE = {
 # files. These are the tools' own flags, which is why a name outside this table
 # is refused rather than run with a guess.
 _ADAPTERS = {
-    "linter": {"shellcheck": {_LINT: ()}},
+    "linter": {"shellcheck": {_LINT: ("-x", "--source-path=SCRIPTDIR")}},
     # -d prints a diff and exits 1 when a file would change; -w rewrites in place.
     "formatter": {"shfmt": {_FORMAT_CHECK: ("-d",), _FORMAT: ("-w",)}},
     "test_runner": {"bats": {_TEST: ()}},

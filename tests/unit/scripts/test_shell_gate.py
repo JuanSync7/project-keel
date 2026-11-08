@@ -46,6 +46,9 @@ _CFG = _shell_config()
 # Kept before the fixture patches it out, for the tests of the lookup order.
 _REAL_INTERPRETER_DIR = shell_gate._interpreter_dir
 _LINTER, _FORMATTER, _RUNNER = (_CFG[r] for r in _ROLES)
+_REAL_LINTER = shutil.which(
+    _LINTER, path=str(Path(sys.executable).parent) + os.pathsep + os.environ["PATH"]
+)
 
 # The stub stands in for every tool: it records what it was handed and answers
 # with the plan for its own name, so a test can make a tool find, pass or lie.
@@ -175,6 +178,35 @@ def test_lint_runs_the_linter_over_every_shell_script_a_commit_could_carry(proje
     (call,) = project.calls(_LINTER)
     assert call["argv"][-len(_SCRIPTS) :] == _SCRIPTS, call["argv"]
     assert project.calls(_FORMATTER) == project.calls(_RUNNER) == []
+
+
+def _documented_source(project):
+    project.write(
+        shell_gate.HELPER_SH,
+        (_ROOT / shell_gate.HELPER_SH).read_text(encoding="utf-8"),
+    )
+    project.write(
+        "scripts/report.sh",
+        '#!/bin/sh\n. "$(dirname "$0")/exit_codes.sh"\nexit "$EXIT_SUCCESS"\n',
+    )
+
+
+def test_lint_follows_the_documented_helper_source(project):
+    _documented_source(project)
+    assert project.run("lint") == ExitCode.SUCCESS
+    (call,) = project.calls(_LINTER)
+    assert call["argv"] == ["-x", "--source-path=SCRIPTDIR", "scripts/report.sh"]
+
+
+@pytest.mark.skipif(_REAL_LINTER is None, reason="ShellCheck is not installed")
+def test_the_documented_helper_source_lints_with_real_shellcheck(project, monkeypatch):
+    _documented_source(project)
+    # Search the real tool's directory before the fixture's stub-only PATH.
+    monkeypatch.setattr(
+        shell_gate, "_interpreter_dir", lambda: str(Path(_REAL_LINTER).parent)
+    )
+    assert project.run("lint") == ExitCode.SUCCESS
+    assert project.calls() == []
 
 
 def test_an_untracked_script_git_does_not_ignore_is_judged_too(project):

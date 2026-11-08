@@ -9,7 +9,7 @@ tags: [practices, style, readability, robustness, guide]
 summary: The canonical statement of how a shell script is written in this project — the opening comment block the corpus reads, the re-exec line that puts the script under the child environment allowlist, the exit helper every ending goes through, a configured value read through scripts/config_get.py, the lint, format and test tools behind make targets, and what each of those gates cannot see. The provable floor is gated (check_O, check_V, check_X, test_exit_gate, test_config_reads_gate, scripts/shell_gate.py); this guide is the judgment above it.
 id: docs-guides-shell-style
 created: 2026-11-02
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -41,7 +41,6 @@ decides it.
 # summary: Reads the pad CSV the KEYS row `pads.csv` names, prints each unassigned pad, and exits FAILURE when any is.
 # effect: read-only
 [ "${KEEL_CHILD_ENV-}" = "$$" ] || exec python3 "$(dirname "$0")/child_exec.py" "$0" "$@"
-# shellcheck source=/dev/null
 . "$(dirname "$0")/exit_codes.sh"
 
 csv=$(python3 "$(dirname "$0")/config_get.py" pads.csv) || exit_passthrough "$?"
@@ -117,11 +116,13 @@ in `/exit_codes.sh`) before its first ending, and ends in one of three ways:
   bare `name=$?` bound earlier in the main shell and that is otherwise only
   read as `$name`.
 
-The `# shellcheck source=/dev/null` line above the source line is what lets
-`make lint-sh` pass. The linter runs without `-x`, so it does not follow a
-sourced file, and it reports a source path it cannot follow, built from
-`$(dirname "$0")`, as SC1091, which fails the target. The helper needs no
-lint of its own here, because `make check-exit-codes` holds it to the enum.
+`make lint-sh` runs ShellCheck with `-x --source-path=SCRIPTDIR`, configured
+in the linter adapter's arguments in `scripts/shell_gate.py`. It follows
+sourced files and searches beside each script, so the `$(dirname "$0")`
+form above resolves to the helper in the same directory. No
+`# shellcheck source=/dev/null` directive is needed: that directive would
+hide the helper from the linter. `make check-exit-codes` also holds the
+generated helper to the enum.
 
 The gate fails `exit 3`, `exit $?`, a bare `exit`, a `return` of a number,
 `eval`, and a command named by an expansion (`$x 3`), each at its file and

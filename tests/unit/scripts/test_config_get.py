@@ -123,6 +123,15 @@ def test_a_config_fault_is_config_and_prints_nothing(tmp_path, manifest, said):
     assert said in err, err
 
 
+def test_a_wrong_value_refusal_is_printed_exactly_once(tmp_path):
+    manifest = json.loads((_ROOT / "config" / "project.json").read_text())
+    manifest["shell"]["formatter"] = 3
+    code, out, err = _run(_project(tmp_path, manifest), "shell.formatter")
+    assert (code, out) == (ExitCode.CONFIG, ""), err
+    refusal = "config/project.json: shell.formatter is integer 3; accepted: a non-empty string"
+    assert err.count(refusal) == 1, err
+
+
 @pytest.mark.parametrize("relpath", ["config/project.json", "config/practices.json"])
 @pytest.mark.parametrize("fault", ["decoder", "members", "copy"])
 def test_recursive_config_is_config_naming_the_file_without_output(

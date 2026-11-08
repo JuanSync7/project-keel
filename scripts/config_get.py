@@ -10,6 +10,7 @@ summary: The shell side of scripts/config_loader.py. `config_get.py KEY` prints 
 # NB: stdlib only, no f-strings, no annotations: a shell script runs it with
 # the host's bare `python3`, which may be 3.6 (as config_loader's own note says).
 
+import io
 import json
 import os
 import sys
@@ -60,9 +61,10 @@ def main(argv=None, root=None):
             "let the program that needs it read it from the environment",
         )
     where = _ENVIRONMENT if row.file is None else row.file
+    messages = io.StringIO()
     try:
         loaded = {} if row.file is None else config_loader.read(base, row.file)
-        value = config_loader.resolve(loaded, (row,), where)[row.path]
+        value = config_loader.resolve(loaded, (row,), where, stream=messages)[row.path]
     except config_loader.ConfigError as exc:
         return report(
             ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
@@ -70,6 +72,7 @@ def main(argv=None, root=None):
             "; ".join(exc.lines),
             "correct %s as the line says, then run it again" % where,
         )
+    sys.stderr.write(messages.getvalue())
     if isinstance(value, str):
         sys.stdout.write(value + "\n")
     else:
