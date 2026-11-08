@@ -13,8 +13,9 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from agents.index_enforcer import summarize_gap  # noqa: E402
+from agents.index_enforcer import enforce, summarize_gap  # noqa: E402
 from models import ModelBackend  # noqa: E402
+from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -44,3 +45,55 @@ def test_summarize_gap_sends_the_real_prompt_and_strips_the_reply():
     assert prompt.startswith(preamble)
     assert "Write ONE plain sentence" in prompt
     assert "title: Ingest\npath: src/ingest.py\n---\ndef ingest(): ..." in prompt
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+@pytest.mark.parametrize(
+    "out",
+    ["not JSON", "", "{}", "[1]", "no corpus at wiki/corpus.json; unexpected"],
+    ids=["non-JSON", "blank", "object", "non-object-member", "other-notice"],
+)
+def test_unreadable_owner_report_fails_the_run(tmp_path, monkeypatch, execute, out):
+    """A broken tool raises the shared refusal, never a clean owner-gap report."""
+    corpus = tmp_path / "wiki" / "corpus.json"
+    corpus.parent.mkdir()
+    corpus.write_text('{"nodes": []}', "utf-8")
+
+    def run(args):
+        if args[0] == "scripts/accountability_report.py":
+            return 0, out, "owner report diagnostic"
+        return 0, "", ""
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    with pytest.raises(ToolReportUnreadable, match="accountability_report") as raised:
+        enforce(root=str(tmp_path), execute=execute)
+    assert str(tmp_path) in raised.value.parts[1]
+    assert "exited 0" in raised.value.parts[1]
+    assert "owner report diagnostic" in raised.value.parts[1]
+    assert all(part.strip() for part in raised.value.parts)
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_no_corpus_notice_is_not_a_failed_run(tmp_path, monkeypatch, execute):
+    """The tool's fixed successful no-corpus notice is a valid empty index."""
+
+    def run(args):
+        if args[0] == "scripts/accountability_report.py":
+            return 0, "no corpus at wiki/corpus.json; run build_corpus.py first.\n", ""
+        return 0, "", ""
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    report = enforce(root=str(tmp_path), execute=execute)
+    assert report.nodes == 0 and report.owner_gaps == ()
+    assert report.dry_run is not execute
+
+
+def test_no_corpus_notice_with_failed_status_fails_the_run(tmp_path, monkeypatch):
+    def run(args):
+        if args[0] == "scripts/accountability_report.py":
+            return 1, "no corpus at wiki/corpus.json; run build_corpus.py first.\n", ""
+        return 0, "", ""
+
+    monkeypatch.setattr("agents.index_enforcer._brain._run", run)
+    with pytest.raises(ToolReportUnreadable, match="exited 1"):
+        enforce(root=str(tmp_path))

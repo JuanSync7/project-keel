@@ -7,7 +7,6 @@ summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answ
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 from collections.abc import Collection
@@ -15,7 +14,7 @@ from dataclasses import dataclass
 
 from models import ModelBackend, ModelMeter, get_model
 from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
-from scripts import config_loader, corpus_level
+from scripts import config_loader, corpus_level, tool_reports
 from scripts.resource_limits import run_tool
 
 __all__ = ["answer", "synthesize", "Answer", "Citation"]
@@ -113,10 +112,9 @@ def _retrieve(state):
     )
     if rc != 0:
         raise RuntimeError("query_corpus failed (rc=%d): %s" % (rc, err.strip()))
-    try:
-        hits = json.loads(out) if out.strip() else []
-    except ValueError:  # noqa: DROP001 -- KEEL-ERR-2 tells a tool report that does not parse from an empty one
-        hits = []
+    hits = tool_reports.read_report(
+        "scripts/query_corpus.py", rc, out, err, state["root"], container=list
+    )
     served = config_loader.served_visibilities(state["root"])
     visible = _visible(hits, served)
     citations = tuple(

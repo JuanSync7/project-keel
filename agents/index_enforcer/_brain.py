@@ -27,7 +27,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts import config_loader
+from scripts import config_loader, tool_reports
 from scripts.resource_limits import run_tool
 
 __all__ = ["enforce", "summarize_gap", "EnforceReport"]
@@ -146,15 +146,24 @@ def _report(state):
     summary_gaps = tuple(n["node_id"] for n in _ungapped(corpus))
     # Owner gaps come from the declared accountability_report tool (its CLI),
     # not a re-implemented predicate here -- read-only, so safe in dry-run too.
-    _, ar_out, _ = _run(
+    rc, ar_out, err = _run(
         ["scripts/accountability_report.py", "--corpus", _CORPUS, "--json"]
     )
-    try:
-        owner_gaps = (
-            tuple(n["node_id"] for n in json.loads(ar_out)) if ar_out.strip() else ()
+    # accountability_report.py:117-119 deliberately succeeds without JSON
+    # before a corpus exists, so only its fixed notice may skip the reader.
+    no_corpus = "no corpus at %s; run build_corpus.py first." % _CORPUS
+    if rc == 0 and ar_out.rstrip("\n") == no_corpus:
+        owner_gaps = ()
+    else:
+        owners = tool_reports.read_report(
+            "scripts/accountability_report.py",
+            rc,
+            ar_out,
+            err,
+            state["root"],
+            container=list,
         )
-    except ValueError:  # noqa: DROP001 -- no corpus yet prints a notice, not JSON; KEEL-ERR-2 tells a tool report that does not parse from an empty one
-        owner_gaps = ()  # no corpus yet (tool prints a notice, not JSON)
+        owner_gaps = tuple(n["node_id"] for n in owners)
     return {
         "corpus": corpus,
         "nodes": nodes,

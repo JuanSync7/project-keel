@@ -17,10 +17,48 @@ sys.path.insert(0, str(_ROOT))
 from agents.wiki_navigator import answer, synthesize  # noqa: E402
 from models import ModelBackend  # noqa: E402
 from scripts import corpus_level  # noqa: E402
+from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
 
 import reclassify  # noqa: E402
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+@pytest.mark.parametrize(
+    "out",
+    ["not JSON", "", "{}", "[1]"],
+    ids=["non-JSON", "blank", "object", "non-object-member"],
+)
+def test_unreadable_retrieval_report_fails_the_run(tmp_path, monkeypatch, execute, out):
+    """A broken retrieval raises the shared refusal before building a model."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
+    seen = _Seen("should not be called")
+    built = []
+
+    def factory(name):
+        built.append(name)
+        return seen
+
+    def run(args, *, root):
+        return 0, out, "retrieval diagnostic"
+
+    monkeypatch.setattr("agents.wiki_navigator._brain._run", run)
+    with pytest.raises(ToolReportUnreadable, match="query_corpus") as raised:
+        answer(
+            "alpha",
+            root=str(tmp_path),
+            execute=execute,
+            max_model_calls=1,
+            backend_factory=factory,
+        )
+    assert str(tmp_path) in raised.value.parts[1]
+    assert "exited 0" in raised.value.parts[1]
+    assert "retrieval diagnostic" in raised.value.parts[1]
+    assert all(part.strip() for part in raised.value.parts)
+    assert built == [] and seen.prompts == []
+
 
 _NODES = [
     {
