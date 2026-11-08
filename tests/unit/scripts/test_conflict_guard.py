@@ -63,6 +63,78 @@ def test_has_conflict_grammar():
     assert not conflict_guard.has_conflict("")
 
 
+def _incoming_opener_merge():
+    # Verbatim git merge-file output for ours="ours\\n", base="base\\n",
+    # theirs="<opening marker> data\\ntheirs\\n", with copier's three labels.
+    return (
+        f"{_OPEN} before updating\nours\n{_SPLIT}\n"
+        f"{_OPEN} data\ntheirs\n{_CLOSE} after updating\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        pytest.param(
+            f"a\n{_OPEN} before updating\nours\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\nz\n",
+            [2],
+            id="merge-labelled",
+        ),
+        pytest.param(
+            f"a\n{_OPEN}\nours\n{_SPLIT}\ntheirs\n{_CLOSE}\nz\n", [2], id="merge-bare"
+        ),
+        pytest.param(
+            f"a\n{_OPEN} before updating\nours\n{_BASE} last update\nbase\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
+            [2],
+            id="diff3",
+        ),
+        pytest.param(
+            f"a\r\n{_OPEN}\r\nours\r\n{_SPLIT}\r\ntheirs\r\n{_CLOSE}\r\n",
+            [2],
+            id="crlf",
+        ),
+        pytest.param(
+            f"{_OPEN} before updating\nours\n{_OPEN} data\nmore ours\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
+            [1],
+            id="opener-in-ours",
+        ),
+        pytest.param(_incoming_opener_merge(), [1], id="merge-file-incoming-opener"),
+        pytest.param(
+            f"{_OPEN} before updating\nours\n{_BASE} last update\nbase\n{_OPEN} data\nmore base\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
+            [1],
+            id="opener-in-diff3-base",
+        ),
+        pytest.param(f"{_OPEN} stray\ntext\n", [], id="stray-opener"),
+        pytest.param(
+            f"{_OPEN} stray\ntext\n{_OPEN} before updating\nours\n{_SPLIT}\ntheirs\n{_CLOSE} after updating\n",
+            [1],
+            id="stray-before-real-hunk",
+        ),
+        pytest.param(
+            f"{_OPEN} one\nours\n{_SPLIT}\ntheirs\n{_CLOSE} one\n{_OPEN} two\nours\n{_SPLIT}\ntheirs\n{_CLOSE} two\n",
+            [1, 6],
+            id="two-hunks",
+        ),
+        pytest.param(
+            f"{_OPEN} before updating\nours\n{_SPLIT}\n{_OPEN} data\ntheirs\n{_CLOSE} after updating\n{_OPEN} two\nours\n{_SPLIT}\ntheirs\n{_CLOSE} two\n",
+            [1, 7],
+            id="incoming-opener-then-hunk",
+        ),
+        pytest.param(f"Title\n{_SPLIT}\n\nBody\n", [], id="setext"),
+        pytest.param(f"x = '{_OPEN}'\n{_SPLIT}\ny\n{_CLOSE}\n", [], id="inline-marker"),
+        pytest.param(
+            f"{_OPEN}x\nours\n{_SPLIT}\ntheirs\n{_CLOSE}\n", [], id="glued-opener"
+        ),
+        pytest.param(f"{_OPEN} ours\nours\n{_SPLIT}\ntheirs\n", [], id="missing-close"),
+        pytest.param("", [], id="empty"),
+    ],
+)
+def test_conflict_lines_candidates(text, expected):
+    assert conflict_guard.conflict_lines(text) == expected
+    assert conflict_guard.conflict_line(text) == (expected[0] if expected else None)
+    assert conflict_guard.has_conflict(text) is bool(expected)
+
+
 def _write(root, rel, text):
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -158,7 +230,16 @@ def test_a_refusal_survives_an_exit_helper_that_cannot_be_imported(
         ("declare_no_app", "scripts/jobs/declare_no_app.py --quiet"),
     ],
 )
-def test_every_after_migration_job_refuses_a_conflicted_import(tmp_path, job, rerun):
+@pytest.mark.parametrize(
+    "hunk",
+    [
+        pytest.param(_merge(label=True), id="ordinary-hunk"),
+        pytest.param(_incoming_opener_merge(), id="incoming-opener"),
+    ],
+)
+def test_every_after_migration_job_refuses_a_conflicted_import(
+    tmp_path, job, rerun, hunk
+):
     """Each `after` migration in copier.yml imports review_docs; a conflict there
     stops the job before the import, exit 2, naming the file and the rerun."""
     proj = tmp_path / "proj"
@@ -168,9 +249,7 @@ def test_every_after_migration_job_refuses_a_conflicted_import(tmp_path, job, re
         ignore=shutil.ignore_patterns("__pycache__"),
     )
     target = proj / "scripts" / "jobs" / "review_docs.py"
-    target.write_text(
-        target.read_text(encoding="utf-8") + _merge(label=True), encoding="utf-8"
-    )
+    target.write_text(target.read_text(encoding="utf-8") + hunk, encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, "scripts/jobs/%s.py" % job, "--quiet"],
         cwd=str(proj),

@@ -103,15 +103,18 @@ def marker(line, mark):
 def conflict_lines(text):
     """The 1-based line of the opening marker of each complete hunk in *text*,
     in order. Lenient on purpose: a guard must see every hunk a merge could
-    leave, so a second opening marker before the close restarts the hunk
-    rather than refusing it (scripts/jobs/resolve_stamp_conflicts.py is the
-    strict reader, because it writes)."""
+    leave. Keep the first opening candidate and any separator until a close
+    completes it, treating further openers as content. A stray opener cannot
+    hide a later hunk; its line remains the candidate's reported opening
+    (scripts/jobs/resolve_stamp_conflicts.py is the strict reader, because it
+    writes)."""
     found = []
     opened = None
     split = False
     for lineno, line in enumerate(text.splitlines(), 1):
         if marker(line, OPEN):
-            opened, split = lineno, False
+            if opened is None:
+                opened = lineno
         elif opened is not None and not split and marker(line, SPLIT):
             split = True
         elif split and marker(line, CLOSE):
