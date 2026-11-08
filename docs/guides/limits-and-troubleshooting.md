@@ -922,16 +922,28 @@ kept on purpose, such as a test fixture, with its reason.
 
 ## Browser registry probe limits
 
-Browser registry probes in `scripts/preflight.py` read two positive integer
-limits from config/project.json `layers.frontend.browser_probe` through the config
-loader: `timeout_seconds` defaults to 10 seconds (at most
-`threading.TIMEOUT_MAX`), and `stderr_max_chars` defaults to 240 characters.
-Wrong types or bounds refuse preflight with exit 14 (`CONFIG`). A cut stderr
-line ends in `...` within the character bound (one or two dots for bounds of
-1 or 2); a line exactly at the bound stays unchanged.
+Browser registry probes in `scripts/preflight.py` read their limits from
+config/project.json `layers.frontend.browser_probe` through `scripts/config_loader.py`.
+The `scripts/config_loader.py` `KEYS` row for
+`layers.frontend.browser_probe.timeout_seconds` requires an integer from 1
+through `threading.TIMEOUT_MAX`.
+That row's default is 10 seconds.
+`scripts/preflight.py` uses this key to bound the browser registry probe wait.
+The `scripts/config_loader.py` `KEYS` row for
+`layers.frontend.browser_probe.stderr_max_chars` requires an integer of at least 1.
+That row's default is 240 characters.
+`scripts/preflight.py` uses this key to bound the chosen stderr line's length.
+`scripts/preflight.py` refuses wrong-typed or out-of-bound probe limits with
+exit 14 (`CONFIG`).
+`scripts/preflight.py` `_probe_refused` ends a cut stderr line in `...` within
+the character bound.
+For a bound of 1 or 2, `_probe_refused` uses that many dots.
+`_probe_refused` leaves a line exactly at the bound unchanged.
+In `tests/integration/test_gate_scope.py`,
+`test_every_frontend_app_wires_both_suites` checks
 `src/frontend/astro/playwright.config.ts` and
-`src/frontend/react-vite/playwright.config.ts` read the browser runner's
-settings from `layers.frontend.journey`.
+`src/frontend/react-vite/playwright.config.ts` for `journey` and a property
+access for every declared `layers.frontend.journey` key.
 
 ## Symptom, cause, fix
 

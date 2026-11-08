@@ -1714,19 +1714,14 @@ probe exits nonzero or returns empty output, preflight names
 (or says it is unreadable), and the first stderr line starting with an error
 class and colon (optionally a ` [CODE]` before the colon) or `error:` in any
 case, else the first non-blank line.
-The `scripts/config_loader.py` `KEYS` row for
-`layers.frontend.browser_probe.timeout_seconds` requires an integer from 1
-through `threading.TIMEOUT_MAX`.
-That row's default is 10 seconds.
-`scripts/preflight.py` uses this key to bound the browser registry probe wait.
-The `scripts/config_loader.py` `KEYS` row for
-`layers.frontend.browser_probe.stderr_max_chars` requires an integer of at least 1.
-That row's default is 240 characters.
-`scripts/preflight.py` uses this key to bound the chosen stderr line's length.
-The browser runner's settings live in
-`layers.frontend.journey`. A cut ends in `...` within the character bound;
-a bound of 1 or 2 uses that many dots. A line at the bound is unchanged.
-Wrong-typed or out-of-bound limits exit 14 (`CONFIG`).
+The [browser registry probe limits](limits-and-troubleshooting.md#browser-registry-probe-limits)
+section documents the keys, types, bounds, defaults, effects, configuration
+refusal code and stderr cut rules.
+In `tests/integration/test_gate_scope.py`,
+`test_every_frontend_app_wires_both_suites` checks
+`src/frontend/astro/playwright.config.ts` and
+`src/frontend/react-vite/playwright.config.ts` for `journey` and a property
+access for every declared `layers.frontend.journey` key.
 Only these probe refusals advise updating the probe or setting
 `layers.frontend.journey.browser_executable` to an installed browser.
 
