@@ -9,7 +9,7 @@ tags: [showcase, demo, frontend, astro, fastapi, wiki, guide]
 summary: How the docs/wiki frontend presents the template as a product and stays in sync with the backend.
 id: docs-guides-showcase-site
 created: 2026-06-19
-updated: 2026-11-07
+updated: 2026-11-08
 visibility: internal
 canonical: true
 ---
@@ -61,7 +61,7 @@ reload the page → the wiki, counts, and search reflect it. No frontend rebuild
 
 ## What the site never shows
 
-The read model holds only the corpus nodes at a level in
+The read model holds only the corpus nodes at a level in the read checkout's
 `config/project.json` `corpus.served_visibilities`, `public` and `internal` by
 default (CONVENTIONS §1). `Showcase` cuts the corpus once, when it is built, so
 node detail, search, the doc tree, links, children, parent, counts and both

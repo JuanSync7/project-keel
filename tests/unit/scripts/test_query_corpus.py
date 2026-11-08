@@ -169,6 +169,43 @@ def test_main_refuses_a_level_outside_the_vocabulary(tmp_path, monkeypatch, caps
 # ---- a served node names no hidden node in its links, children or parent ---
 
 
+@pytest.mark.parametrize("selector", ["--root", "--corpus"])
+def test_another_checkouts_served_levels_apply(tmp_path, capsys, selector):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"corpus": {"served_visibilities": ["public"]}}), "utf-8"
+    )
+    corpus = {
+        "nodes": [
+            _node("open", summary="Zebra open.", visibility="public"),
+            _node("inside", summary="Zebra inside.", visibility="internal"),
+        ]
+    }
+    path = _corpus_file(tmp_path)
+    path.write_text(json.dumps(_on_disk(tmp_path, corpus)), "utf-8")
+    selected = tmp_path if selector == "--root" else path
+    assert qc.main(["zebra", selector, str(selected)]) is qc.ExitCode.SUCCESS
+    captured = capsys.readouterr()
+    assert [n["node_id"] for n in json.loads(captured.out)] == ["open"]
+
+
+def test_another_checkouts_refused_level_names_its_config(tmp_path, capsys):
+    config = tmp_path / "config" / "project.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps({"corpus": {"served_visibilities": ["unreadable-readme"]}}),
+        "utf-8",
+    )
+    path = _corpus_file(tmp_path)
+    path.write_text(json.dumps(_on_disk(tmp_path, _hidden_corpus())), "utf-8")
+    assert qc.main(["zebra", "--corpus", str(path)]) is qc.ExitCode.CONFIG
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(config) in captured.err
+    assert "corpus.served_visibilities" in captured.err
+    assert "unreadable-readme" in captured.err
+
+
 def _doc(doc_id, title, visibility, body):
     return (
         "---\ntitle: %s\nkind: doc\nlayer: n/a\nstatus: stable\nowner: someone\n"
@@ -306,6 +343,9 @@ def _stale_project(base):
     shutil.copy(str(b / reclassify.GUIDE), str(c / reclassify.GUIDE))
     readme.mkdir()
     (readme / "README.md").write_text("# Readme\n\nZebra.\n", encoding="utf-8")
+    for root in (c, readme):
+        (root / "config").mkdir()
+        (root / "config" / "project.json").write_text("{}", "utf-8")
     return a, b, c, readme
 
 

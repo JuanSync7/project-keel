@@ -144,7 +144,9 @@ def _files(root):
     level they state on disk now is `internal`, as the corpus says: the walk
     and propose serve a chunk only on the level its file states now."""
     (root / "config").mkdir(exist_ok=True)
-    (root / "config" / "project.json").write_text("{}")
+    (root / "config" / "project.json").write_text(
+        json.dumps({"corpus": {"served_visibilities": ["public", "internal"]}})
+    )
     for node in _NODES:
         f = root / node["path"]
         f.parent.mkdir(parents=True, exist_ok=True)
@@ -207,6 +209,29 @@ def test_the_walk_drops_a_node_outside_the_served_levels(tmp_path, monkeypatch):
     assert "CODEWORD-ZEBRA" not in rep.preview
     assert model.n == 2
     assert "src/backend/vault.py" not in rep.refactored + rep.skipped
+
+
+def test_foreign_served_levels_reach_the_walk_and_proposal(tmp_path, monkeypatch):
+    root = _files(tmp_path)
+    nodes = [dict(_NODES[0], visibility="confidential")]
+    (tmp_path / nodes[0]["path"]).write_text(
+        '"""\ntitle: Private\nsummary: s.\nvisibility: confidential\n"""\n', "utf-8"
+    )
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"corpus": {"served_visibilities": ["confidential"]}}), "utf-8"
+    )
+    runner, model = _Runner(nodes=nodes), _Model()
+    _patch(monkeypatch, runner, model)
+    rep = refactor(
+        "precise-container-types",
+        root=root,
+        execute=True,
+        max_model_calls=1,
+        checkpointer=_checkpointer(tmp_path),
+    )
+    assert rep.candidates == ("n1",)
+    assert model.n == 1
+    assert rep.refactored == (nodes[0]["path"],)
 
 
 def test_a_relative_root_reaches_the_corpus_query_as_one_absolute_checkout(

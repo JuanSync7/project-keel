@@ -127,6 +127,8 @@ def test_an_execute_answer_with_no_approved_count_is_refused_before_any_step():
 
 
 def _one_node_corpus(tmp_path):
+    (tmp_path / "config").mkdir(exist_ok=True)
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
     node = dict(_NODES[0], kind="doc", title="Alpha", text_excerpt="", tags=["alpha"])
     node.update(owner="alice", owner_source="frontmatter", visibility="public")
     node.update(anchor=None, lineno=None, parent=None, children=[], links=[])
@@ -155,6 +157,31 @@ def test_an_execute_answer_builds_its_backend_with_the_factory_it_is_given(tmp_p
     )
     assert built == ["fake"] and len(seen.prompts) == 1
     assert got.text == "Alpha ingests events [docs/a.md]." and not got.dry_run
+
+
+def test_answer_keeps_the_read_checkouts_served_levels_through_synthesis(tmp_path):
+    path = Path(_one_node_corpus(tmp_path))
+    corpus = json.loads(path.read_text("utf-8"))
+    corpus["nodes"][0]["visibility"] = "confidential"
+    path.write_text(json.dumps(corpus), "utf-8")
+    (tmp_path / "docs" / "a.md").write_text(
+        "---\nvisibility: confidential\n---\n", "utf-8"
+    )
+    config = tmp_path / "config" / "project.json"
+    config.parent.mkdir(exist_ok=True)
+    config.write_text(
+        json.dumps({"corpus": {"served_visibilities": ["confidential"]}}), "utf-8"
+    )
+    seen = _Seen("Alpha reply")
+    got = answer(
+        "what is alpha",
+        corpus=str(path),
+        execute=True,
+        max_model_calls=1,
+        backend_factory=lambda name: seen,
+    )
+    assert [c.node_id for c in got.citations] == ["docs/a.md"]
+    assert "Alpha is the ingest service." in seen.prompts[0]
 
 
 @pytest.mark.parametrize("stored", ["absent", None, "", "frontmatter"])

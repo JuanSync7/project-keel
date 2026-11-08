@@ -32,6 +32,10 @@ def _tiny_corpus(tmp_path: Path) -> str:
     """A one-node public corpus query_corpus.py can retrieve over, at
     *tmp_path*'s wiki/corpus.json, its README.md stating public (absolute
     path)."""
+    config = tmp_path / "config" / "project.json"
+    config.parent.mkdir(exist_ok=True)
+    if not config.exists():
+        config.write_text("{}", "utf-8")
     node = {
         "node_id": "keel",
         "kind": "doc",
@@ -118,6 +122,31 @@ class _Counted(FakeModel):
     def run(self, prompt, **opts):
         _Counted.prompts.append(prompt)
         return super().run(prompt, **opts)
+
+
+@pytest.mark.parametrize("level", ["internal", "confidential"])
+def test_qa_uses_the_corpus_checkouts_allowlist(tmp_path, monkeypatch, level):
+    path = Path(_tiny_corpus(tmp_path))
+    corpus = json.loads(path.read_text("utf-8"))
+    corpus["nodes"][0]["visibility"] = level
+    path.write_text(json.dumps(corpus), "utf-8")
+    (tmp_path / "README.md").write_text("---\nvisibility: %s\n---\n" % level, "utf-8")
+    served = ["public"] if level == "internal" else ["confidential"]
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps({"corpus": {"served_visibilities": served}}), "utf-8"
+    )
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake", corpus=str(path), max_model_calls=1, max_session_model_calls=1
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is False
+    answer = result["structuredContent"]
+    assert bool(answer["citations"]) is (level in served)
+    assert ("a project skeleton that stays honest" in _Counted.prompts[0]) is (
+        level in served
+    )
 
 
 @pytest.mark.parametrize("level", ["public", "confidential"])

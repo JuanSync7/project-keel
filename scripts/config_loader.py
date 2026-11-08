@@ -2361,7 +2361,12 @@ def served_visibilities(root: str, stream: Optional[IO[str]] = None) -> FrozenSe
     by. Raises ConfigError (WrongValue for a level outside VISIBILITY_ORDER),
     so a caller serves nothing rather than guess."""
     path = ("corpus", "served_visibilities")
-    values = resolve(read(root), rows(path), CONFIG_FILE, stream=stream)
+    values = resolve(
+        read(root),
+        rows(path),
+        os.path.join(os.path.abspath(root), CONFIG_FILE),
+        stream=stream,
+    )
     return frozenset(values[path])
 
 
