@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 import sys
+import traceback
 from pathlib import Path
 
 import pytest
@@ -16,7 +17,13 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from evals import SCORERS, DatasetError, parse_cases  # noqa: E402
+from evals import (  # noqa: E402
+    SCORERS,
+    DatasetError,
+    EvalConfig,
+    load_suites,
+    parse_cases,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -164,3 +171,64 @@ def test_a_model_recording_carries_its_model_name():
     obj["recorded"]["model"] = "openai-compatible"
     (case,) = _parse(_line(obj))
     assert (case.rec_source, case.rec_model) == ("model", "openai-compatible")
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "missing",
+        "empty",
+        "stray",
+        "name",
+        "unreadable",
+        "invalid",
+        "duplicate",
+        "listing",
+    ],
+)
+def test_load_suites_hides_configured_paths_in_every_refusal(
+    tmp_path, monkeypatch, fault
+):
+    rel = "datasets/user:DATASET_SENTINEL@host"
+    base = tmp_path / rel
+    cfg = EvalConfig("case.json", "report.json", rel, "reports", 1.0, None, 0)
+    if fault != "missing":
+        base.mkdir(parents=True)
+    if fault == "listing":
+        import os
+
+        real_listdir = os.listdir
+
+        def listdir(path):
+            if path == str(base):
+                raise OSError(13, "Permission denied", path)
+            return real_listdir(path)
+
+        monkeypatch.setattr(os, "listdir", listdir)
+    if fault == "stray":
+        (base / "stray.txt").write_text("x", encoding="utf-8")
+    elif fault == "name":
+        (base / "Bad.jsonl").write_text("x", encoding="utf-8")
+    elif fault == "unreadable":
+        (base / "one.jsonl").write_bytes(b"\xff")
+    elif fault == "invalid":
+        (base / "one.jsonl").write_text("{}", encoding="utf-8")
+    elif fault == "duplicate":
+        for name in ("one", "two"):
+            (base / (name + ".jsonl")).write_text(_line(_case()), encoding="utf-8")
+    with pytest.raises(DatasetError) as refused:
+        load_suites(cfg, tmp_path)
+    printed = "".join(traceback.format_exception(refused.value))
+    assert "DATASET_SENTINEL" not in printed
+    assert "<hidden: it holds an @>" in str(refused.value)
+
+
+def test_load_suites_keeps_actual_paths_in_successful_records(tmp_path):
+    rel = "datasets/user@host"
+    base = tmp_path / rel
+    base.mkdir(parents=True)
+    (base / "one.jsonl").write_text(_line(_case()), encoding="utf-8")
+    cfg = EvalConfig("case.json", "report.json", rel, "reports", 1.0, None, 0)
+    (suite,) = load_suites(cfg, tmp_path)
+    assert suite.dataset == rel + "/one.jsonl"
+    assert suite.cases[0].source == rel + "/one.jsonl:1"

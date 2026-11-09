@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 import pytest
@@ -1030,3 +1031,42 @@ def test_the_writer_is_3_6_safe():
         path = _ROOT / "scripts" / name
         assert scope._too_new_syntax(path) == [], name
         assert scope._old_python_safe(path), name
+
+
+@pytest.mark.parametrize(
+    "number, reason",
+    [
+        (2, "No such file or directory"),
+        (13, "Permission denied"),
+        (21, "Is a directory"),
+    ],
+)
+def test_schema_os_errors_keep_the_reason_and_hide_the_path(
+    monkeypatch, number, reason
+):
+    rel = "config/EVIDENCE_SENTINEL@host.json"
+    manifest = {"evidence": {"schema": rel, "dir": ".evidence", "junit_dir": ".junit"}}
+    real_open = open
+
+    def opened(path, *args, **kwargs):
+        if str(path).endswith(rel):
+            raise OSError(number, reason, path)
+        return real_open(path, *args, **kwargs)
+
+    real_read = ge.config_loader.read
+    monkeypatch.setattr(
+        ge.config_loader,
+        "read",
+        lambda root, relpath=ge.config_loader.CONFIG_FILE: (
+            manifest
+            if relpath == ge.config_loader.CONFIG_FILE
+            else real_read(root, relpath)
+        ),
+    )
+    monkeypatch.setattr("builtins.open", opened)
+    with pytest.raises((ge.EvidenceConfigError, ge.EvidenceSchemaError)) as refused:
+        ge.load_policy(str(_ROOT))
+    printed = "".join(traceback.format_exception(refused.value))
+    assert ("does not exist" if number == 2 else reason) in printed
+    assert "<hidden: it holds an @>" in printed
+    assert "EVIDENCE_SENTINEL" not in printed

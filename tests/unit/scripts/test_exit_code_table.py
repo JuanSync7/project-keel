@@ -14,6 +14,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from pathlib import Path
 
 import pytest
@@ -1100,3 +1101,38 @@ def test_the_helper_ends_a_shell_script_as_the_python_helper_does(
     assert said in err
     if not said:
         assert err == "", err
+
+
+@pytest.mark.parametrize("mode", ["read", "write"])
+@pytest.mark.parametrize(
+    "number, reason",
+    [
+        (2, "No such file or directory"),
+        (13, "Permission denied"),
+        (21, "Is a directory"),
+    ],
+)
+def test_guide_os_errors_keep_the_reason_and_hide_the_path(
+    monkeypatch, capsys, mode, number, reason
+):
+    guide = "docs/GUIDE_SENTINEL@host.md"
+
+    def broken(*args, **kwargs):
+        raise OSError(number, reason, guide)
+
+    if mode == "read":
+        monkeypatch.setattr(et, "load_policy", lambda _root: (guide, "verify"))
+        monkeypatch.setattr(et.git_tree, "through_symlink", lambda *_args: [])
+        monkeypatch.setattr("builtins.open", broken)
+        with pytest.raises(et.TableError) as refused:
+            et.wanted_text(str(_ROOT))
+        printed = "".join(traceback.format_exception(refused.value))
+        assert refused.value.__suppress_context__
+    else:
+        monkeypatch.setattr(et, "wanted_text", lambda _root: (guide, "old", "new"))
+        monkeypatch.setattr(et, "_write", broken)
+        assert et.main([], root=str(_ROOT)) is ExitCode.USAGE
+        printed = capsys.readouterr().err
+    assert reason in printed
+    assert "<hidden: it holds an @>" in printed
+    assert "GUIDE_SENTINEL" not in printed

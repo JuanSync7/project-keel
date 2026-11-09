@@ -124,13 +124,21 @@ def test_a_null_index_leaves_the_pip_command_to_pips_own_config(tmp_path, capsys
 @pytest.mark.parametrize(
     "index",
     [
+        "https://user-SENTINEL@pypi.mirror.example.invalid/",
         "https://u:tok-SENTINEL@pypi.mirror.example.invalid/",
         "https:/u:tok-SENTINEL@pypi.mirror.example.invalid/",
         "https:///u:tok-SENTINEL@pypi.mirror.example.invalid/",
         "https:/\\u:tok-SENTINEL@pypi.mirror.example.invalid",
         "https://u:tok-SENTINEL@[::1/",
     ],
-    ids=["two-slashes", "one-slash", "three-slashes", "backslash", "unsplittable"],
+    ids=[
+        "user-only",
+        "two-slashes",
+        "one-slash",
+        "three-slashes",
+        "backslash",
+        "unsplittable",
+    ],
 )
 def test_an_index_with_a_user_part_is_config_and_never_shown(index, tmp_path, capsys):
     assert _run(tmp_path, config=_config(index=index)) is ExitCode.CONFIG

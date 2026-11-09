@@ -9,6 +9,7 @@ import copy
 import json
 import shutil
 import sys
+import traceback
 from pathlib import Path
 
 import pytest
@@ -198,3 +199,28 @@ def test_load_config_reads_through_the_config_loader(tmp_path):
     with pytest.raises(ConfigError) as info:
         load_config(root)
     assert "config/project.json does not exist" in str(info.value)
+
+
+@pytest.mark.parametrize("key", ["case_schema", "report_schema"])
+@pytest.mark.parametrize(
+    "number, reason",
+    [
+        (2, "No such file or directory"),
+        (13, "Permission denied"),
+        (21, "Is a directory"),
+    ],
+)
+def test_schema_os_errors_keep_the_reason_and_hide_the_path(key, number, reason):
+    rel = "config/SCHEMA_SENTINEL@host.json"
+
+    def read_schema(path):
+        if path == rel:
+            raise OSError(number, reason, path)
+        return _schema()
+
+    with pytest.raises(ConfigError) as refused:
+        _parse(_with(key, rel), read_schema)
+    assert reason in str(refused.value)
+    assert "<hidden: it holds an @>" in str(refused.value)
+    assert "SCHEMA_SENTINEL" not in "".join(traceback.format_exception(refused.value))
+    assert refused.value.__suppress_context__

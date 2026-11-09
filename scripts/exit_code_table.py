@@ -891,6 +891,9 @@ def _shown(text):
     """The configured guide path or gate target, or an error's text that may
     quote one, as a message shows it: hidden when it holds an `@`
     (scripts/config_loader.py `shown`)."""
+    # An OS message includes the path; its reason can still be shown safely.
+    if isinstance(text, OSError):
+        text = text.strerror or str(text)
     return config_loader.shown(text, bare=True)
 
 
@@ -1018,7 +1021,8 @@ def wanted_text(root):
         # line hides.
         raise TableError(
             "cannot read the guide",
-            "%s (%s)" % (_shown(guide), _shown(str(exc))),
+            "%s (%s)"
+            % (_shown(guide), _shown(exc if isinstance(exc, OSError) else str(exc))),
             "restore it, or correct config/project.json `%s.%s`" % (BLOCK, GUIDE_KEY),
         ) from None
     before, _region, after = split_region(text, guide)
@@ -1305,7 +1309,7 @@ def main(argv=None, root=None):
         return _helper.report(
             _helper.ExitCode.USAGE,
             "exit_code_table: cannot write the guide",
-            "%s (%s)" % (_shown(guide), _shown(str(exc))),
+            "%s (%s)" % (_shown(guide), _shown(exc)),
             "make the file and its directory writable, then run `make exit-codes`",
         )
     print("wrote the exit-code table: %s" % _shown(guide))

@@ -95,9 +95,12 @@ def _unknown(block: Mapping[str, object], where: str, allowed: frozenset[str]) -
         raise ConfigError(line, lines=[line], in_config=True)
 
 
-def _shown(text: str) -> str:
+def _shown(text: str | OSError) -> str:
     """A configured path, or an error's text that may quote one, as a refusal
     shows it: hidden when it holds an `@` (scripts/config_loader.py `shown`)."""
+    # An OS message includes the path; its reason can still be shown safely.
+    if isinstance(text, OSError):
+        text = text.strerror or str(text)
     return config_loader.shown(text, bare=True)
 
 
@@ -109,7 +112,12 @@ def _version(read_schema: Callable[[str], object], rel: str, key: str) -> int:
         # line hides.
         raise ConfigError(
             "%s (`%s.%s`): unreadable (%s)"
-            % (_shown(rel), _BLOCK, key, _shown(str(exc)))
+            % (
+                _shown(rel),
+                _BLOCK,
+                key,
+                _shown(exc if isinstance(exc, OSError) else str(exc)),
+            )
         ) from None
     const: object = None
     if isinstance(schema, dict):

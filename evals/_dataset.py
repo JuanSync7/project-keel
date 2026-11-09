@@ -14,6 +14,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
+from scripts import config_loader
+
 from ._config import EvalConfig
 from ._doers import DOERS, sha256_text
 from ._scorers import SCORERS, Scorer
@@ -222,36 +224,73 @@ def load_suites(cfg: EvalConfig, root: str | os.PathLike[str]) -> list[Suite]:
     base = os.path.join(os.fspath(root), *rel_dir.parts)
     if not os.path.isdir(base):
         raise DatasetError(
-            "%s: no such directory (config/project.json evals.dataset_dir)" % rel_dir
+            "%s: no such directory (config/project.json evals.dataset_dir)"
+            % config_loader.shown(str(rel_dir), bare=True)
         )
     suites: list[Suite] = []
     first_seen: dict[str, str] = {}
-    for name in sorted(os.listdir(base)):
+    try:
+        names = os.listdir(base)
+    except OSError as exc:
+        # The OS error's path can carry credentials; keep only its reason.
+        raise DatasetError(
+            "%s: unreadable (%s)"
+            % (
+                config_loader.shown(str(rel_dir), bare=True),
+                config_loader.shown(exc.strerror or str(exc), bare=True),
+            )
+        ) from None
+    for name in sorted(names):
         rel = (rel_dir / name).as_posix()
         path = os.path.join(base, name)
         if not name.endswith(_SUFFIX) or not os.path.isfile(path):
             raise DatasetError(
-                "%s: only %s suite files belong in evals.dataset_dir" % (rel, _SUFFIX)
+                "%s: only %s suite files belong in evals.dataset_dir"
+                % (config_loader.shown(rel, bare=True), _SUFFIX)
             )
         stem = name[: -len(_SUFFIX)]
         if not _ID.fullmatch(stem):
-            raise DatasetError("%s: a suite name must match %s" % (rel, _ID.pattern))
+            raise DatasetError(
+                "%s: a suite name must match %s"
+                % (config_loader.shown(rel, bare=True), _ID.pattern)
+            )
         try:
             with open(path, encoding="utf-8", newline="") as fh:
                 text = fh.read()
         except (OSError, UnicodeDecodeError) as exc:
-            raise DatasetError("%s: unreadable (%s)" % (rel, exc)) from exc
-        cases = parse_cases(text, source=rel, schema_version=cfg.schema_version)
+            # The OS error can quote the configured path, so suppress its cause.
+            raise DatasetError(
+                "%s: unreadable (%s)"
+                % (
+                    config_loader.shown(rel, bare=True),
+                    config_loader.shown(
+                        exc.strerror
+                        if isinstance(exc, OSError) and exc.strerror
+                        else str(exc),
+                        bare=True,
+                    ),
+                )
+            ) from None
+        try:
+            cases = parse_cases(text, source=rel, schema_version=cfg.schema_version)
+        except DatasetError as exc:
+            # Preserve record paths on success while hiding them in refusals.
+            raise DatasetError(config_loader.shown(str(exc), bare=True)) from None
         for case in cases:
             if case.id in first_seen:
                 raise DatasetError(
                     "%s: duplicate id %r (first at %s)"
-                    % (case.source, case.id, first_seen[case.id])
+                    % (
+                        config_loader.shown(case.source, bare=True),
+                        case.id,
+                        config_loader.shown(first_seen[case.id], bare=True),
+                    )
                 )
             first_seen[case.id] = case.source
         suites.append(Suite(stem, rel, cases))
     if not suites:
         raise DatasetError(
-            "%s: no suite files; an eval over zero cases is not a pass" % rel_dir
+            "%s: no suite files; an eval over zero cases is not a pass"
+            % config_loader.shown(str(rel_dir), bare=True)
         )
     return suites

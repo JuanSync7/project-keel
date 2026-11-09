@@ -1822,3 +1822,28 @@ def test_refactor_journal_path_is_required_repo_path():
         config_loader.CONFIG_FILE,
     )
     assert value[("refactor", "journal_path")] == ".undo/journal.json"
+
+
+@pytest.mark.parametrize("codepoint", [*range(32), *range(127, 160), 0x2028, 0x2029])
+@pytest.mark.parametrize("renderer", ["bare", "joined", "shown", "quoted", "listed"])
+def test_message_renderers_escape_every_terminal_control(codepoint, renderer):
+    control = chr(codepoint)
+    text = "left" + control + "right"
+    if renderer == "bare":
+        printed = config_loader.shown(text, bare=True)
+    elif renderer == "joined":
+        printed = config_loader.joined(["neighbour", text])
+        assert printed.startswith("neighbour, ")
+    elif renderer == "listed":
+        printed = config_loader.listed([text])
+    else:
+        printed = getattr(config_loader, renderer)(text)
+    assert control not in printed
+    assert "left" in printed and "right" in printed
+    assert "\\" in printed
+
+
+def test_bare_and_joined_keep_printable_unicode_and_punctuation():
+    text = "café/東京 'quoted' \\path"
+    assert config_loader.shown(text, bare=True) == text
+    assert config_loader.joined([text, "next"]) == text + ", next"

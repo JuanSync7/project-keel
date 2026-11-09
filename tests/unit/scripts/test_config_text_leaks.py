@@ -840,3 +840,13 @@ def test_run_evals_hides_a_removed_report_path_holding_an_at(
     run_evals._remove_stale(str(tmp_path), "r-" + _AT, "replay")
     assert not report.exists()
     _hides(capsys.readouterr().err, "removed the earlier")
+
+
+@pytest.mark.parametrize("codepoint", [*range(0x80, 0xA0), 0x2028, 0x2029])
+def test_launch_unknown_key_escapes_non_ascii_line_controls(codepoint):
+    text = "key" + chr(codepoint) + "tail"
+    manifest = _planted(_L, "A", text)
+    with pytest.raises(launch.LauncherConfigError) as refused:
+        launch.load_launcher_config(manifest)
+    assert chr(codepoint) not in str(refused.value)
+    assert "key" + repr(chr(codepoint))[1:-1] + "tail" in str(refused.value)
