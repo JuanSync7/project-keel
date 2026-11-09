@@ -2,7 +2,7 @@
 title: Integration — a copied script carries every project module it imports
 kind: tests
 layer: n/a
-summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Local helper calls bind positional and keyword parameter sources through helper chains with cycle termination; calls retain rooted arguments except in non-leftmost operands of joins on proven pytest scratch roots; path operations resolve import origins instead of bare names. A cached repository scan feeds collection and guards pinned to test_launcher.py::_build and tests/script_copy.py, with bounded diagnostic samples and a scan-count regression.
+summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Local helper calls bind positional and keyword parameter sources through helper chains with cycle termination; calls retain rooted arguments unless every suffix of a join on a pytest-owned scratch parameter is proven relative from literal bindings or a direct local literal-return function; all binding forms can void that proof; path operations resolve import origins instead of bare names. A cached repository scan feeds collection and guards pinned to test_launcher.py::_build and tests/script_copy.py, with bounded diagnostic samples and a scan-count regression.
 """
 
 import ast
@@ -236,6 +236,16 @@ def test_keels_run_make_target_carries_resource_limits_and_starts(tmp_path):
 # data. Function and source anchors survive line movement; duplicate sites fail.
 _COPY_EXEMPTIONS = {
     (
+        "integration/test_ignore_patterns.py",
+        "test_every_ignored_name_is_ignored_as_a_symlink",
+        "tmp_path / 'repo' / plain_names(text)[0]",
+    ): "Git check-ignore needs the symlink names derived from repository ignore-file data. copy_with_imports would replace the links with files and cannot test whether git ignores symlinks.",
+    (
+        "integration/test_ignore_patterns.py",
+        "test_a_planted_trailing_slash_pattern_is_one_finding",
+        "tmp_path / 'repo' / plain_names(planted)[0]",
+    ): "The planted ignore pattern is tested against a symlink. copy_with_imports would replace that link with files and remove the git symlink-ignore behavior under test.",
+    (
         "integration/test_preflight.py",
         "project",
         "_ROOT / 'scripts'",
@@ -379,12 +389,12 @@ _COPY_EXEMPTIONS = {
         "integration/test_evals_gate.py",
         "test_a_report_dir_through_a_symlink_writes_and_deletes_nothing",
         "link",
-    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof; the symlink is the refusal input, not an executable entry.",
+    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof. The copied symlink is refusal input; copy_with_imports builds a runnable tree of regular files and would erase the symlink condition the gate must refuse.",
     (
         "integration/test_gate_evidence_record.py",
         "test_a_real_gate_refuses_an_evidence_dir_that_is_a_symlink",
         "repo / _EVIDENCE['dir']",
-    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof; the evidence symlink is the refusal input, not an executable entry.",
+    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof. The copied evidence symlink is refusal input; copy_with_imports builds a runnable tree of regular files and would erase the symlink condition the gate must refuse.",
     (
         "integration/test_ci_pipeline_gate.py",
         "_copy",
@@ -445,8 +455,8 @@ _CODE_ROOTS = {
     for prefix in layer
 }
 
-# Only resolved import origins (or pytest-injected fixture parameters) prove
-# these path operations. A local function with the same spelling proves nothing.
+# Only resolved import origins prove path operations; a local function with
+# the same spelling proves nothing.
 _PATH_OPERATIONS = {
     "pathlib.Path": "construct",
     "builtins.str": "construct",
@@ -454,9 +464,6 @@ _PATH_OPERATIONS = {
     "os.path.abspath": "absolute",
     "os.path.realpath": "absolute",
     "os.path.join": "join",
-    "pytest.tmp_path": "scratch",
-    "pytest.tmp_path_factory": "factory",
-    "pytest.tmp_path_factory.mktemp": "scratch",
 }
 
 
@@ -472,9 +479,7 @@ def _origin(expr, definitions):
         return "builtins.str" if expr.id == "str" else None
     origins = set()
     for value in values:
-        if isinstance(value, ast.arg) and "pytest." + value.arg in _PATH_OPERATIONS:
-            origins.add("pytest." + value.arg)
-        elif isinstance(value, ast.Import):
+        if isinstance(value, ast.Import):
             origins.update(
                 alias.name if alias.asname else alias.name.split(".")[0]
                 for alias in value.names
@@ -504,11 +509,13 @@ def _join_operands(expr, definitions):
 
 def _scratch_path(expr, definitions, seen=frozenset(), *, kind="scratch"):
     """Prove a pytest scratch base; unknown or mixed bindings never prove it."""
+    if isinstance(expr, ast.arg):
+        return getattr(expr, "_pytest_scratch", False) and expr.arg == (
+            "tmp_path" if kind == "scratch" else "tmp_path_factory"
+        )
     if isinstance(expr, ast.Name):
         if expr.id in seen:
             return False
-        if _PATH_OPERATIONS.get(_origin(expr, definitions)) == kind:
-            return True
         values = definitions.get(expr.id, [])
         return bool(values) and all(
             _scratch_path(value, definitions, seen | {expr.id}, kind=kind)
@@ -516,26 +523,51 @@ def _scratch_path(expr, definitions, seen=frozenset(), *, kind="scratch"):
         )
     if kind != "scratch":
         return False
-    if isinstance(expr, ast.Call):
-        if _PATH_OPERATIONS.get(_origin(expr.func, definitions)) == "scratch":
-            return True
-        if (
-            isinstance(expr.func, ast.Attribute)
-            and expr.func.attr == "mktemp"
-            and _scratch_path(expr.func.value, definitions, seen, kind="factory")
-        ):
-            return True
+    if (
+        isinstance(expr, ast.Call)
+        and isinstance(expr.func, ast.Attribute)
+        and expr.func.attr == "mktemp"
+        and _scratch_path(expr.func.value, definitions, seen, kind="factory")
+    ):
+        return True
     operands = _join_operands(expr, definitions)
     return (
         len(operands) > 1
         and _scratch_path(operands[0], definitions, seen)
-        and not any(
-            isinstance(part, ast.Constant)
-            and isinstance(part.value, str)
-            and Path(part.value).is_absolute()
-            for part in operands[1:]
-        )
+        and all(_relative_operand(part, definitions) for part in operands[1:])
     )
+
+
+def _relative_operand(expr, definitions):
+    """Prove relativity from literals or a direct local literal-return function.
+
+    Every name binding must itself be a relative string literal. A call is
+    proven only for an undecorated synchronous function whose entire body is
+    one return of a relative string literal; its arguments cannot affect that
+    result. Wrappers and unknown values retain their provenance.
+    """
+    if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+        return not Path(expr.value).is_absolute()
+    if isinstance(expr, ast.Name):
+        values = definitions.get(expr.id, [])
+        return bool(values) and all(
+            isinstance(value, ast.Constant)
+            and isinstance(value.value, str)
+            and not Path(value.value).is_absolute()
+            for value in values
+        )
+    if isinstance(expr, ast.Call) and isinstance(expr.func, ast.Name):
+        functions = definitions.get(expr.func.id, [])
+        return bool(functions) and all(
+            isinstance(function, ast.FunctionDef)
+            and not function.decorator_list
+            and len(function.body) == 1
+            and isinstance(function.body[0], ast.Return)
+            and isinstance(function.body[0].value, ast.Constant)
+            and _relative_operand(function.body[0].value, definitions)
+            for function in functions
+        )
+    return False
 
 
 def _path_value(expr, definitions, root, rel, seen=frozenset()):
@@ -604,7 +636,6 @@ def _source_tokens(
     seen=frozenset(),
     *,
     called=False,
-    scratch_operand=False,
 ):
     """Conservative path provenance, including rosters and loop variables.
 
@@ -612,26 +643,11 @@ def _source_tokens(
     executing calls. Unknown expressions contribute their literal path parts;
     this is a source audit, not a general Python data-flow interpreter.
     """
-    if scratch_operand and isinstance(expr, ast.Call):
-        return set()
     operands = _join_operands(expr, definitions)
     if operands and _scratch_path(expr, definitions):
-        return _source_tokens(
-            operands[0], definitions, imports, root, rel, seen
-        ) | set().union(
-            *(
-                _source_tokens(
-                    part,
-                    definitions,
-                    imports,
-                    root,
-                    rel,
-                    seen,
-                    scratch_operand=True,
-                )
-                for part in operands[1:]
-            )
-        )
+        # The scratch proof includes every suffix's relativity, so none can
+        # replace the base with a rooted path, even when a call reads the repo.
+        return _source_tokens(operands[0], definitions, imports, root, rel, seen)
     value = _path_value(expr, definitions, root, rel)
     if isinstance(value, (str, Path)) and Path(value).is_relative_to(root):
         relative = Path(value).relative_to(root).as_posix()
@@ -653,7 +669,6 @@ def _source_tokens(
                         root,
                         rel,
                         seen | {name},
-                        scratch_operand=scratch_operand,
                     )
                     for value in definitions[name]
                     if not isinstance(value, (ast.Import, ast.ImportFrom))
@@ -698,8 +713,7 @@ def _source_tokens(
     if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
         return {expr.value}
     if isinstance(expr, ast.Call):
-        # Calls preserve provenance unless their position in a proven scratch
-        # join supplied the structural exception above. Unknown wrappers fail closed.
+        # Only a complete scratch-join proof can discard a call's provenance.
         return _source_tokens(
             expr.func, definitions, imports, root, rel, seen, called=True
         ) | set().union(
@@ -729,7 +743,6 @@ def _source_tokens(
                 root,
                 rel,
                 seen,
-                scratch_operand=scratch_operand,
             )
             for child in ast.iter_child_nodes(expr)
         )
@@ -742,11 +755,26 @@ def _definitions(scope):
     def bind(target, value):
         if isinstance(target, ast.Name):
             out.setdefault(target.id, []).append(value)
-        elif isinstance(target, (ast.Tuple, ast.List)) and isinstance(
-            value, (ast.Tuple, ast.List)
-        ):
-            for item, part in zip(target.elts, value.elts, strict=False):
-                bind(item, part)
+        elif isinstance(target, (ast.Tuple, ast.List)):
+            if isinstance(value, (ast.Tuple, ast.List)) and len(target.elts) == len(
+                value.elts
+            ):
+                for item, part in zip(target.elts, value.elts, strict=True):
+                    bind(item, part)
+            else:
+                # Unpacking an unknown result cannot prove any component scratch.
+                for item in target.elts:
+                    bind(
+                        item,
+                        ast.Subscript(
+                            value=value, slice=ast.Constant(0), ctx=ast.Load()
+                        ),
+                    )
+        elif isinstance(target, ast.Starred):
+            bind(
+                target.value,
+                ast.Subscript(value=value, slice=ast.Constant(0), ctx=ast.Load()),
+            )
 
     for node in source_tree.scope_nodes(scope):
         targets, value = [], None
@@ -758,14 +786,31 @@ def _definitions(scope):
                     else alias.name
                 )
                 out.setdefault(name, []).append(node)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             out.setdefault(node.name, []).append(node)
         elif isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
-        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr, ast.AugAssign)):
             targets, value = [node.target], node.value
-        elif isinstance(node, (ast.For, ast.comprehension)):
-            targets, value = [node.target], node.iter
+            if value is None or isinstance(node, ast.AugAssign):
+                # A bare annotation or in-place operation proves no path value.
+                value = node
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            targets, value = (
+                [node.target],
+                ast.Subscript(value=node.iter, slice=ast.Constant(0), ctx=ast.Load()),
+            )
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    bind(item.optional_vars, node)
+        elif (
+            isinstance(node, (ast.ExceptHandler, ast.MatchAs, ast.MatchStar))
+            and node.name
+        ):
+            out.setdefault(node.name, []).append(node)
+        elif isinstance(node, ast.MatchMapping) and node.rest:
+            out.setdefault(node.rest, []).append(node)
         if value is not None:
             for target in targets:
                 bind(target, value)
@@ -1003,15 +1048,53 @@ def _copy_sites(root=_ROOT, modules=None):
         tree = source_tree.parse(root, rel)
         imports = source_tree.bindings(root, rel, tree, _search(rel))
 
-        def scan(scope, inherited, inherited_aliases, inherited_imports, anchor, rel):
+        def scan(
+            scope,
+            inherited,
+            inherited_aliases,
+            inherited_imports,
+            anchor,
+            rel,
+            *,
+            parent=None,
+            in_function=False,
+        ):
             local_definitions = _definitions(scope)
             definitions = dict(inherited, **local_definitions)
             if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                pytest_scope = not in_function and (
+                    (isinstance(parent, ast.Module) and scope.name.startswith("test_"))
+                    or (
+                        isinstance(parent, ast.ClassDef)
+                        and parent.name.startswith("Test")
+                        and scope.name.startswith("test_")
+                    )
+                    or (
+                        isinstance(parent, (ast.Module, ast.ClassDef))
+                        and any(
+                            _origin(
+                                deco.func if isinstance(deco, ast.Call) else deco,
+                                inherited,
+                            )
+                            == "pytest.fixture"
+                            for deco in scope.decorator_list
+                        )
+                    )
+                )
                 for param in [
                     *scope.args.posonlyargs,
                     *scope.args.args,
                     *scope.args.kwonlyargs,
+                    *(
+                        p
+                        for p in (scope.args.vararg, scope.args.kwarg)
+                        if p is not None
+                    ),
                 ]:
+                    param._pytest_scratch = pytest_scope and param not in (
+                        scope.args.vararg,
+                        scope.args.kwarg,
+                    )
                     definitions[param.arg] = [
                         param,
                         *local_definitions.get(param.arg, []),
@@ -1041,6 +1124,9 @@ def _copy_sites(root=_ROOT, modules=None):
                         imports,
                         ".".join(filter(None, (anchor, node.name))),
                         rel,
+                        parent=scope,
+                        in_function=in_function
+                        or isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)),
                     )
                 if not isinstance(node, ast.Call):
                     continue
@@ -1352,7 +1438,8 @@ def test_only_a_call_inside_a_proven_scratch_join_loses_rooted_arguments(
                 "from pathlib import Path\nimport shutil\nimport os\n"
                 "import os.path as path_ops\nfrom os.path import join as joining\n"
                 "BASE = Path(__file__).parents[1]\n"
-                "def fixture(dest, tmp_path, tmp_path_factory):\n"
+                "def load_cfg(root):\n    return 'configured'\n"
+                "def test_copy(dest, tmp_path, tmp_path_factory):\n"
                 "    scratch = tmp_path\n"
                 "    factory_root = tmp_path_factory.mktemp('repo')\n"
                 "    factory = tmp_path_factory\n"
@@ -1361,6 +1448,162 @@ def test_only_a_call_inside_a_proven_scratch_join_loses_rooted_arguments(
         },
     )
     assert _copy_sites(tmp_path) == [], source
+
+
+@pytest.mark.parametrize(
+    "binding, source",
+    [
+        ("", "tmp_path / str(BASE)"),
+        ("", "tmp_path / Path(BASE)"),
+        ("", "tmp_path / os.fspath(BASE)"),
+        ("", "tmp_path / unknown(BASE)"),
+        ("", "tmp_path.joinpath(str(BASE))"),
+        ("", "os.path.join(tmp_path, Path(BASE))"),
+        ("part = '/abs'", "tmp_path / part / load_cfg(BASE)"),
+        ("part = '/abs'", "tmp_path.joinpath(part, load_cfg(BASE))"),
+        ("part = '/abs'", "os.path.join(tmp_path, part, load_cfg(BASE))"),
+        ("part = f'/{name}'", "tmp_path / part / load_cfg(BASE)"),
+        ("part = '/' + name", "tmp_path / part / load_cfg(BASE)"),
+        ("part = unknown()", "tmp_path / part / load_cfg(BASE)"),
+        ("part = 'relative'; part = '/abs'", "tmp_path / part / load_cfg(BASE)"),
+        ("part = 'relative'; part = unknown()", "tmp_path / part / load_cfg(BASE)"),
+        ("", "tmp_path / f'/{name}' / load_cfg(BASE)"),
+        ("", "tmp_path / ('/' + name) / load_cfg(BASE)"),
+    ],
+)
+def test_scratch_join_requires_proven_relative_operands(tmp_path, binding, source):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\nimport os\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def load_cfg(root):\n    return 'configured'\n"
+                "def test_copy(tmp_path, dest):\n    "
+                + (binding + "\n    " if binding else "")
+                + "shutil.copytree("
+                + source
+                + ", dest)\n"
+            )
+        },
+    )
+    assert len(_copy_sites(tmp_path)) == 1, (binding, source)
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def helper(tmp_path, dest):\n    COPY\n",
+        "def helper(tmp_path_factory, dest):\n    COPY_FACTORY\n",
+        "def test_outer(dest):\n"
+        "    def inner(tmp_path):\n        COPY\n    inner(BASE)\n",
+        "def test_outer(dest):\n"
+        "    def inner(tmp_path_factory):\n        COPY_FACTORY\n    inner(BASE)\n",
+        "def test_outer(tmp_path, dest):\n"
+        "    def inner(*tmp_path):\n        COPY\n    inner(BASE)\n",
+        "def test_outer(tmp_path, dest):\n"
+        "    def inner(**tmp_path):\n        COPY\n    inner(root=BASE)\n",
+        "class Helper:\n    def helper(self, tmp_path, dest):\n        COPY\n",
+        "class TestCopy:\n    def test_outer(self, dest):\n"
+        "        def inner(tmp_path):\n            COPY\n        inner(BASE)\n",
+        "def test_outer(dest):\n    class TestInner:\n"
+        "        def test_copy(self, tmp_path):\n            COPY\n",
+    ],
+)
+def test_only_pytest_owned_parameters_prove_scratch(tmp_path, definition):
+    definition = definition.replace(
+        "COPY_FACTORY",
+        "shutil.copytree(tmp_path_factory.mktemp('repo') / load_cfg(BASE), dest)",
+    ).replace("COPY", "shutil.copytree(tmp_path / load_cfg(BASE), dest)")
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def load_cfg(root):\n    return 'configured'\n" + definition
+            )
+        },
+    )
+    assert _copy_sites(tmp_path), definition
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "def test_copy(tmp_path, dest):\n    COPY\n",
+        "@pytest.fixture\ndef project(tmp_path, dest):\n    COPY\n",
+        "@fixture()\ndef project(tmp_path, dest):\n    COPY\n",
+        "class TestCopy:\n    def test_copy(self, tmp_path, dest):\n        COPY\n",
+    ],
+)
+@pytest.mark.parametrize(
+    "binding, operand",
+    [("", "'config' / load_cfg(BASE)"), ("part = 'relative'", "part / load_cfg(BASE)")],
+)
+def test_pytest_scratch_and_literal_relative_names_stay_safe(
+    tmp_path, definition, binding, operand
+):
+    definition = definition.replace(
+        "COPY",
+        (binding + "; " if binding else "")
+        + "shutil.copytree(tmp_path / "
+        + operand
+        + ", dest)",
+    )
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\nimport pytest\n"
+                "from pytest import fixture\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def load_cfg(root):\n    return 'configured'\n" + definition
+            )
+        },
+    )
+    assert _copy_sites(tmp_path) == [], definition
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "with context(BASE) as tmp_path:\n        pass",
+        "with context(BASE) as (tmp_path, other):\n        pass",
+        "for tmp_path in sources:\n        pass",
+        "for tmp_path, other in sources:\n        pass",
+        "(tmp_path := unknown())",
+        "try:\n        pass\n    except Error as tmp_path:\n        pass",
+        "match value:\n        case {'root': tmp_path}:\n            pass",
+        "match value:\n        case [*tmp_path]:\n            pass",
+        "match value:\n        case {**tmp_path}:\n            pass",
+        "import unknown as tmp_path",
+        "from unknown import value as tmp_path",
+        "tmp_path, other = unknown()",
+        "tmp_path /= unknown()",
+        "class tmp_path:\n        pass",
+        "tmp_path: Path",
+    ],
+)
+@pytest.mark.parametrize("name", ["tmp_path", "part"])
+def test_every_rebinding_voids_scratch_proof(tmp_path, binding, name):
+    binding = binding.replace("tmp_path", name)
+    source = "tmp_path / " + ("part / " if name == "part" else "") + "load_cfg(BASE)"
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def load_cfg(root):\n    return 'configured'\n"
+                "def test_copy(tmp_path, dest):\n    part = 'relative'\n    "
+                + binding
+                + "\n"
+                "    shutil.copytree(" + source + ", dest)\n"
+            )
+        },
+    )
+    assert len(_copy_sites(tmp_path)) == 1, binding
 
 
 def test_a_reassigned_scratch_parameter_does_not_prove_a_scratch_join(tmp_path):
