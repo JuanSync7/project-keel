@@ -2,10 +2,11 @@
 title: Integration — a copied script carries every project module it imports
 kind: tests
 layer: n/a
-summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Non-empty guards require routed sites and imported helpers.
+summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Local helper calls bind positional and keyword parameter sources through helper chains with cycle termination; calls retain rooted arguments except in non-leftmost operands of joins on proven pytest scratch roots; path operations resolve import origins instead of bare names. A cached repository scan feeds collection and guards pinned to test_launcher.py::_build and tests/script_copy.py, with bounded diagnostic samples and a scan-count regression.
 """
 
 import ast
+import copy
 import importlib
 import subprocess
 import sys
@@ -16,6 +17,7 @@ from test_scratch_root_gate import child_timeout
 
 import script_copy
 import source_tree
+from bounded_cache import bounded
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "scripts"))
@@ -377,12 +379,12 @@ _COPY_EXEMPTIONS = {
         "integration/test_evals_gate.py",
         "test_a_report_dir_through_a_symlink_writes_and_deletes_nothing",
         "link",
-    ): "The configured report path carries conservative repository provenance, but the scratch symlink is the refusal input; copying an import closure cannot test link refusal.",
+    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof; the symlink is the refusal input, not an executable entry.",
     (
         "integration/test_gate_evidence_record.py",
         "test_a_real_gate_refuses_an_evidence_dir_that_is_a_symlink",
         "repo / _EVIDENCE['dir']",
-    ): "The configured evidence path carries conservative repository provenance, but the scratch symlink is the refusal input; copying an import closure cannot test link refusal.",
+    ): "The scratch base comes from an unpacked helper return, beyond structural scratch proof; the evidence symlink is the refusal input, not an executable entry.",
     (
         "integration/test_ci_pipeline_gate.py",
         "_copy",
@@ -443,6 +445,98 @@ _CODE_ROOTS = {
     for prefix in layer
 }
 
+# Only resolved import origins (or pytest-injected fixture parameters) prove
+# these path operations. A local function with the same spelling proves nothing.
+_PATH_OPERATIONS = {
+    "pathlib.Path": "construct",
+    "builtins.str": "construct",
+    "os.path.dirname": "parent",
+    "os.path.abspath": "absolute",
+    "os.path.realpath": "absolute",
+    "os.path.join": "join",
+    "pytest.tmp_path": "scratch",
+    "pytest.tmp_path_factory": "factory",
+    "pytest.tmp_path_factory.mktemp": "scratch",
+}
+
+
+def _origin(expr, definitions):
+    """Resolve imported names, respecting local bindings and fixture parameters."""
+    if isinstance(expr, ast.Attribute):
+        owner = _origin(expr.value, definitions)
+        return owner + "." + expr.attr if owner else None
+    if not isinstance(expr, ast.Name):
+        return None
+    values = definitions.get(expr.id, [])
+    if not values:
+        return "builtins.str" if expr.id == "str" else None
+    origins = set()
+    for value in values:
+        if isinstance(value, ast.arg) and "pytest." + value.arg in _PATH_OPERATIONS:
+            origins.add("pytest." + value.arg)
+        elif isinstance(value, ast.Import):
+            origins.update(
+                alias.name if alias.asname else alias.name.split(".")[0]
+                for alias in value.names
+                if (alias.asname or alias.name.split(".")[0]) == expr.id
+            )
+        elif isinstance(value, ast.ImportFrom):
+            origins.update(
+                value.module + "." + alias.name
+                for alias in value.names
+                if value.module and (alias.asname or alias.name) == expr.id
+            )
+        else:
+            return None
+    return origins.pop() if len(origins) == 1 else None
+
+
+def _join_operands(expr, definitions):
+    if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Div):
+        return [expr.left, expr.right]
+    if isinstance(expr, ast.Call) and not expr.keywords:
+        if _PATH_OPERATIONS.get(_origin(expr.func, definitions)) == "join":
+            return expr.args
+        if isinstance(expr.func, ast.Attribute) and expr.func.attr == "joinpath":
+            return [expr.func.value, *expr.args]
+    return []
+
+
+def _scratch_path(expr, definitions, seen=frozenset(), *, kind="scratch"):
+    """Prove a pytest scratch base; unknown or mixed bindings never prove it."""
+    if isinstance(expr, ast.Name):
+        if expr.id in seen:
+            return False
+        if _PATH_OPERATIONS.get(_origin(expr, definitions)) == kind:
+            return True
+        values = definitions.get(expr.id, [])
+        return bool(values) and all(
+            _scratch_path(value, definitions, seen | {expr.id}, kind=kind)
+            for value in values
+        )
+    if kind != "scratch":
+        return False
+    if isinstance(expr, ast.Call):
+        if _PATH_OPERATIONS.get(_origin(expr.func, definitions)) == "scratch":
+            return True
+        if (
+            isinstance(expr.func, ast.Attribute)
+            and expr.func.attr == "mktemp"
+            and _scratch_path(expr.func.value, definitions, seen, kind="factory")
+        ):
+            return True
+    operands = _join_operands(expr, definitions)
+    return (
+        len(operands) > 1
+        and _scratch_path(operands[0], definitions, seen)
+        and not any(
+            isinstance(part, ast.Constant)
+            and isinstance(part.value, str)
+            and Path(part.value).is_absolute()
+            for part in operands[1:]
+        )
+    )
+
 
 def _path_value(expr, definitions, root, rel, seen=frozenset()):
     """Resolve literal path construction without evaluating project code."""
@@ -479,18 +573,16 @@ def _path_value(expr, definitions, root, rel, seen=frozenset()):
             if -len(parents) <= index < len(parents):
                 return parents[index]
     if isinstance(expr, ast.Call):
-        callee = ast.unparse(expr.func)
+        operation = _PATH_OPERATIONS.get(_origin(expr.func, definitions))
         args = [_path_value(a, definitions, root, rel, seen) for a in expr.args]
         if args and isinstance(args[0], (str, Path)):
-            if callee in {"Path", "pathlib.Path", "str"}:
+            if operation == "construct":
                 return Path(args[0])
-            if callee in {"os.path.dirname", "dirname"}:
+            if operation == "parent":
                 return Path(args[0]).parent
-            if callee in {"os.path.abspath", "os.path.realpath", "abspath", "realpath"}:
+            if operation == "absolute":
                 return Path(args[0]).resolve()
-            if callee in {"os.path.join", "join"} and all(
-                isinstance(a, (str, Path)) for a in args
-            ):
+            if operation == "join" and all(isinstance(a, (str, Path)) for a in args):
                 return Path(*args)
         if (
             isinstance(expr.func, ast.Attribute)
@@ -504,7 +596,15 @@ def _path_value(expr, definitions, root, rel, seen=frozenset()):
 
 
 def _source_tokens(
-    expr, definitions, imports, root, rel, seen=frozenset(), *, called=False
+    expr,
+    definitions,
+    imports,
+    root,
+    rel,
+    seen=frozenset(),
+    *,
+    called=False,
+    scratch_operand=False,
 ):
     """Conservative path provenance, including rosters and loop variables.
 
@@ -512,6 +612,26 @@ def _source_tokens(
     executing calls. Unknown expressions contribute their literal path parts;
     this is a source audit, not a general Python data-flow interpreter.
     """
+    if scratch_operand and isinstance(expr, ast.Call):
+        return set()
+    operands = _join_operands(expr, definitions)
+    if operands and _scratch_path(expr, definitions):
+        return _source_tokens(
+            operands[0], definitions, imports, root, rel, seen
+        ) | set().union(
+            *(
+                _source_tokens(
+                    part,
+                    definitions,
+                    imports,
+                    root,
+                    rel,
+                    seen,
+                    scratch_operand=True,
+                )
+                for part in operands[1:]
+            )
+        )
     value = _path_value(expr, definitions, root, rel)
     if isinstance(value, (str, Path)) and Path(value).is_relative_to(root):
         relative = Path(value).relative_to(root).as_posix()
@@ -520,15 +640,29 @@ def _source_tokens(
         name = expr.id
         if name in seen:
             return set()
-        if name in definitions:
+        if name in definitions and any(
+            not isinstance(value, (ast.Import, ast.ImportFrom))
+            for value in definitions[name]
+        ):
             return set().union(
                 *(
                     _source_tokens(
-                        value, definitions, imports, root, rel, seen | {name}
+                        value,
+                        definitions,
+                        imports,
+                        root,
+                        rel,
+                        seen | {name},
+                        scratch_operand=scratch_operand,
                     )
                     for value in definitions[name]
-                    if called
-                    or not isinstance(value, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    if not isinstance(value, (ast.Import, ast.ImportFrom))
+                    and (
+                        called
+                        or not isinstance(
+                            value, (ast.FunctionDef, ast.AsyncFunctionDef)
+                        )
+                    )
                 )
             )
         if name in imports:
@@ -564,6 +698,8 @@ def _source_tokens(
     if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
         return {expr.value}
     if isinstance(expr, ast.Call):
+        # Calls preserve provenance unless their position in a proven scratch
+        # join supplied the structural exception above. Unknown wrappers fail closed.
         return _source_tokens(
             expr.func, definitions, imports, root, rel, seen, called=True
         ) | set().union(
@@ -586,7 +722,15 @@ def _source_tokens(
         }
     return set().union(
         *(
-            _source_tokens(child, definitions, imports, root, rel, seen)
+            _source_tokens(
+                child,
+                definitions,
+                imports,
+                root,
+                rel,
+                seen,
+                scratch_operand=scratch_operand,
+            )
             for child in ast.iter_child_nodes(expr)
         )
     )
@@ -606,7 +750,15 @@ def _definitions(scope):
 
     for node in source_tree.scope_nodes(scope):
         targets, value = [], None
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                name = alias.asname or (
+                    alias.name.split(".")[0]
+                    if isinstance(node, ast.Import)
+                    else alias.name
+                )
+                out.setdefault(name, []).append(node)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             out.setdefault(node.name, []).append(node)
         elif isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
@@ -718,10 +870,131 @@ def _copy_arguments(callee, node, definitions):
     return sources
 
 
-def _copy_sites(root=_ROOT):
+def _replace_names(expr, bindings, seen=frozenset()):
+    """Inline local expressions without executing code; cycles stop at the name."""
+
+    class Replace(ast.NodeTransformer):
+        def visit_Name(self, node):
+            values = bindings.get(node.id, [])
+            if node.id in seen or not values:
+                return node
+            expanded = [
+                _replace_names(value, bindings, seen | {node.id}) for value in values
+            ]
+            return expanded[0] if len(expanded) == 1 else ast.Tuple(elts=expanded)
+
+    return Replace().visit(copy.deepcopy(expr))
+
+
+def _local_copy_arguments(
+    callee, call, definitions, aliases, imports, root, rel, seen=frozenset()
+):
+    """Propagate a local helper's parameter sources to each calling site."""
+
+    class Bind(ast.NodeTransformer):
+        def __init__(self, arguments):
+            self.arguments = arguments
+
+        def visit_Name(self, node):
+            return (
+                copy.deepcopy(self.arguments[node.id][0])
+                if node.id in self.arguments
+                else node
+            )
+
+    functions = [
+        value
+        for value in definitions.get(callee, [])
+        if isinstance(value, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    for function in functions:
+        if id(function) in seen:
+            continue
+        parameters = [*function.args.posonlyargs, *function.args.args]
+        bound = {
+            param.arg: [arg] for param, arg in zip(parameters, call.args, strict=False)
+        }
+        bound.update((kw.arg, [kw.value]) for kw in call.keywords if kw.arg)
+        for param, default in zip(
+            parameters[-len(function.args.defaults) :],
+            function.args.defaults,
+            strict=False,
+        ):
+            bound.setdefault(param.arg, [default])
+        for param, default in zip(
+            function.args.kwonlyargs, function.args.kw_defaults, strict=True
+        ):
+            if default is not None:
+                bound.setdefault(param.arg, [default])
+        local = _definitions(function)
+        # Parameters shadow module bindings, including same-named functions.
+        names = {p.arg for p in [*parameters, *function.args.kwonlyargs]}
+        environment = dict(definitions, **local)
+        for name in names:
+            environment.pop(name, None)
+        local_aliases = dict(aliases)
+        for node in source_tree.scope_nodes(function):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    local_aliases[alias.asname or alias.name] = alias.name
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                for alias in node.names:
+                    local_aliases[alias.asname or alias.name] = (
+                        node.module + "." + alias.name
+                    )
+        for node in source_tree.scope_nodes(function):
+            if not isinstance(node, ast.Call):
+                continue
+            parts = ast.unparse(node.func).split(".")
+            target = ".".join([local_aliases.get(parts[0], parts[0]), *parts[1:]])
+            if isinstance(node.func, ast.Attribute) and node.func.attr in {
+                "symlink_to",
+                "hardlink_to",
+            }:
+                target = "Path." + node.func.attr
+            copies = [
+                (target, source, roster)
+                for source, roster in _copy_arguments(target, node, environment)
+                # Already-rooted sinks are audited at their own definition;
+                # propagate only provenance supplied by the caller.
+                if "<repo>"
+                not in _source_tokens(source, environment, imports, root, rel)
+            ]
+            copies.extend(
+                _local_copy_arguments(
+                    target,
+                    node,
+                    environment,
+                    local_aliases,
+                    imports,
+                    root,
+                    rel,
+                    seen | {id(function)},
+                )
+            )
+            for sink, source, roster in copies:
+                source = _replace_names(source, local)
+                if not any(
+                    isinstance(n, ast.Name) and n.id in names for n in ast.walk(source)
+                ):
+                    continue
+
+                # One substitution pass keeps caller names in the caller scope.
+                yield (
+                    sink,
+                    Bind(bound).visit(source),
+                    (
+                        Bind(bound).visit(_replace_names(roster, local))
+                        if roster is not None
+                        else None
+                    ),
+                )
+
+
+def _copy_sites(root=_ROOT, modules=None):
     """Discover source copies throughout the test modules' helper import graph."""
     sites = []
-    for rel in _consumer_modules(root):
+    for rel in _consumer_modules(root) if modules is None else modules:
         path = root / rel
         if path == Path(__file__):
             # This module tests the copier itself on synthetic and real trees;
@@ -731,7 +1004,18 @@ def _copy_sites(root=_ROOT):
         imports = source_tree.bindings(root, rel, tree, _search(rel))
 
         def scan(scope, inherited, inherited_aliases, inherited_imports, anchor, rel):
-            definitions = dict(inherited, **_definitions(scope))
+            local_definitions = _definitions(scope)
+            definitions = dict(inherited, **local_definitions)
+            if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for param in [
+                    *scope.args.posonlyargs,
+                    *scope.args.args,
+                    *scope.args.kwonlyargs,
+                ]:
+                    definitions[param.arg] = [
+                        param,
+                        *local_definitions.get(param.arg, []),
+                    ]
             aliases = dict(inherited_aliases)
             imports = dict(
                 inherited_imports,
@@ -767,7 +1051,18 @@ def _copy_sites(root=_ROOT):
                 )
                 if path_link:
                     callee = "Path." + node.func.attr
-                for source, roster in _copy_arguments(callee, node, definitions):
+                copies = [
+                    (callee, source, roster, False)
+                    for source, roster in _copy_arguments(callee, node, definitions)
+                ]
+                copies.extend(
+                    (sink, source, roster, True)
+                    for sink, source, roster in _local_copy_arguments(
+                        callee, node, definitions, aliases, imports, root, rel
+                    )
+                )
+                for sink, source, roster, propagated in copies:
+                    path_link = sink in {"Path.symlink_to", "Path.hardlink_to"}
                     tokens = _source_tokens(source, definitions, imports, root, rel)
                     key = (
                         Path(rel).relative_to("tests").as_posix(),
@@ -781,14 +1076,15 @@ def _copy_sites(root=_ROOT):
                     if key in _COPY_EXEMPTIONS or (
                         "<repo>" in tokens
                         and (
-                            callee == "script_copy.copy_with_imports"
+                            sink == "script_copy.copy_with_imports"
+                            or propagated
                             or code
                             or tokens == {"<repo>"}
                             or path_link
                             or _path_value(source, definitions, root, rel) is None
                         )
                     ):
-                        sites.append((rel, node.lineno, callee, roster, key))
+                        sites.append((rel, node.lineno, sink, roster, key))
                         if path_link:
                             break
 
@@ -796,8 +1092,19 @@ def _copy_sites(root=_ROOT):
     return sites
 
 
+_REPOSITORY_SCANS = 0
+
+
+@bounded(str(_ROOT))
+def _repository_scan():
+    global _REPOSITORY_SCANS
+    _REPOSITORY_SCANS += 1
+    modules = _consumer_modules(_ROOT)
+    return _copy_sites(_ROOT, modules), modules
+
+
 def _copy_cases():
-    sites = _copy_sites()
+    sites, _ = _repository_scan()
     template_only = not (_ROOT / "copier.yml").is_file()
     reason = "template-only: copier.yml prunes tests/integration/test_copier_*.py"
     cases = [
@@ -887,27 +1194,204 @@ def _assert_exemptions(sites, exemptions, root):
 
 
 def test_copy_discovery_is_nonempty_and_exemptions_still_name_copy_calls():
-    sites = _copy_sites()
+    sites, _ = _repository_scan()
     assert sites, "copy discovery found no sites: %s" % (sites,)
     _assert_exemptions(sites, _COPY_EXEMPTIONS, _ROOT)
 
 
-def test_copy_discovery_includes_routed_sites():
-    sites = _copy_sites()
+def _sample(items):
+    return "%d total; sample: %s" % (len(items), items[:10])
+
+
+def _assert_routed(sites):
     routed = [site for site in sites if site[2] == "script_copy.copy_with_imports"]
-    assert routed, "copy discovery found no copy_with_imports routes; found: %s" % (
-        [(site[0], site[1], site[2]) for site in sites],
+    assert any(
+        site[4][:2] == ("integration/test_launcher.py", "_build") for site in routed
+    ), "copy discovery missed test_launcher.py::_build route; " + _sample(
+        [(site[0], site[1], site[2]) for site in sites]
     )
 
 
+def test_copy_discovery_includes_routed_sites():
+    sites, _ = _repository_scan()
+    _assert_routed(sites)
+
+
+def _assert_helpers(modules):
+    if "tests/script_copy.py" not in modules:
+        # An explicit error keeps pytest's assertion rewriting from appending
+        # the complete module list at high verbosity.
+        raise AssertionError(
+            "copy discovery missed tests/script_copy.py; " + _sample(modules)
+        )
+
+
 def test_copy_discovery_scans_helper_modules():
-    modules = _consumer_modules(_ROOT)
-    helpers = [
-        rel
+    _, modules = _repository_scan()
+    _assert_helpers(modules)
+
+
+def test_repository_discovery_runs_once():
+    first = _repository_scan()
+    second = _repository_scan()
+    assert _REPOSITORY_SCANS == 1, (
+        "repository scans: %d (expected 1)" % _REPOSITORY_SCANS
+    )
+    assert second is first
+
+
+@pytest.mark.parametrize("guard", ["routed", "helpers"])
+def test_discovery_guards_require_the_named_consumer_and_bound_the_message(guard):
+    modules = ["tests/helper_%02d.py" % i for i in range(30)]
+    sites = [
+        (rel, 1, "script_copy.copy_with_imports", None, (rel, "fixture", "ROOT"))
         for rel in modules
-        if not Path(rel).name.startswith("test_") and Path(rel).name != "conftest.py"
     ]
-    assert helpers, "copy discovery scanned no helper modules; found: %s" % modules
+    with pytest.raises(AssertionError) as caught:
+        if guard == "routed":
+            _assert_routed(sites)
+        else:
+            _assert_helpers(modules)
+    message = str(caught.value)
+    assert "30 total" in message
+    assert "helper_09.py" in message
+    assert "helper_10.py" not in message
+    assert "helper_29.py" not in message
+
+
+@pytest.mark.parametrize(
+    "invocation",
+    [
+        "_cp(BASE / 'config/x.json', dest)",
+        "_cp(dst=dest, src=BASE / 'config/x.json')",
+        "outer(BASE / 'config/x.json', dest)",
+        "outer(dst=dest, source=BASE / 'config/x.json')",
+    ],
+)
+def test_discovery_propagates_local_helper_parameters(tmp_path, invocation):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def _cp(src, dst):\n    alias = src\n    shutil.copy(alias, dst)\n"
+                "def outer(source, dst):\n    _cp(src=source, dst=dst)\n"
+                "    outer(source, dst)\n"
+                "def fixture(dest):\n    " + invocation + "\n"
+            )
+        },
+    )
+    sites = _copy_sites(tmp_path)
+    assert [(s[2], s[4][1:]) for s in sites] == [
+        ("shutil.copy", ("fixture", "BASE / 'config/x.json'"))
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "os.fspath(BASE / 'tests')",
+        "os.path.normpath(BASE / 'tests')",
+        "os.path.expanduser(BASE / 'tests')",
+        "'{}/x'.format(BASE)",
+        "(BASE / 'x').relative_to(BASE)",
+        "Path(f(BASE))",
+        "unknown(BASE)",
+        "unknown(root=BASE)",
+        "BASE.read_text()",
+        "scratch / load_cfg(BASE)",
+        "tmp_path / '/abs' / load_cfg(BASE)",
+        "tmp_path.joinpath('/abs', load_cfg(BASE))",
+        "os.path.join(tmp_path, '/abs', load_cfg(BASE))",
+        "join(tmp_path, load_cfg(BASE))",
+        "join(BASE, 'config')",
+        "mixed / load_cfg(BASE)",
+        "tmp_path / BASE",
+    ],
+)
+def test_calls_preserve_rooted_sources_without_scratch_join_proof(tmp_path, source):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\nimport os\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def join(*args):\n    return args[0]\n"
+                "def fixture(dest, tmp_path, scratch):\n"
+                "    mixed = tmp_path\n    mixed = BASE\n"
+                "    shutil.copytree(" + source + ", dest)\n"
+            )
+        },
+    )
+    sites = _copy_sites(tmp_path)
+    assert len(sites) == 1, source
+    assert sites[0][4][1:] == ("fixture", ast.unparse(ast.parse(source).body[0].value))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "tmp_path / 'config' / load_cfg(BASE)",
+        "scratch / load_cfg(root=BASE)",
+        "scratch.joinpath('config', load_cfg(BASE))",
+        "os.path.join(scratch, 'config', load_cfg(BASE))",
+        "path_ops.join(scratch, load_cfg(BASE))",
+        "joining(scratch, load_cfg(BASE))",
+        "tmp_path_factory.mktemp('repo') / load_cfg(BASE)",
+        "factory_root / load_cfg(BASE)",
+        "factory.mktemp('repo').joinpath(load_cfg(BASE))",
+    ],
+)
+def test_only_a_call_inside_a_proven_scratch_join_loses_rooted_arguments(
+    tmp_path, source
+):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\nimport os\n"
+                "import os.path as path_ops\nfrom os.path import join as joining\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def fixture(dest, tmp_path, tmp_path_factory):\n"
+                "    scratch = tmp_path\n"
+                "    factory_root = tmp_path_factory.mktemp('repo')\n"
+                "    factory = tmp_path_factory\n"
+                "    shutil.copytree(" + source + ", dest)\n"
+            )
+        },
+    )
+    assert _copy_sites(tmp_path) == [], source
+
+
+def test_a_reassigned_scratch_parameter_does_not_prove_a_scratch_join(tmp_path):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def fixture(dest, tmp_path):\n"
+                "    tmp_path = BASE\n"
+                "    shutil.copytree(tmp_path / load_cfg(BASE), dest)\n"
+            )
+        },
+    )
+    assert len(_copy_sites(tmp_path)) == 1
+
+
+def test_a_path_join_on_a_rooted_receiver_is_still_a_rooted_source(tmp_path):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def fixture(dest):\n    shutil.copytree(BASE.joinpath(configured()), dest)\n"
+            )
+        },
+    )
+    assert len(_copy_sites(tmp_path)) == 1
 
 
 def test_discovery_finds_a_new_consumer_copying_a_roster_with_shutil(tmp_path):
