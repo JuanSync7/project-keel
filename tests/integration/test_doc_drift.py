@@ -2,7 +2,7 @@
 title: Integration — shipped documents say nothing true of one host or one moment
 kind: tests
 layer: n/a
-summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. The excluded-path rule instead reads every shipped text source, with no history, table or fence waiver, using Copier's own matcher for unconditional exclusions under docs/ only; other exclusions (Copier defaults, generated views and template-only tools) and conditional exclusions are outside its class. It exempts a whole test module only when its module-level pytest.mark.skipif uses the copier-absent guard and the _TEMPLATE_ONLY reason. NUL-containing files are counted as binary and skipped. A history file's `.md.jinja` twin renders as the generated project's own history, so it carries no `- ` entry line of the untwinned file, and finding no such pair fails. Jinja sources are read without rendering answers. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
+summary: The shipped-doc drift gate. A shipped document is any Markdown file (or its `.md.jinja` twin) outside config/project.json `doc_drift.history_paths`; in its prose it names no concrete campaign or slice id (the `work_naming` mention grammar, any prefix), matches no `doc_drift.forbidden_phrases` pattern, names no loopback port that no non-Markdown file declares, cites only check letters in check_structure.CHECKS or check names a Python module stem or definition supplies. Python twins retain definitions after Jinja tags are removed with line numbers preserved, and unparseable source raises with its path. Check citations read inline code names and letters inside code spans and exempt fences within the shared scanner's container limits; a twin definition whose name a Jinja tag touches is not read; the check-name sentence in doc_drift.check_name_guide is held to each mark's side, effect and spacing. Code spans and fences are illustrations and are exempt from the prose rules, as check_Z treats them. The excluded-path rule instead reads every shipped text source, with no history, table or fence waiver, using Copier's own matcher for unconditional exclusions under docs/ only; other exclusions (Copier defaults, generated views and template-only tools) and conditional exclusions are outside its class. It exempts a whole test module only when its module-level pytest.mark.skipif uses the copier-absent guard and the _TEMPLATE_ONLY reason. NUL-containing files are counted as binary and skipped. The non-Markdown port scan decodes UTF-8 strictly and reports an invalid file with its byte offset, even when no port is requested or all requested ports were found. A history file's `.md.jinja` twin renders as the generated project's own history, so it carries no `- ` entry line of the untwinned file, and finding no such pair fails. Jinja sources are read without rendering answers. Every expected set is derived from the thing it describes, never typed here; a missing or malformed `doc_drift` or `work_naming` block fails, a scan over zero documents fails, and only the copier.yml-derived test skips, with a stated reason, in a generated project. Each rule has a fault-injection twin that plants one item and asserts exactly one finding. Not a writer: it reads the tree and writes only under pytest's tmp_path. A change opener is advisory in review_docs, and a test here proves present claims fail no gate scan.
 """
 
 import ast
@@ -321,26 +321,41 @@ def _non_markdown_files(root):
 
 
 def declared_ports(root, wanted):
-    """The subset of *wanted* port strings that some non-Markdown file under
-    *root* names as a whole word."""
+    """Declared port strings and named UTF-8 findings in non-Markdown files.
+
+    NUL-containing binaries follow shipped_sources' binary rule. Every text
+    file is decoded strictly, even after all ports have been found, because
+    discarding bytes can manufacture a declaration that the source never held.
+    """
     found = set()
-    if not wanted:
-        return found
-    pattern = re.compile(
-        r"(?<![0-9])(%s)(?![0-9])" % "|".join(sorted(map(re.escape, wanted)))
+    findings = []
+    pattern = (
+        re.compile(
+            r"(?<![0-9])(%s)(?![0-9])" % "|".join(sorted(map(re.escape, wanted)))
+        )
+        if wanted
+        else None
     )
     for relpath in _non_markdown_files(root):
         full = Path(root) / relpath
         if full.is_symlink() or not full.is_file():
             continue
         try:
-            text = full.read_text(encoding="utf-8", errors="ignore")
+            data = full.read_bytes()
         except OSError:  # noqa: DROP001 -- an unreadable file holds no pattern to find
             continue
-        found.update(pattern.findall(text))
-        if found >= set(wanted):
-            break
-    return found
+        if b"\0" in data:
+            continue
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            findings.append(
+                "%s: byte offset %d: not UTF-8 (%s)" % (relpath, exc.start, exc.reason)
+            )
+            continue
+        if pattern is not None:
+            found.update(pattern.findall(text))
+    return found, findings
 
 
 # --- the rules ------------------------------------------------------------
@@ -526,7 +541,8 @@ def moment_and_host_findings(docs, policy, mention, port_root):
         for i, line in enumerate(text.split("\n"), 1):
             for m in _LOOPBACK_PORT.finditer(line):
                 ports.setdefault(m.group(1), []).append((relpath, i, m.group(0)))
-    declared = declared_ports(port_root, set(ports))
+    declared, decode_findings = declared_ports(port_root, set(ports))
+    findings.extend(decode_findings)
     for port in sorted(set(ports) - declared):
         for relpath, i, url in ports[port]:
             findings.append(
@@ -2190,3 +2206,56 @@ def test_an_untracked_dot_directory_is_not_a_shipping_directory(tmp_path, manife
     found = shipping_toplevel_dirs(tmp_path, {"structure": {"extra_toplevel": []}})
     assert ".github" in found, found
     assert ".editor" not in found, found
+
+
+@pytest.mark.parametrize(
+    "data, docs, expected_count",
+    [
+        (b"PORT = 59\xff999\n", [("guide.md", "http://localhost:59999")], 2),
+        (b"invalid: \xff\n", [("guide.md", "http://localhost:59999")], 1),
+        (b"invalid: \xff\n", [("guide.md", "No host-specific setting.")], 1),
+    ],
+    ids=["cannot-erase-a-byte-to-declare-a-port", "after-port-is-found", "no-port"],
+)
+def test_invalid_utf8_is_a_named_byte_offset_finding(
+    tmp_path, monkeypatch, manifest, policy, data, docs, expected_count
+):
+    (tmp_path / "a_valid.py").write_text(
+        "# café\nPORT = 59999\n" if expected_count == 1 else "# café\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "z_invalid.py").write_bytes(data)
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_non_markdown_files",
+        lambda root: ["a_valid.py", "z_invalid.py"],
+    )
+    findings = moment_and_host_findings(docs, policy, work_mention(manifest), tmp_path)
+    assert len(findings) == expected_count, findings
+    assert any(
+        "z_invalid.py" in finding
+        and "UTF-8" in finding
+        and "byte offset %d" % data.index(b"\xff") in finding
+        for finding in findings
+    ), findings
+
+
+def test_non_ascii_utf8_and_nul_binaries_are_not_decode_findings(
+    tmp_path, monkeypatch, manifest, policy
+):
+    (tmp_path / "serve.py").write_text("# café\nPORT = 59999\n", encoding="utf-8")
+    (tmp_path / "asset.bin").write_bytes(b"\x00\xff")
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "_non_markdown_files",
+        lambda root: ["serve.py", "asset.bin"],
+    )
+    assert (
+        moment_and_host_findings(
+            [("guide.md", "http://localhost:59999")],
+            policy,
+            work_mention(manifest),
+            tmp_path,
+        )
+        == []
+    )

@@ -2,7 +2,7 @@
 title: Integration — the docs state the isolation guard as the code holds it
 kind: tests
 layer: n/a
-summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (each scripts/config_loader.py `KEYS` row whose path the guard module writes as a tuple of strings, so a `tests.*` key another module reads is not required), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. While the Makefile's `test` recipe passes pytest-xdist `-n`, no markdown file at the root or under docs/ or tests/ says in the present tense that the suite does not use pytest-xdist; its twin plants one such sentence, wrapped over two lines, and asserts exactly one finding, and none once the recipe passes no `-n`. Not a writer: it reads the tree.
+summary: The documents a reader meets the isolation guard in are held to the guard. The rules and the README of the guard's own directory, and the guide the feature catalogue's guard row links as its deep doc, each name as a code span the guard module, every config key it reads (every path passed to config_loader.rows, reading named constants from the imported guard and resolving tuple concatenation; an unreadable or undeclared key path fails with its expression and location, and unrelated tuples are not required), each axis it judges, and each conftest fixture that calls into it. The symptom table of config/project.json `doc_drift.limits_guide` shows, as code spans, the guard's failure line and its unused-exemption line, each rendered from the guard with `<field>` placeholders, and quotes the words of each scratch-root refusal the guard raises. Every expected item is derived from the guard, the loader, the conftest or the catalogue, never typed here; a derived set of zero items fails, and each rule has a fault-injection twin that removes one item and asserts exactly one finding. While the Makefile's `test` recipe passes pytest-xdist `-n`, no markdown file at the root or under docs/ or tests/ says in the present tense that the suite does not use pytest-xdist; its twin plants one such sentence, wrapped over two lines, and asserts exactly one finding, and none once the recipe passes no `-n`. Not a writer: it reads the tree.
 """
 
 import ast
@@ -41,20 +41,70 @@ def _rel(path):
     return Path(path).resolve().relative_to(_ROOT).as_posix()
 
 
+def guard_key_paths():
+    """Every path passed to the guard's loader rows; unreadable paths fail.
+
+    Named values come from the imported guard, so computed module constants
+    have the same values here as in the guard itself. Calls and function-local
+    values cannot safely be evaluated by a reader and must fail explicitly.
+    """
+
+    def value(node):
+        if isinstance(node, ast.Name):
+            return vars(isolation_guard).get(node.id)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = value(node.left), value(node.right)
+            if isinstance(left, tuple) and isinstance(right, tuple):
+                return left + right
+            return None
+        if isinstance(node, (ast.Tuple, ast.List)) and all(
+            isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts
+        ):
+            return tuple(e.value for e in node.elts)
+        return None
+
+    declared = {key.path for key in config_loader.KEYS}
+    keys = set()
+    for node in ast.walk(ast.parse(_GUARD.read_text(encoding="utf-8"))):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "config_loader"
+            and node.func.attr == "rows"
+        ):
+            continue
+        assert node.args and not node.keywords, "%s:%d: cannot read key paths in %s" % (
+            _GUARD,
+            node.lineno,
+            ast.unparse(node),
+        )
+        for expression in node.args:
+            path = value(expression)
+            assert (
+                isinstance(path, tuple)
+                and path
+                and all(isinstance(part, str) and part for part in path)
+            ), "%s:%d: cannot read key path %s" % (
+                _GUARD,
+                expression.lineno,
+                ast.unparse(expression),
+            )
+            assert path in declared, "%s:%d: unknown key path %s" % (
+                _GUARD,
+                expression.lineno,
+                ".".join(path),
+            )
+            keys.add(path)
+    assert keys, "%s: no loader key paths -- zero items" % _GUARD
+    return keys
+
+
 def required_spans():
     """Every code span a document that states the guard must hold: the guard
     module's path, each loader key the guard module names, each axis, and
     each conftest fixture whose body calls into the guard."""
-    named = {
-        tuple(e.value for e in node.elts)
-        for node in ast.walk(ast.parse(_GUARD.read_text(encoding="utf-8")))
-        if isinstance(node, ast.Tuple)
-        and node.elts
-        and all(
-            isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node.elts
-        )
-    }
-    keys = sorted(".".join(k.path) for k in config_loader.KEYS if k.path in named)
+    keys = sorted(".".join(path) for path in guard_key_paths())
     tree = ast.parse(_CONFTEST.read_text(encoding="utf-8"))
     fixtures = sorted(
         node.name
@@ -280,3 +330,52 @@ def test_a_planted_unused_xdist_claim_reds_only_while_make_test_passes_n():
     findings = unused_xdist_findings(planted, runs_workers=True)
     assert len(findings) == 1 and findings[0].startswith(doc + ":"), findings
     assert unused_xdist_findings(planted, runs_workers=False) == []
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        '("tests",) + ("memory_scratch_root",)',
+        "MEMORY_KEY",
+        '("tests", "memory_scratch_root")',
+    ],
+    ids=["concatenated", "imported-guard-data", "literal"],
+)
+def test_guard_keys_include_every_loader_row_argument(
+    tmp_path, monkeypatch, expression
+):
+    guard = tmp_path / "guard.py"
+    guard.write_text(
+        'SCRATCH_KEY = ("tests", "scratch_root")\n'
+        "config_loader.rows(SCRATCH_KEY, %s)\n" % expression,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_GUARD", guard)
+    monkeypatch.setattr(sys.modules[__name__], "_rel", lambda path: "tests/guard.py")
+    assert "tests.memory_scratch_root" in required_spans()
+
+
+def test_an_unreadable_guard_key_names_the_expression(tmp_path, monkeypatch):
+    guard = tmp_path / "guard.py"
+    guard.write_text(
+        'SCRATCH_KEY = ("tests", "scratch_root")\n'
+        "config_loader.rows(SCRATCH_KEY, compute_key())\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_GUARD", guard)
+    monkeypatch.setattr(sys.modules[__name__], "_rel", lambda path: "tests/guard.py")
+    with pytest.raises(AssertionError, match=r"key path.*compute_key\(\)"):
+        required_spans()
+
+
+def test_a_tuple_unused_by_the_guard_is_not_a_required_key(tmp_path, monkeypatch):
+    guard = tmp_path / "guard.py"
+    guard.write_text(
+        'SCRATCH_KEY = ("tests", "scratch_root")\n'
+        'UNUSED = ("tests", "memory_scratch_root")\n'
+        "config_loader.rows(SCRATCH_KEY)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "_GUARD", guard)
+    monkeypatch.setattr(sys.modules[__name__], "_rel", lambda path: "tests/guard.py")
+    assert "tests.memory_scratch_root" not in required_spans()
