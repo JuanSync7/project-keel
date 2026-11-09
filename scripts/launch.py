@@ -30,10 +30,10 @@ from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import child_env  # noqa: E402 — the one allowlist a child's environment comes from
-import config_loader  # noqa: E402 — the one rule for showing configured text
-import git_tree  # noqa: E402 — the one definition of what git lists
-from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
+import child_env  # the one allowlist a child's environment comes from
+import config_loader  # the one rule for showing configured text
+import git_tree  # the one definition of what git lists
+from exit_codes import ExitCode, finish, passthrough, report
 
 __all__ = [
     "ADAPTER_KINDS",

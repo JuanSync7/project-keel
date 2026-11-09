@@ -30,10 +30,10 @@ from typing import Any, Iterator, NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import config_loader  # noqa: E402 — the one reader of config/project.json
-import git_tree  # noqa: E402 — the one definition of what git tracks
-import run_make_target  # noqa: E402 — the read-only gate runner; tests patch it here
-from exit_codes import ExitCode, finish, report  # noqa: E402
+import config_loader  # the one reader of config/project.json
+import git_tree  # the one definition of what git tracks
+import run_make_target  # the read-only gate runner; tests patch it here
+from exit_codes import ExitCode, finish, report
 
 # gate_runner(gate, cwd, timeout) -> (ok, combined_output); a timeout of None
 # leaves the limit to config/project.json make_targets.gate_timeout_seconds.
@@ -734,7 +734,7 @@ def _restore(path: Path, journal: dict[str, Any], root: str) -> list[str]:
                 _remove(target)
             else:
                 _publish(target, base64.b64decode(entry["prior"]), entry["mode"])
-        except OSError as exc:  # noqa: PERF203 -- attempt all restores before raising
+        except OSError as exc:  # attempt all restores before raising
             failures.append((str(target), exc))
     if failures:
         raise RollbackError(failures) from failures[0][1]
@@ -1144,9 +1144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "correct the spec and run it again",
         )
 
-    # Joined once so the pragma sits ON the line it silences: `ruff format`
-    # carried both of these off their expressions during the corpus
-    # reformat, and RUF100 is deferred, so nothing reported the orphans.
+    # Joined once so the type-ignore pragma stays on the expression mypy judges.
     files = ", ".join(result["files"])  # type: ignore[arg-type]
     if args.json:
         json.dump(result, sys.stdout, indent=2, sort_keys=True)

@@ -13,8 +13,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import check_structure  # noqa: E402 — the one owner of the label vocabulary
-from exit_codes import ExitCode, finish, report  # noqa: E402
+import check_structure  # the one owner of the label vocabulary
+from exit_codes import ExitCode, finish, report
 
 _GREP_LINE = re.compile(r"^([^:]+):([A-Za-z0-9_.-]+):.*?##\s(.*)$")
 _ROW = "  %-22s %-12s %s"

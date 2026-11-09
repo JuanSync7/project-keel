@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional, Tuple
 # The repository root, so the stdlib-only limits module imports as
 # `scripts.resource_limits` whichever directory started the server.
 sys.path.insert(1, str(Path(__file__).resolve().parents[1]))
-from scripts import resource_limits  # noqa: E402
+from scripts import resource_limits
 
 __all__ = ["Tool", "ToolServer", "handle_message", "run_stdio_server", "serve_stdio"]
 

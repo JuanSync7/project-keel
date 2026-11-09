@@ -29,12 +29,12 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import check_structure  # noqa: E402 — the one owner of the check list
-import child_env  # noqa: E402 — the environment every goal inherits
-import config_loader  # noqa: E402 — the one reader of config/project.json
-import git_tree  # noqa: E402 — the one definition of what git lists
-import run_date  # noqa: E402 — the one date a whole run calls today
-from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
+import check_structure  # the one owner of the check list
+import child_env  # the environment every goal inherits
+import config_loader  # the one reader of config/project.json
+import git_tree  # the one definition of what git lists
+import run_date  # the one date a whole run calls today
+from exit_codes import ExitCode, finish, passthrough, report
 
 _MANIFEST = os.path.join("config", "project.json")
 # The gate names the record's file, so it may never climb out of evidence.dir.

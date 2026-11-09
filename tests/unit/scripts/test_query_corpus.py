@@ -223,8 +223,8 @@ def test_a_served_node_names_no_hidden_node_it_links_to(tmp_path, monkeypatch, c
     printed JSON names neither the secret doc's id nor its title, in
     `links[].to`, `children`, `parent` or anywhere else."""
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
-    import build_corpus as bc  # noqa: E402
-    import link_corpus as lc  # noqa: E402
+    import build_corpus as bc
+    import link_corpus as lc
 
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "project.json").write_text("{}", encoding="utf-8")
@@ -281,8 +281,8 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_printed(
     neither its node nor its id in the links of `guides/open.md`, a public
     doc that links to it and lives where the reclassify does not reach."""
     sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
-    import build_corpus as bc  # noqa: E402
-    import link_corpus as lc  # noqa: E402
+    import build_corpus as bc
+    import link_corpus as lc
 
     (tmp_path / "guides").mkdir()
     (tmp_path / "guides" / "open.md").write_text(

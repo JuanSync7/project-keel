@@ -326,7 +326,7 @@ def test_the_cli_reports_a_failed_rule_retrieval_through_the_exit_helper(
     unreadable stdout at FAILURE through report(), naming the root without
     a model call."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import doc_review as cli  # noqa: E402
+    import doc_review as cli
 
     runner, model = _RefusedQuery(answer), _Model(_SPEC)
     monkeypatch.setattr(_BRAIN + "._run", runner)
@@ -355,8 +355,8 @@ def test_the_hook_reports_a_refused_rule_retrieval_and_a_dry_run_never_blocks(
     review is pointed at the scratch root here."""
     sys.path.insert(0, str(_ROOT / "scripts"))
     sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
-    import model_budget  # noqa: E402
-    import on_stop_doc_review as hook  # noqa: E402
+    import model_budget
+    import on_stop_doc_review as hook
 
     refused = (
         (0, "not json", "broken rules")
@@ -436,8 +436,8 @@ def test_an_empty_root_is_refused_before_any_tool(seams, monkeypatch, capsys, ex
     were given: review() raises corpus_level.NotACheckout and the CLI exits
     USAGE through the exit helper, before any tool or model call."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import doc_review as cli  # noqa: E402
-    import model_budget  # noqa: E402
+    import doc_review as cli
+    import model_budget
 
     monkeypatch.setattr(model_budget, "cap", lambda root: 8)
     runner, model, _ = seams
@@ -649,9 +649,9 @@ def test_the_cli_and_hook_report_an_unreadable_tool_report_as_a_failure(
     line and exits 0."""
     sys.path.insert(0, str(_ROOT / "scripts"))
     sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
-    import doc_review as cli  # noqa: E402
-    import model_budget  # noqa: E402
-    import on_stop_doc_review as hook  # noqa: E402
+    import doc_review as cli
+    import model_budget
+    import on_stop_doc_review as hook
 
     monkeypatch.setattr(model_budget, "cap", lambda root: 8)
     monkeypatch.setattr(_BRAIN + "._run", _BrokenTool("review_docs.py", (0, "", "")))
@@ -676,9 +676,9 @@ def test_the_cli_and_hook_report_the_review_and_skip_an_absent_model(
 ):
     sys.path.insert(0, str(_ROOT / "scripts"))
     sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
-    import doc_review as cli  # noqa: E402
-    import model_budget  # noqa: E402
-    import on_stop_doc_review as hook  # noqa: E402
+    import doc_review as cli
+    import model_budget
+    import on_stop_doc_review as hook
     from models import ModelUnavailable
 
     # Approved, so the absent model is what this case reaches; the cap itself
@@ -868,8 +868,8 @@ def test_the_cli_prints_one_line_per_withheld_finding_and_the_hook_counts_them(
 ):
     sys.path.insert(0, str(_ROOT / "scripts"))
     sys.path.insert(0, str(_ROOT / "scripts" / "hooks"))
-    import doc_review as cli  # noqa: E402
-    import on_stop_doc_review as hook  # noqa: E402
+    import doc_review as cli
+    import on_stop_doc_review as hook
 
     why = "docs/secret/README.md is at a level outside corpus.served_visibilities"
     report = DocReviewReport(

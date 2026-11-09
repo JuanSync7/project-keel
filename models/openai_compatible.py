@@ -397,7 +397,7 @@ _OPENER = urllib.request.build_opener(
 def _urlopen(req: urllib.request.Request, timeout: float) -> Any:
     """Open *req* through the opener that follows no redirect and waits on
     the socket past no deadline _post_json set."""
-    return _OPENER.open(req, timeout=timeout)  # noqa: S310 (own, checked URL)
+    return _OPENER.open(req, timeout=timeout)  # own, checked URL
 
 
 def _read_capped(resp: Any, max_bytes: int, url: str) -> bytes:

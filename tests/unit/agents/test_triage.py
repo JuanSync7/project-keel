@@ -18,7 +18,7 @@ from models import (  # noqa: E402
     CallCapReached,
     ModelBackend,
     get_model,
-    registry,  # noqa: E402
+    registry,
 )
 
 pytestmark = pytest.mark.unit

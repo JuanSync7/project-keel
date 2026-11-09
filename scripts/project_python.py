@@ -6,7 +6,6 @@ effect: read-only
 """
 
 # The hook runs before any venv exists, on the host python3 (possibly 3.6.8).
-# ruff: noqa: FA100
 
 import os
 import subprocess

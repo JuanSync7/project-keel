@@ -46,7 +46,7 @@ app.add_middleware(
 # ImportError: a showcase that is present but broken must still fail loudly instead
 # of the app quietly starting with fewer routes than it should have.
 if (Path(__file__).resolve().parent / "showcase_api.py").is_file():
-    from showcase_api import build_showcase_router  # noqa: E402
+    from showcase_api import build_showcase_router
 
     app.include_router(build_showcase_router(str(_ROOT)))
 

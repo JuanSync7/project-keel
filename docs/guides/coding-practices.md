@@ -9,7 +9,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-11-07
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -102,11 +102,12 @@ argument. It reflows *code* only, so the `E501` deferral below still holds.
 One thing to know if you suppress a rule: `ruff format` can move a `# noqa` off
 the line whose diagnostic it silenced (it did, in `check_practices.py`). Anchor
 a pragma to the line ruff *reports*, and re-run `make lint` after reformatting —
-`RUF100` is deferred here, so an orphaned pragma is not flagged on its own.
+`RUF100` makes an unused suppression fail `make lint`.
+The `external` list preserves waivers for deferred rules and custom AST gates.
 
 Kept **off as deliberate house-style policy** (not deferred debt): `UP`
-(house style is `%`-formatting), `RUF022` (semantic `__all__` order), `RUF100`
-(intentional `# noqa` codes), `E501` (long docstring summaries). `check_M` errs
+(house style is `%`-formatting), `RUF022` (semantic `__all__` order),
+`E501` (long docstring summaries). `check_M` errs
 if any is silently *selected* in `pyproject.toml`.
 
 ### Gates — custom AST checks

@@ -22,7 +22,7 @@ import isolation_guard as ig
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
-import config_loader  # noqa: E402
+import config_loader
 
 pytestmark = pytest.mark.unit
 

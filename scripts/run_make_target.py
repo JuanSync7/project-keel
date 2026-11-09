@@ -24,15 +24,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # `scripts.<name>`, as scripts/doc_review.py imports them.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import check_structure  # noqa: E402 — the one owner of the label grammar and policy
-import child_env  # noqa: E402 — the environment make and git inherit
-import config_loader  # noqa: E402 — the one reader of config/project.json
-from exit_codes import ExitCode, finish, report  # noqa: E402
+import check_structure  # the one owner of the label grammar and policy
+import child_env  # the environment make and git inherit
+import config_loader  # the one reader of config/project.json
+from exit_codes import ExitCode, finish, report
 
 # One definition of what git lists, shared with scripts/gate_evidence.py. `_git`
 # is re-exported, not used here: tests/unit/scripts/test_run_make_target.py proves
 # through it that git, like make, runs with the allowlisted environment.
-from git_tree import (  # noqa: E402
+from git_tree import (
     GitFailedError,
     NoGitError,
     _git,  # noqa: F401
@@ -43,8 +43,8 @@ from git_tree import (  # noqa: E402
 # The one process-session supervisor (KEEL-PROC-1), shared with models'
 # bounded CLI child. It imports scripts.child_env, a second module object
 # beside the bare `child_env` above, so its ChildEnvError is a second class.
-from scripts import child_env as spawn_env  # noqa: E402
-from scripts import resource_limits  # noqa: E402
+from scripts import child_env as spawn_env
+from scripts import resource_limits
 
 # A make target is a plain token — reject anything that could be a shell
 # injection (the target reaches `make` as an argv element, never a shell string,

@@ -274,7 +274,7 @@ def test_the_cli_refactors_the_checkout_its_corpus_names(tmp_path, monkeypatch):
     hands refactor() that derived root, and the walk queries `other`; a CLI
     passing its own `--root`, unset here, would walk this checkout."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import refactor_practice as rp  # noqa: E402
+    import refactor_practice as rp
 
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
@@ -301,7 +301,7 @@ def test_a_corpus_that_is_not_its_roots_own_is_refused_before_any_step(
     refactor() raises corpus_level.NotACheckout and runs no tool, and the
     CLI refuses it with USAGE before the agent runs."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import refactor_practice as rp  # noqa: E402
+    import refactor_practice as rp
 
     runner, model = _Runner(), _Model()
     _patch(monkeypatch, runner, model)
@@ -366,7 +366,7 @@ def test_the_cli_reports_a_refused_walk_through_the_exit_helper(
     that corpus, and the CLI exits USAGE through report(), as doc_review.py
     does: one `refactor_practice:` line naming the root, and no model call."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import refactor_practice as rp  # noqa: E402
+    import refactor_practice as rp
 
     model = _Model()
     monkeypatch.setattr(_BRAIN + ".get_model", lambda name=None: model)
@@ -610,7 +610,7 @@ def test_cli_entrypoint_dry_run_reports_candidates_as_json(
     # The thin scripts/ doer behind the practice-refactor skill: it must drive the
     # agent and stay a pass-through (no logic of its own).
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import refactor_practice as rp  # noqa: E402
+    import refactor_practice as rp
 
     _patch(monkeypatch, _Runner(), _Model())
     # dry-run by default
@@ -627,8 +627,8 @@ def test_cli_entrypoint_reports_an_unavailable_model_as_a_skip(monkeypatch, caps
     """The model-absent path (documentation-quality plan, phase 6): a doer that
     cannot run its model says so and exits 0, writing nothing."""
     sys.path.insert(0, str(_ROOT / "scripts"))
-    import model_budget  # noqa: E402
-    import refactor_practice as rp  # noqa: E402
+    import model_budget
+    import refactor_practice as rp
     from models import ModelUnavailable
 
     # Approved, so the absent model is what this case reaches; the cap itself

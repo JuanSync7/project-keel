@@ -184,7 +184,7 @@ def _answers(text, where):
     """The mapping *text* holds, with a string `_commit`; FinishError else."""
     try:
         data = _yaml().safe_load(text)
-    except Exception as e:  # noqa: BLE001 -- any YAML error is a stated stop
+    except Exception as e:  # any YAML error is a stated stop
         raise FinishError("%s is not YAML (%s); resolve it" % (where, e)) from e
     if not isinstance(data, dict) or not isinstance(data.get("_commit"), str):
         raise FinishError("%s records no `_commit`" % where)
@@ -246,7 +246,7 @@ def template_config(checkout_dir):
     with open(os.path.join(checkout_dir, found[0]), encoding="utf-8") as fh:
         try:
             config = _yaml().safe_load(fh.read())
-        except Exception as e:  # noqa: BLE001 -- any YAML error is a stated stop
+        except Exception as e:  # any YAML error is a stated stop
             raise FinishError("the template's %s: %s" % (found[0], e)) from e
     if not isinstance(config, dict):
         raise FinishError("the template's %s is not a mapping" % found[0])

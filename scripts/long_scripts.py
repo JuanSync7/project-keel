@@ -20,10 +20,10 @@ from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import config_loader  # noqa: E402
-import git_tree  # noqa: E402 — the one definition of what git lists
-from exit_codes import ExitCode, finish, report  # noqa: E402
-from launch import (  # noqa: E402 — the one reader of the config and a record
+import config_loader
+import git_tree  # the one definition of what git lists
+from exit_codes import ExitCode, finish, report
+from launch import (  # the one reader of the config and a record
     LauncherConfigError,
     load_launcher_config,
     recorded_seconds,

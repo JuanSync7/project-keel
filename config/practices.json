@@ -27,13 +27,13 @@
         "SLOT",
         "NPY",
         "TID251",
-        "ERA001"
+        "ERA001",
+        "RUF100"
       ],
       "deferred": {
         "_comment": "DELIBERATE house-style policy, NOT temporary debt: each fights a chosen convention, so it stays off permanently. check_M errs if any is silently selected in pyproject.",
         "UP": "house style is %-formatting (UP031 would rewrite ~19 sites to f-strings); the 3.6-safe checks in scripts/ require %-formatting anyway",
         "RUF022": "__all__ is ordered semantically, not alphabetically",
-        "RUF100": "intentional `# noqa: S310` etc. read as unused until the S (bandit) family is selected, which we don't",
         "E501": "docstring summaries deliberately exceed 88 cols"
       },
       "per_file_ignores": {
