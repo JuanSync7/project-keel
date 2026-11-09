@@ -118,7 +118,7 @@ def main(argv=None) -> int:
                 ExitCode.FAILURE,
                 "openapi.json is stale",
                 opts.out,
-                "regenerate with `python api/rest_fastapi/export_openapi.py`",
+                "regenerate with `make openapi`",
             )
         print("openapi.json up to date")
         return ExitCode.SUCCESS

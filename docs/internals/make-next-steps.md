@@ -8,7 +8,7 @@ tags: [design, make, exit-codes, footer, graph, orphans, gate]
 summary: The design pass for queue item KEEL-NEXT-1. Every annotated make target gets a route for each outcome it can end with, kept in one table in config/project.json `make_targets.next`; a recipe shell that sees each recipe line's real status prints a footer from that table naming the next target or command; a static check holds the table and the recipes to the Makefile and the exit-code list, a walk test drives each declared edge once from the entry targets, a costly, networked or shared-state edge is checked on paper, and a target no entry reaches is an orphan only with a reason. It names the incumbents and where each falls short, records what was measured and what is inferred, answers the hard questions per effect class, and lists the build steps by intent. Nothing here is built.
 id: docs-design-make-next-steps
 created: 2026-10-22
-updated: 2026-11-07
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -604,7 +604,8 @@ Which routes to write is inferred.
   wide one, `verify` to `command:commit`, an advisory to `stop`.
 - **`FAILURE` (1):** default rerun, overridden where a twin writer exists:
   `check-docs` → `restamp-docs`, `check-exit-codes` → `exit-codes`,
-  `check-aad` → `agent-surface-schema`, `check-corpus` → `site-data`.
+  `check-aad` → `agent-surface-schema`, `check-corpus` → `site-data`,
+  `check-openapi` → `openapi`.
   `fmt-check` runs ruff, a tool line, so its 1 is `status:1` → `fmt`.
 - **`USAGE` (2):** default rerun for a keel script's refusal of its own
   arguments.
@@ -676,11 +677,12 @@ Which routes to write is inferred.
   build confirms the order). The test asserts the status, the footer's route
   and that no request was made.
 
-### `[tree]` (`fmt`, `restamp-docs`, `exit-codes`, `agent-surface-schema`; plus `doc-review-apply`, `fe-install`)
+### `[tree]` (`fmt`, `restamp-docs`, `exit-codes`, `agent-surface-schema`, `openapi`; plus `doc-review-apply`, `fe-install`)
 
 - **On success:** each writer routes to its check twin (`fmt` → `fmt-check`,
   `restamp-docs` → `check-docs`, `exit-codes` → `check-exit-codes`,
-  `agent-surface-schema` → `check-aad`). A writer reached from its twin's
+  `agent-surface-schema` → `check-aad`, `openapi` → `check-openapi`). A
+  writer reached from its twin's
   failure closes the repair loop.
 - **On failure:** default rerun; `restamp-docs` and `exit-codes` also emit
   `USAGE` and `CONFIG`.
@@ -808,7 +810,8 @@ edges sit together. A target with no next targets (`→ —`) was routed to
 | `check` | `check-docs`, `advise`, `doc-review` |
 | `check-all` | `verify` |
 | `check-corpus` | `site-data` |
-| `check-openapi`, `check-cdmon` | — |
+| `check-openapi` | `openapi` |
+| `check-cdmon` | — |
 | `check-aad` | `agent-surface-schema` |
 | `check-exit-codes` | `exit-codes` |
 | `check-docs` | `restamp-docs`, `check-all` |
@@ -838,6 +841,7 @@ edges sit together. A target with no next targets (`→ —`) was routed to
 | `site-data` | `check-corpus` |
 | `run-api` | `run-web` |
 | `agent-surface-schema` | `check-aad` |
+| `openapi` | `check-openapi` |
 | `exit-codes` | `check-exit-codes` |
 
 Reachability from `help`, following these edges, Makefile prerequisites and

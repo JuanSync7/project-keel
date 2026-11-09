@@ -2,7 +2,7 @@
 title: Integration — the target that regenerates what a check judges turns that check green
 kind: tests
 layer: n/a
-summary: A check target runs writers with `--check` (`$(PY) <script>.py ... --check`), and a `[tree]` target that runs one of those writers without `--check` is that check's remedy. When a check judges more than one artifact, some one `[tree]` target must run every writer the check runs, so the target a user is told to run after a change (such as `make exit-codes` after adding an ExitCode member) leaves the check green rather than red on the artifact it skipped. A check none of whose writers any `[tree]` target runs is not judged here, and a pass that judges no check is a failure. Read from the Makefile with scripts/check_structure.py `make_target_rules` and `target_effects`; it runs nothing.
+summary: A check target runs writers with `--check` (`$(PY) <script>.py ... --check`), and a `[tree]` target that runs one of those writers without `--check` is that check's remedy. When a check judges more than one artifact, some one `[tree]` target must run every writer the check runs, so the target a user is told to run after a change (such as `make exit-codes` after adding an ExitCode member) leaves the check green rather than red on the artifact it skipped. A check with no remedy fails too, unless `_EXCUSED` excuses it with a reason, and an excuse for a check that has gained a remedy or left the Makefile fails as stale; a pass that judges no check is a failure. Read from the Makefile with scripts/check_structure.py `make_target_rules` and `target_effects`; it runs nothing.
 @covers Makefile
 """
 
@@ -19,6 +19,13 @@ import check_structure as cs  # noqa: E402
 pytestmark = pytest.mark.integration
 
 _CHECK = " --check"
+
+# A check whose writer has no write mode keel can name yet. The cdmon adapter
+# run without --check still lints, so a target running it would restore nothing.
+_EXCUSED = {
+    "check-cdmon": "scripts/cdmon_sync.py runs lint without --check; which "
+    "cdmon subcommand heals drift is unverified while cdmon is not installed",
+}
 
 
 def _writers(rule):
@@ -37,24 +44,33 @@ def _writers(rule):
     return found
 
 
-def _unrestored(text, tree_targets):
-    """(judged, findings): each check target with writers some target of
-    *tree_targets* runs is judged, and a finding names one whose writers no
-    single such target runs all of."""
+def _unrestored(text, tree_targets, excused=()):
+    """(judged, findings): each check target whose writers some [tree] target
+    runs is judged, and a finding names one whose writers no single such target
+    runs all of, or one with no remedy at all that *excused* does not name. An
+    excused check that has a remedy, or is absent, is a stale-excuse finding."""
     rules = cs.make_target_rules(text)
     recipes = {
         r.target: {" ".join(c.split()) for c in r.recipe}
         for r in rules
         if r.target in tree_targets
     }
-    judged, findings = 0, []
+    judged, findings, unremedied = 0, [], set()
     for rule in rules:
         writers = _writers(rule)
         if not writers:
             continue
         runs_some = [t for t, cmds in sorted(recipes.items()) if cmds & set(writers)]
         if not runs_some:
+            unremedied.add(rule.target)
+            if rule.target not in excused:
+                findings.append(
+                    "%s: no [tree] remedy target runs its writers (%s)"
+                    % (rule.target, "; ".join(writers))
+                )
             continue
+        # Only a check with a remedy counts: an excused check alone must not
+        # satisfy the zero-items guard below.
         judged += 1
         if not any(set(writers) <= recipes[t] for t in runs_some):
             findings.append(
@@ -62,6 +78,11 @@ def _unrestored(text, tree_targets):
                 "%s each run only some"
                 % (rule.target, "; ".join(writers), ", ".join(runs_some))
             )
+    findings.extend(
+        "%s: excused for having no remedy, but it has one or is gone; "
+        "drop it from _EXCUSED" % target
+        for target in sorted(set(excused) - unremedied)
+    )
     return judged, findings
 
 
@@ -93,19 +114,38 @@ check-y: ## [local] y
 
 
 @pytest.mark.parametrize(
-    "text, judged, red",
-    [(_SPLIT, 1, True), (_ONE_TARGET, 1, False), (_NO_REMEDY, 0, False)],
-    ids=["split-across-targets", "one-target-runs-all", "no-remedy-target"],
+    "text, excused, judged, red",
+    [
+        (_SPLIT, (), 1, True),
+        (_ONE_TARGET, (), 1, False),
+        (_NO_REMEDY, (), 0, True),
+        (_NO_REMEDY, ("check-y",), 0, False),
+        (_ONE_TARGET, ("check-x",), 1, True),
+        # A clean Makefile, so the stale excuse is the only finding.
+        (_ONE_TARGET, ("check-gone",), 1, True),
+    ],
+    ids=[
+        "split-across-targets",
+        "one-target-runs-all",
+        "no-remedy-target",
+        "no-remedy-excused",
+        "stale-excuse-has-a-remedy",
+        "stale-excuse-names-no-check",
+    ],
 )
-def test_a_check_is_restored_by_one_target_that_runs_every_writer(text, judged, red):
-    count, findings = _unrestored(text, {"x", "x-sh"})
+def test_a_check_is_restored_by_one_target_that_runs_every_writer(
+    text, excused, judged, red
+):
+    count, findings = _unrestored(text, {"x", "x-sh"}, excused)
     assert count == judged
     assert bool(findings) is red, findings
 
 
 def test_each_check_s_regenerate_target_runs_every_writer_it_checks():
     judged, findings = _unrestored(
-        (_ROOT / "Makefile").read_text(encoding="utf-8"), _tree_targets(_ROOT)
+        (_ROOT / "Makefile").read_text(encoding="utf-8"),
+        _tree_targets(_ROOT),
+        _EXCUSED,
     )
     assert judged > 0, "no check target has a [tree] remedy -- zero items"
     assert not findings, "\n".join(findings)

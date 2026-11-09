@@ -54,7 +54,7 @@ WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '
 .PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts preflight verify test trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
-        fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
+        fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo openapi agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
 
 # `make help EFFECT=tree` lists only what rewrites the tree; `AREA=` filters by a
 # `##@` area header once config/project.json make_targets.area_dir names one.
@@ -401,6 +401,8 @@ run-web: ## [local] Serve the showcase frontend (dev server); proxies /api to th
 	cd $(firstword $(FE_APPS)) && API_PROXY_TARGET=$${API_PROXY_TARGET:-http://localhost:8000} npm run dev
 demo: check-python ## [local] Run the demo
 	$(PY) demo/run_demo.py
+openapi: check-python ## [tree] Regenerate the committed OpenAPI contract from the live app; make check-openapi is the gate
+	$(PY) api/rest_fastapi/export_openapi.py
 agent-surface-schema: check-python ## [tree] Regenerate the committed AAD JSON Schema from the model
 	$(PY) scripts/agent_surface/generate_aad_schema.py
 exit-codes: check-python ## [tree] Regenerate the exit-code table in the limits guide from scripts/exit_codes.py and the gate's scripts, and the shell helper scripts/exit_codes.sh, so make check-exit-codes is green after it
