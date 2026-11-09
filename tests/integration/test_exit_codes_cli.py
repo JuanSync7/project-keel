@@ -359,7 +359,11 @@ _ROOT_CONFIG_FIRST = [
 ]
 
 
-@pytest.mark.parametrize("script,extra", _ROOT_CONFIG_FIRST)
+# Copier prunes optional scripts; only a shipped CLI can refuse its --root.
+@pytest.mark.parametrize(
+    "script,extra",
+    [row for row in _ROOT_CONFIG_FIRST if (_ROOT / "scripts" / row[0]).is_file()],
+)
 @pytest.mark.parametrize("kind", ["missing", "file"])
 def test_config_first_cli_refuses_a_root_that_is_not_a_directory(
     tmp_path, script, extra, kind

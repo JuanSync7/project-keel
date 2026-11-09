@@ -2,7 +2,7 @@
 title: E2E — MCP stdio JSON-RPC journey
 kind: tests
 layer: backend
-summary: A client starts each MCP server as its own process and speaks JSON-RPC to it over its real stdio - initialize, list tools, call a tool - and checks the Q&A server, under the shipped config/project.json `agents.max_model_calls` of 0, answers a question with a tool error naming that key rather than a model call (the answer it gives once a call is approved, cited from the corpus, is tests/integration/test_mcp_servers.py's); that one server process, started by a launcher under a scratch root whose config approves one call a question and `agents.max_session_model_calls` of 2, answers two questions from the corpus and refuses the third and fourth with a tool error naming the total key and the calls made, over the same stdio; and the action server's default is a dry run that leaves the tree as it was.
+summary: A client starts each MCP server as its own process and speaks JSON-RPC to it over its real stdio - initialize, list tools, call a tool - and checks the Q&A server, with real_corpus building the checkout's corpus if absent and under the shipped config/project.json `agents.max_model_calls` of 0, answers a question with a tool error naming that key rather than a model call (the answer it gives once a call is approved, cited from the corpus, is tests/integration/test_mcp_servers.py's); that one server process, started by a launcher under a scratch root whose config approves one call a question and `agents.max_session_model_calls` of 2, answers two questions from the corpus and refuses the third and fourth with a tool error naming the total key and the calls made, over the same stdio; and the action server's default is a dry run that leaves the tree as it was.
 """
 
 import json
@@ -44,7 +44,7 @@ def _by_id(replies):
 
 
 @pytest.mark.endpoint("mcp keel-wiki-qa/wiki_answer")
-def test_wiki_answer_over_real_stdio(mcp_session):
+def test_wiki_answer_over_real_stdio(mcp_session, real_corpus):
     replies = mcp_session(
         _server("qa_server.py"),
         [
@@ -63,7 +63,7 @@ def test_wiki_answer_over_real_stdio(mcp_session):
     assert "wiki_answer" in {tool["name"] for tool in tools}
     assert all("inputSchema" in tool and tool["description"] for tool in tools)
 
-    # The shipped count approves no model call, so the question is refused.
+    # Retrieval needs the fixture's corpus to reach the shipped zero-call cap.
     result = by_id[3]["result"]
     assert result["isError"] is True
     assert "agents.max_model_calls" in result["content"][0]["text"]
