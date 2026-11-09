@@ -2,7 +2,7 @@
 title: Test helper — the one reader of the Python tree the gate tests judge
 kind: tests
 layer: n/a
-summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module or a directory, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `scope_nodes` walks one lexical scope without entering nested definitions, `shadowed_calls` names the calls in it through a name a comprehension binds, and `bindings` resolves that scope's imported names and dotted modules to project files; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
+summary: The walk, the parse and the token readers every tree-wide gate test shares, so no two gates own a different idea of which files are the project's or of what an import points at. `python_files` lists every `*.py` that scripts/check_structure.py `walk` reaches (its IGNORE_DIRS keep vendored and installed code out); `parse` reads one into a syntax tree and raises SourceTreeError naming the file it cannot; `import_edges` resolves every `import` and `from ... import` to the project file it loads, through an ordered list of search roots, skipping a name the standard library owns; `unresolved_imports` lists each import of the project (an absolute name whose first segment a search root holds as a module, regular package or directory containing project Python files, or any relative name) that loads no file, so a caller can fail loudly instead of reading it as external; `scope_nodes` walks one lexical scope without entering nested definitions, `shadowed_calls` names the calls in it through a name a comprehension binds, and `bindings` resolves that scope's imported names and dotted modules to project files; `comment_starts` lists the comments that open a thought, read through tokenize so a `#` inside a string is never one; `noqa_reasons` reads each `# noqa: CODE <sep> reason` suppression, taking the codes separated by commas or spaces as ruff does. It cannot see an import made through importlib, `__import__` or a `sys.path` entry no search root names: such a name does not resolve and is treated as external.
 """
 
 import ast
@@ -144,13 +144,25 @@ def _package_parts(importer):
 
 
 def _is_project_head(root, search_roots, head):
-    """True when some search root holds *head* as a module or a directory: an
-    import starting with it is the project's, so failing to resolve it is a
-    missing file, never an installed name."""
+    """True when a search root holds *head* as a module, regular package or
+    directory containing project Python files. Refuse unreadable evidence."""
+
+    def unreadable(exc):
+        raise SourceTreeError(
+            "%s: cannot classify import head %s (%s)" % (exc.filename, head, exc)
+        ) from exc
+
     for search_root in search_roots:
         base = os.path.join(str(root), search_root + head)
-        if os.path.isfile(base + _PY) or os.path.isdir(base):
+        if os.path.isfile(base + _PY) or os.path.isfile(os.path.join(base, _INIT)):
             return True
+        if os.path.isdir(base) and head not in cs.IGNORE_DIRS:
+            # Namespace directories lack initializers; use the same exclusions
+            # as python_files so vendored code cannot establish ownership.
+            for _dirpath, dirnames, filenames in os.walk(base, onerror=unreadable):
+                dirnames[:] = [d for d in dirnames if d not in cs.IGNORE_DIRS]
+                if any(name.endswith(_PY) for name in filenames):
+                    return True
     return False
 
 
@@ -394,8 +406,9 @@ def import_edges(root, files, search_roots):
 def unresolved_imports(root, files, search_roots):
     """Every import in *files* that names the project yet loads no file, as a
     sorted list of `(importer, lineno, dotted name)`. An absolute import names
-    the project when a search root holds its first segment as a module or a
-    directory; a relative import always does."""
+    the project when a search root holds its first segment as a module, regular
+    package or directory containing project Python files; a relative import
+    always does. Unreadable directory evidence raises SourceTreeError."""
     misses = set()
     for importer in files:
         tree = parse(root, importer)

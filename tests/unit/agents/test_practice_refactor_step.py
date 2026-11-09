@@ -20,6 +20,14 @@ from models import ModelBackend  # noqa: E402
 pytestmark = pytest.mark.unit
 
 
+def test_rules_name_every_public_symbol():
+    from agents import practice_refactor
+
+    rules = (_ROOT / "agents/practice_refactor/AGENT.md").read_text(encoding="utf-8")
+    assert practice_refactor.__all__
+    assert all(f"`{name}`" in rules for name in practice_refactor.__all__)
+
+
 @pytest.mark.parametrize(
     "text", ["[1]", '{"practices": [1]}', "[" * 2000 + "0" + "]" * 2000]
 )

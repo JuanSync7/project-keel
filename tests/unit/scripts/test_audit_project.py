@@ -1341,7 +1341,25 @@ def test_a_refusal_naming_a_file_the_update_did_not_conflict_is_exit_2(
     assert _scratch_left(tmp_path) == []
 
 
-_OWED = "config/project.json: child_env.names lists GIT_DIR, which is bound"
+_OWED = (
+    'config/project.json: child_env.names lists "GIT_DIR", '
+    "which child_env.repo_context_names marks as bound"
+)
+
+
+def test_owed_fixture_matches_the_real_refusal(tmp_path):
+    import child_env
+    import config_loader
+
+    manifest = config_loader.read(str(_ROOT))
+    manifest["child_env"]["names"].append("GIT_DIR")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    with pytest.raises(child_env.ChildEnvError) as caught:
+        child_env.build_child_env(root=str(tmp_path))
+    assert _OWED in str(caught.value)
 
 
 def _task(stem, *, finish=True):

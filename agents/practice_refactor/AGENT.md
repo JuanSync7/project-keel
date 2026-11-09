@@ -7,7 +7,7 @@ owner: TBD
 summary: Local agent rules inside agents/practice_refactor/.
 id: agents-practice-refactor-agent
 created: 2026-07-07
-updated: 2026-11-07
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -18,7 +18,7 @@ These rules are **local and authoritative** for this directory. They inherit fro
 
 ## Rules
 
-- Policy/prompt only. Invoke `scripts/` doers as **tools** via their CLI (per `agents/tools/` specs in `tools.md`); never `import` script logic. `refactor` is the only public symbol; keep prompt/policy in `_brain.py` private behind `__init__.py`.
+- Policy/prompt only. Invoke `scripts/` doers as **tools** via their CLI (per `agents/tools/` specs in `tools.md`); never `import` script logic. The public symbols are `refactor`, `propose`, `RefactorReport` and `WalkRefused`, exported through `__init__.py` and listed in `__all__`; keep the remaining prompt/policy in `_brain.py` private.
 - Get the model from `models/` (`get_model`); never name a provider. Read `config/practices.json` as DATA by path (json.load), never import it.
 - Default to dry-run (`execute=False`): the read-only `walk` (query_corpus) and `baseline` (run_make_target) run so the report is real, but `propose` (model) and `apply` (writes) are skipped. Refactoring needs `execute=True`.
 - Control flow is a neutral `Plan` (steps + edges; see `runtimes/`) executed by a `Runtime` — the dry-run effect-guard (`writes`/`model-call` steps are skipped unless `execute=True`) lives in the runtime, not in inline `if`s. `refactor(runtime=...)` selects the engine; default is the stdlib `inprocess` engine, never a vendor.
