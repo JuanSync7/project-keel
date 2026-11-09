@@ -1218,12 +1218,11 @@ def test_copy_discovery_includes_routed_sites():
 
 
 def _assert_helpers(modules):
-    if "tests/script_copy.py" not in modules:
-        # An explicit error keeps pytest's assertion rewriting from appending
-        # the complete module list at high verbosity.
-        raise AssertionError(
-            "copy discovery missed tests/script_copy.py; " + _sample(modules)
-        )
+    # Asserting a bare name keeps pytest's assertion rewriting from appending
+    # the complete module list at high verbosity, and the assertion-quality
+    # gate counts an assert where it would not count a raise.
+    scanned = "tests/script_copy.py" in modules
+    assert scanned, "copy discovery missed tests/script_copy.py; " + _sample(modules)
 
 
 def test_copy_discovery_scans_helper_modules():
