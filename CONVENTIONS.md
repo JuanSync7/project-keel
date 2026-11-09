@@ -9,7 +9,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-08
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -1183,6 +1183,14 @@ govern *how you work*; their executable analog — a loop a program runs unatten
   `- AC-<n>: <text>` line below it. A test names its unit with
   `@pytest.mark.req("REQ-0001#AC-1")`. A bare requirement id never covers a
   requirement that has numbered criteria.
+- **Run the ship set every round.** In a template checkout, a fix or review
+  round, doc-only included, runs `make test-ship` before full `make verify`. The loader reads
+  `tests.ship_set`; `tests/integration/test_copier_ship_set.py` derives the
+  modules that render a project from Copier API calls and child-process argv
+  across `tests/`, following helper imports and fixture requests. It fails an
+  unresolved render binding or an incomplete or stale list. The cost this avoids is a full-verify rerun of about
+  1 h 50 min after a generated-project failure
+  (`docs/guides/dev-loops.md`).
 - **The gate is the judge.** "Done" means `make verify` (`preflight` + `check-all` + `secret-scan` + `lint` +
   `typecheck` + `test` + `trace` + `eval` + `test-fe` + `test-sh`) is green; step transitions and completion gate on the
   real exit code, never on a model's self-report. A loop runs its gate through

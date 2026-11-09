@@ -819,6 +819,7 @@ edges sit together. A target with no next targets (`→ —`) was routed to
 | `doc-review` | `doc-review-apply` |
 | `doc-review-apply` | `check-docs` |
 | `advise`, `check-generic`, `long-scripts`, `verify` | — |
+| `test-ship` | `verify` (after every fix or review round, doc-only included; runs configured renderer modules first) |
 | `test`, `trace`, `eval` | `verify` (each) |
 | `eval-live` | — |
 | `unit`, `integration`, `e2e`, `smoke` | `test` (each) |
@@ -850,6 +851,11 @@ the goals `verify` handed `scripts/gate_evidence.py` before KEEL-SHELL-1 added
 recipe owns that list. Following these edges alone gives 10: `help`,
 `check`, `new`, `check-docs`, `advise`, `doc-review`, `restamp-docs`,
 `check-all`, `verify`, `doc-review-apply`.
+
+The appendix routes `test-ship` to `verify`; the target reads `tests.ship_set`
+through `scripts/config_get.py`. Every fix or review round, including a doc-only
+round, runs the modules that render a project before full verify. The historical
+reachability counts above describe the original sketch.
 
 ## Corrections log
 

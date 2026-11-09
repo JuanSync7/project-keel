@@ -9,7 +9,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-11-08
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -108,6 +108,30 @@ failed one's is kept, named after the test (`pyproject.toml`
 `tmp_path_retention_policy`). A test that starts a child process gives it the
 seconds `tests.child_timeout_seconds` names.
 
+In a template checkout, every fix or review round, including a doc-only round,
+runs `make test-ship` before the full `make verify`. The target reads `tests.ship_set` through
+`scripts/config_get.py` and runs pytest over exactly those modules. Its
+`[local]` label covers generated projects and test scratch outside the
+checkout. It does not replace full verify.
+
+`tests/integration/test_copier_ship_set.py` derives the set from executable
+Copier `run_copy`, `run_update` and `Worker` calls and Copier child-process
+argv across every Python file under `tests/`, without importing or running
+those files. The set contains test modules that render a project, directly or
+through a test helper or fixture. Import dependencies and fixture requests
+propagate rendering to their test modules, including autouse fixtures.
+Every renderer is included, even one that asserts directly on its project
+rather than starting pytest there. Unresolved render bindings fail with their
+file and line. Missing modules, stale paths, duplicate entries and a derivation
+over zero modules fail. Comments and quoted calls do not count. A generated project has no template-renderer set;
+its config twin declares `[]`, and `test-ship` refuses an empty selection
+instead of running the whole suite by default.
+
+The reason is the cost of discovering a generated-project failure only in the
+coordinator's full gate: about 1 h 50 min per rerun, as when four generated-project suites failed
+in one lane. The ship target puts
+that feedback inside each round, including rounds that change only prose.
+
 Run the *smallest sufficient* target often (a focused `pytest -m unit -k name`),
 and the full `make verify` before declaring a task complete. A loop that advances
 on the model's claim of success rather than a real exit code is unsafe — gate on
@@ -132,6 +156,7 @@ it alone is the judge of "done".
 |---|---|---|---|
 | Inner loop | `make check`, then `pytest <file> -k <name>` or `make unit` | structure and frontmatter; the one test you are driving, or every `unit`-marked test | after each edit in a TDD pass |
 | Before a commit | `make lint`, `make typecheck`, `make check-all` | ruff and the format check; mypy strict over the `pyproject.toml` `[tool.mypy]` roots; every deterministic check | before each commit |
+| Every fix or review round | `make test-ship` | every configured renderer module and its generated-project assertions | before full verify, including a doc-only round |
 | Before a merge | `make integration`, `make e2e` | the tests that start child processes, render projects and drive transports | when a change reaches what those tests drive |
 | Full gate | `make verify` | `preflight`, `check-all`, `secret-scan`, `lint`, `typecheck`, `test`, `trace`, `eval`, `test-fe` and `test-sh`, with the evidence record | before you call a slice done |
 

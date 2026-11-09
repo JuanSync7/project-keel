@@ -702,6 +702,18 @@ def _any_reasoned_paths(value: Any) -> bool:
     return _is_any_reason_map(value) and _relative_posix_keys(value)
 
 
+def _ship_set_paths(value: Any) -> bool:
+    # The make recipe splits these paths into argv words; no option, glob,
+    # whitespace or node id may turn a module selection into another command.
+    return _relative_posix_keys(value) and all(
+        re.match(r"^[A-Za-z0-9_./-]+\Z", path)
+        and path.rsplit("/", 1)[-1].startswith("test_")
+        and path.endswith(".py")
+        and not path.startswith("-")
+        for path in value
+    )
+
+
 def _relative_dirs(value: Any) -> bool:
     # An empty list would read no test, which reads as a pass over nothing.
     return bool(value) and _relative_posix_keys(value)
@@ -1712,6 +1724,17 @@ KEYS = tuple(
                 NONE,
                 "what a test of each tier marker may reach on the network, "
                 "writes and stores axes",
+            ),
+            _row(
+                ("tests", "ship_set"),
+                "list_of_str",
+                [],
+                "the repository-relative renderer test modules test-ship runs "
+                "before full verify; empty means no ship set is declared",
+                accepts=(
+                    _ship_set_paths,
+                    "relative test_*.py module paths without whitespace or globs",
+                ),
             ),
             _row(
                 ("tests", "scratch_root"),

@@ -206,6 +206,7 @@
       "audit-project": "audits another project's tree and needs DEST; the template checkout proves it read-only in tests/integration/test_copier_audit.py, a whole-tree hash of DEST with .git included (in a generated project the target is a stub naming the template)",
       "run-api": "a dev server that never exits",
       "run-web": "a dev server that never exits and needs npm",
+      "test-ship": "repeats renderer tests already in test; tests/integration/test_copier_ship_set.py proves the real recipe runs exactly a scratch-configured set and refuses an empty set",
       "test": "runs the whole suite, which holds this sweep, so it would run itself; tests/integration/test_write_guard.py runs its make-driving cases through the gate runner",
       "integration": "runs the integration suite, which holds this proof",
       "long-scripts": "judges recorded runs, and .launch/durations.json is git-ignored so a fresh clone has none, which is red by design (a pass over zero runs fails); tests/integration/test_launcher.py proves it read-only with a whole-tree digest",
@@ -538,6 +539,16 @@
     }
   },
   "tests": {
+    "ship_set": [
+      "tests/integration/test_copier_audit.py",
+      "tests/integration/test_copier_finish_update.py",
+      "tests/integration/test_copier_generation.py",
+      "tests/integration/test_copier_job_conflict_refusal.py",
+      "tests/integration/test_copier_project_checks.py",
+      "tests/integration/test_copier_toolchain_answer.py",
+      "tests/integration/test_copier_update.py",
+      "tests/unit/scripts/test_audit_project.py"
+    ],
     "full_gate_options": {
       "-q": {
         "kind": "flag",

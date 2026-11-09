@@ -126,6 +126,14 @@ of truth for labeling and the directory taxonomy. Each directory's own
   capability through the layers (`app → {frontend, backend} → shared`, plus
   transports/agents), independently verifiable — not one horizontal layer at a
   time. Each convergence pass should complete one slice.
+- **Run the ship set every round.** In a template checkout, a fix or review
+  round, including a doc-only round, runs `make test-ship` before the full `make verify`.
+  `tests.ship_set` names the renderer modules;
+  `tests/integration/test_copier_ship_set.py` holds the list to their render
+  APIs, child processes, helper imports and fixture requests under `tests/`.
+  Unresolved render bindings fail with their file and line.
+  Generated-project failures found only at full verify have cost
+  about 1 h 50 min per rerun (`docs/guides/dev-loops.md`).
 - **Converge in bounded passes.** When a change spans more than one file or
   can't be finished and verified in a single edit, write the plan down first,
   then each pass: do the next slice (one capability end-to-end), run
