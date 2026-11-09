@@ -76,16 +76,27 @@ class _LibraryError(ValueError):
     def __init__(self, message: str, type_name: str) -> None:
         super().__init__(message)
         self.type_name = type_name
+        self.dropped_attributes: tuple[str, ...] = ()
 
 
 def _safe_library_error(exc: ValueError) -> ValueError:
     """Copy both chain links without mutating library exceptions.
 
-    No input text holding @ may survive in args or public string/bytes
-    attributes. Stand-ins retain sanitized public text, type names and integer
-    positions; other library attributes can hold arbitrary input objects.
+    Rebuild args from the message. For both the message and public attributes,
+    preserve str/bytes unchanged unless they hold @; then use shown(bare=True),
+    encoding its result as UTF-8 for bytes. Carry built-in int, float, bool and
+    None unchanged because they cannot hold input text. Drop containers and all
+    other objects (including scalar subclasses, which can hold extra state)
+    because they can retain arbitrary input. Record their names in the sorted
+    tuple dropped_attributes. Names in dir(BaseException) are machinery the
+    stand-in owns; neither copy nor record them. Callable attributes on the
+    library class are behaviour, also neither copied nor recorded. Instance
+    data (including callables shadowing methods) and properties follow the
+    value-kind rule above. The metadata names type_name and dropped_attributes
+    are reserved, so any original values under those names are dropped too.
     Raise outside the handler so its raw exception cannot become context.
     """
+    machinery = frozenset(dir(BaseException))
     pending: list[BaseException] = [exc]
     originals: list[BaseException] = []
     copies: dict[int, _LibraryError] = {}
@@ -98,13 +109,25 @@ def _safe_library_error(exc: ValueError) -> ValueError:
             config_loader.shown(message, bare=True) if "@" in message else message,
             config_loader.shown(type(current).__name__, bare=True),
         )
+        dropped: list[str] = []
         for name in dir(current):
-            if name.startswith("_") or name == "type_name":
+            if name.startswith("_") or name in machinery:
+                continue
+            if name in ("type_name", "dropped_attributes"):
+                dropped.append(name)
+                continue
+            if name not in vars(current) and callable(
+                getattr(type(current), name, None)
+            ):
                 continue
             value = getattr(current, name)
-            if isinstance(value, str):
-                setattr(safe, name, config_loader.shown(value, bare=True))
-            elif isinstance(value, bytes):
+            if type(value) is str:
+                setattr(
+                    safe,
+                    name,
+                    config_loader.shown(value, bare=True) if "@" in value else value,
+                )
+            elif type(value) is bytes:
                 setattr(
                     safe,
                     name,
@@ -112,10 +135,11 @@ def _safe_library_error(exc: ValueError) -> ValueError:
                     if b"@" in value
                     else value,
                 )
-        for name in ("lineno", "colno", "pos"):
-            position = getattr(current, name, None)
-            if isinstance(position, int):
-                setattr(safe, name, position)
+            elif type(value) in (int, float, bool) or value is None:
+                setattr(safe, name, value)
+            else:
+                dropped.append(name)
+        safe.dropped_attributes = tuple(sorted(dropped))
         copies[id(current)] = safe
         originals.append(current)
         pending.extend(

@@ -423,6 +423,141 @@ def test_library_exception_is_unchanged_and_safe_copy_keeps_its_location(
 
 
 @pytest.mark.parametrize(
+    "value, carried",
+    [
+        pytest.param(["private@value"], False, id="list"),
+        pytest.param({"key": "private@value"}, False, id="dict"),
+        pytest.param(("private@value",), False, id="tuple"),
+        pytest.param({"private@value"}, False, id="set"),
+        pytest.param(ValueError("private@value"), False, id="exception"),
+        pytest.param(object(), False, id="object"),
+        pytest.param(lambda: "private@value", False, id="callable"),
+        pytest.param(42, True, id="int"),
+        pytest.param(1.25, True, id="float"),
+        pytest.param(True, True, id="bool"),
+        pytest.param(None, True, id="none"),
+        pytest.param("private@value", True, id="str-at"),
+        pytest.param("ordinary\nvalue", True, id="str-plain"),
+        pytest.param(b"private@value", True, id="bytes-at"),
+        pytest.param(b"ordinary\nvalue", True, id="bytes-plain"),
+    ],
+)
+@pytest.mark.parametrize("link", ["root", "cause", "context"])
+def test_library_attribute_policy_carries_or_records_every_kind(
+    monkeypatch: pytest.MonkeyPatch, value: object, *, carried: bool, link: str
+) -> None:
+    class AttributeErrorFromLibrary(ValueError):
+        """A library error whose public payload need not be text."""
+
+        payload: object
+        withheld: list[str]
+
+    original = AttributeErrorFromLibrary("ordinary\nmessage")
+    original.payload = value
+    original.withheld = ["private@value"]
+    outer = ValueError("outer")
+    if link == "cause":
+        outer.__cause__ = original
+    elif link == "context":
+        outer.__context__ = original
+        outer.__suppress_context__ = True
+    else:
+        outer = original
+
+    def loads(_document: str, **_kwargs: Any) -> Any:
+        raise outer
+
+    monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(DatasetError) as refused:
+        _parse("library input")
+    safe = refused.value.__cause__
+    assert safe is not None
+    if link != "root":
+        safe = safe.__cause__ if link == "cause" else safe.__context__
+    assert safe is not None and safe is not original
+    assert str(safe) == "ordinary\nmessage"
+    attributes = vars(safe)
+    if carried:
+        expected = value
+        if isinstance(value, str) and "@" in value:
+            expected = config_loader.shown(value, bare=True)
+        elif isinstance(value, bytes) and b"@" in value:
+            expected = config_loader.shown(str(value), bare=True).encode("utf-8")
+        assert attributes["payload"] == expected
+        assert type(attributes["payload"]) is type(value)
+    else:
+        assert "payload" not in attributes
+    assert "withheld" not in attributes
+    dropped = attributes["dropped_attributes"]
+    assert dropped == (("withheld",) if carried else ("payload", "withheld"))
+    assert "private@value" not in repr(attributes)
+    assert original.payload is value
+    assert original.withheld == ["private@value"]
+
+
+def test_json_library_error_has_no_dropped_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def loads(_document: str, **_kwargs: Any) -> Any:
+        raise json.JSONDecodeError("x", "doc", 0)
+
+    monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(DatasetError) as refused:
+        _parse("library input")
+    safe = refused.value.__cause__
+    assert safe is not None
+    assert vars(safe)["dropped_attributes"] == ()
+    assert safe.args == (str(safe),)
+
+
+@pytest.mark.parametrize(
+    "value, carried",
+    [
+        pytest.param("private@value", True, id="text-property"),
+        pytest.param(["private@value"], False, id="container-property"),
+        pytest.param(lambda: "private@value", False, id="callable-property"),
+    ],
+)
+def test_library_methods_are_behaviour_and_properties_are_data(
+    monkeypatch: pytest.MonkeyPatch, value: object, *, carried: bool
+) -> None:
+    class LibraryError(ValueError):
+        def method(self) -> str:
+            return "private@value"
+
+        @property
+        def payload(self) -> object:
+            return value
+
+        def callback(self) -> str:
+            return "class behaviour"
+
+    original = LibraryError("library failure")
+    # An instance can shadow a class method with data that retains input.
+    vars(original)["callback"] = lambda: "private@value"
+
+    def loads(_document: str, **_kwargs: Any) -> Any:
+        raise original
+
+    monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(DatasetError) as refused:
+        _parse("library input")
+    safe = refused.value.__cause__
+    assert safe is not None
+    attributes = vars(safe)
+    assert "method" not in attributes
+    assert "callback" not in attributes
+    assert attributes["dropped_attributes"] == (
+        ("callback",) if carried else ("callback", "payload")
+    )
+    if carried:
+        assert attributes["payload"] == config_loader.shown(str(value), bare=True)
+    else:
+        assert "payload" not in attributes
+    assert "private@value" not in repr(attributes)
+
+
+@pytest.mark.parametrize(
     "text, detail",
     [
         (_mutated("id", "private@value"), "id '<hidden: it holds an @>' must match"),
