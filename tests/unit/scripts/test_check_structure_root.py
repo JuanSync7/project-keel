@@ -126,6 +126,68 @@ def test_bad_numbered_heading_is_reported_once_across_checks(tmp_path):
         ]
 
 
+@pytest.mark.parametrize(
+    "section",
+    ["x", "tok@host", "²", "9" * 5000, "-1", "1.5", "", "+1", "1_0"],
+    ids=[
+        "text",
+        "hidden",
+        "nondecimal",
+        "long",
+        "negative",
+        "fraction",
+        "empty",
+        "sign",
+        "underscore",
+    ],
+)
+def test_bad_doc_mechanism_section_is_a_finding(tmp_path, monkeypatch, section):
+    root = _tree(tmp_path)
+    (root / "docs/target.md").write_text("## 1. Target\n", encoding="utf-8")
+    (root / "config/practices.json").write_text(
+        json.dumps(
+            {
+                "practices": [
+                    {"id": "probe", "enforced_by": ["doc:docs/target.md §" + section]}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cs, "CHECKS", (("T", cs.check_T),))
+    findings = cs.run_checks(str(root), project_checks=False)
+    assert len(findings) == 1, findings
+    letter, tier, message = findings[0]
+    assert (letter, tier) == ("T", "error")
+    assert "config/practices.json" in message and "enforced_by" in message
+    assert "names no numbered section" in message
+    if "@" in section:
+        assert section not in message and "<hidden: it holds an @>" in message
+    # A failed document read cannot make malformed section syntax valid.
+    monkeypatch.setattr(cs, "_sections_in_file", lambda path: None)
+    assert cs.run_checks(str(root), project_checks=False) == findings
+
+
+@pytest.mark.parametrize("section", ["0", "1", "0001", "١", "9999"])
+def test_doc_mechanism_uses_the_heading_readers_decimal_grammar(
+    tmp_path, monkeypatch, section
+):
+    root = _tree(tmp_path)
+    (root / "docs/target.md").write_text("## %s. Target\n" % section, encoding="utf-8")
+    (root / "config/practices.json").write_text(
+        json.dumps(
+            {
+                "practices": [
+                    {"id": "probe", "enforced_by": ["doc:docs/target.md §" + section]}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cs, "CHECKS", (("T", cs.check_T),))
+    assert cs.run_checks(str(root), project_checks=False) == []
+
+
 @pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
 def test_a_directory_at_a_config_path_is_one_refusal_per_run(tmp_path, filename):
     root = _tree(tmp_path)

@@ -508,7 +508,19 @@ def _declared_python_floor():
                 break
         parts = version.split(".")
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-            return int(parts[0]), int(parts[1])
+            try:
+                return int(parts[0]), int(parts[1])
+            except ValueError:
+                # isdigit includes non-decimal digits; Python also limits the
+                # length of an integer string. Neither is a usable floor.
+                finding = (
+                    "config/project.json: layers.backend.python '%s' has a "
+                    "major or minor version that cannot be read as an integer"
+                    % _shown(spec)
+                )
+                if finding not in errors:
+                    err(finding)
+                return _REFUSED
     return None
 
 
@@ -1787,7 +1799,7 @@ def check_H():
     enabled = _expect(transports.get("enabled"), list, "transports.enabled", [])
     avail = _expect(transports.get("available"), dict, "transports.available", {})
     for t in enabled:
-        if t not in avail:
+        if not isinstance(t, str) or t not in avail:
             err(
                 "config/project.json: transports.enabled '%s' not in "
                 "transports.available" % _shown(t)
@@ -1814,7 +1826,9 @@ def check_H():
         runtimes = _expect(runtimes, dict, "runtimes", {})
         r_avail = _expect(runtimes.get("available"), dict, "runtimes.available", {})
         r_default = runtimes.get("default")
-        if r_default is not None and r_default not in r_avail:
+        if r_default is not None and (
+            not isinstance(r_default, str) or r_default not in r_avail
+        ):
             err(
                 "config/project.json: runtimes.default '%s' not in "
                 "runtimes.available" % _shown(r_default)
@@ -1835,7 +1849,9 @@ def check_H():
         models = _expect(models, dict, "models", {})
         m_avail = _expect(models.get("available"), dict, "models.available", {})
         m_default = models.get("default")
-        if m_default is not None and m_default not in m_avail:
+        if m_default is not None and (
+            not isinstance(m_default, str) or m_default not in m_avail
+        ):
             err(
                 "config/project.json: models.default '%s' not in "
                 "models.available" % _shown(m_default)
@@ -4697,7 +4713,7 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     practice's `enforced_by`, a writer's `rerun_proof:`. Split out of
     _mechanism_findings rather than duplicated, because two graders of the same
     grammar drift and the drift is invisible until one of them is wrong."""
-    m = _MECHANISM_RE.fullmatch(str(ref))
+    m = _MECHANISM_RE.fullmatch(ref) if isinstance(ref, str) else None
     if not m:
         return "names '%s', which is not in the mechanism grammar (%s)" % (
             _shown(ref),
@@ -4724,10 +4740,17 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
                 value
             )
     elif form == "doc":
-        path, _, section = value.partition(" §")
+        path, separator, section = value.partition(" §")
         if path not in tree:
             return "claims doc '%s', which does not exist" % _shown(path)
-        if section:
+        if separator:
+            # Match the heading reader's bounded decimal grammar, including
+            # section zero, before any conversion or document read.
+            if not _DOCUMENT_NUMBER.fullmatch(section):
+                return "claims %s §%s, which names no numbered section" % (
+                    _shown(path),
+                    _shown(section),
+                )
             present = sections_of(path)
             if present is None:
                 return None  # A failed read cannot prove a section is absent.
@@ -4764,7 +4787,8 @@ def _mechanism_findings(practices, check_ids, tree, make_targets, sections_of):
             reason = _mechanism_reason(ref, check_ids, tree, make_targets, sections_of)
             if reason:
                 errs.append(
-                    "config/practices.json: practice '%s' %s" % (_shown(pid), reason)
+                    "config/practices.json: practice '%s' enforced_by %s"
+                    % (_shown(pid), reason)
                 )
     return errs
 
@@ -4855,12 +4879,15 @@ def _policy_reachability_findings(practices, docs):
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        for ref in entry.get("enforced_by") or []:
-            if not str(ref).startswith("doc:"):
+        refs = entry.get("enforced_by")
+        if not isinstance(refs, list):
+            continue  # check_T reports the malformed mechanism list.
+        for ref in refs:
+            if not isinstance(ref, str) or not ref.startswith("doc:"):
                 continue
-            path = str(ref)[len("doc:") :].partition(" ")[0].strip()
+            path = ref[len("doc:") :].partition(" ")[0].strip()
             if path in docs:
-                cited.setdefault(path, []).append(str(entry.get("id", "?")))
+                cited.setdefault(path, []).append(_shown(entry.get("id", "?")))
     if not cited:
         return []
     known = set(docs)
@@ -4878,7 +4905,7 @@ def _policy_reachability_findings(practices, docs):
             "it in %s, or in one it already names, or the practice cannot reach the "
             "agent it governs"
             % (
-                ", ".join(_shown(pid) for pid in sorted(cited[path])),
+                ", ".join(sorted(cited[path])),
                 "" if len(cited[path]) > 1 else "s",
                 _shown(path),
                 _AGENT_RULES,

@@ -837,6 +837,65 @@ def test_a_doc_mechanism_with_no_such_section_hides_the_path():
     assert "@" not in reason.replace(_HIDDEN, ""), reason
 
 
+@pytest.mark.parametrize("letter", ["T", "U"])
+@pytest.mark.parametrize("leaf", ["leaf", _AT], ids=["deep", "deep-hidden"])
+def test_a_deep_non_string_mechanism_is_a_finding(monkeypatch, leaf, letter):
+    value = leaf
+    for _ in range(sys.getrecursionlimit()):
+        value = [value]
+    errors, _ = _run(
+        monkeypatch,
+        letter,
+        [(_PRACTICES, ("practices", 0, "enforced_by", 0), "V", value)],
+    )
+    if letter == "U":
+        assert errors == []  # T owns malformed claims; U cannot prove reachability.
+        return
+    assert len(errors) == 1, errors
+    assert "config/practices.json" in errors[0] and "enforced_by" in errors[0]
+    assert "not in the mechanism grammar" in errors[0]
+    assert _AT not in errors[0]
+    marker = "<hidden: nested too deep to show>" if leaf == "leaf" else _HIDDEN
+    assert marker in errors[0]
+
+
+def test_a_deep_practice_id_is_shown_before_policy_reachability_sorts():
+    pid = _AT
+    for _ in range(sys.getrecursionlimit()):
+        pid = [pid]
+    errors = cs._policy_reachability_findings(
+        {"practices": [{"id": pid, "enforced_by": ["doc:docs/target.md"]}]},
+        {"AGENT.md": "# Agent\n", "docs/target.md": "# Target\n"},
+    )
+    assert len(errors) == 1 and "config/practices.json" in errors[0]
+    assert _HIDDEN in errors[0] and _AT not in errors[0]
+
+
+@pytest.mark.parametrize("refs", [7, True, {"doc:docs/target.md": "claim"}])
+def test_policy_reachability_leaves_a_non_list_to_check_t(refs):
+    assert (
+        cs._policy_reachability_findings(
+            {"practices": [{"id": "probe", "enforced_by": refs}]},
+            {"AGENT.md": "# Agent\n", "docs/target.md": "# Target\n"},
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [("transports", "enabled", 0), ("runtimes", "default"), ("models", "default")],
+    ids=["transport", "runtime", "model"],
+)
+@pytest.mark.parametrize("value", [[_AT], {_AT: "value"}], ids=["list", "object"])
+def test_a_non_string_map_selector_is_a_finding(monkeypatch, path, value):
+    errors, _ = _run(monkeypatch, "H", [(_PROJECT, path, "V", value)])
+    assert len(errors) == 1, errors
+    assert "config/project.json" in errors[0]
+    assert ".".join(path[:2]) in errors[0]
+    assert _HIDDEN in errors[0] and _AT not in errors[0]
+
+
 @pytest.mark.parametrize(
     "files,app",
     [

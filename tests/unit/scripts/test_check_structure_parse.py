@@ -164,6 +164,29 @@ def test_the_floor_is_read_from_the_declared_specifier(repo, spec, floor):
     assert cs._declared_python_floor() == floor
 
 
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "².11,tok@host",
+        "3.²,tok@host",
+        "9" * 5000 + ".11,tok@host",
+        "3." + "9" * 5000 + ",tok@host",
+    ],
+    ids=["major-nondecimal", "minor-nondecimal", "major-long", "minor-long"],
+)
+def test_an_unconvertible_python_floor_is_one_finding(repo, spec):
+    _floor(repo, spec)
+    _write(repo, "src/bad.py", _BROKEN)
+    cs.check_D()
+    cs.check_J()
+    assert len(cs.errors) == 1, cs.errors
+    message = cs.errors[0]
+    assert message.startswith("config/project.json: layers.backend.python ")
+    assert "cannot be read as an integer" in message
+    assert "tok@host" not in message and "<hidden: it holds an @>" in message
+    assert not cs._PARSE_DEFERRED
+
+
 def test_a_run_prints_the_deferral_once_and_says_why(tmp_path):
     """Through run_checks: two deferred files, one warning, nothing else about
     them, and the warning names the count, both versions and `make check-all`."""
