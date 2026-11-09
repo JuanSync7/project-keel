@@ -6,10 +6,10 @@ layer: n/a
 status: template
 owner: TBD
 tags: [generic, overfitting, evals, golden-set, hardcoding, advisory, agents, guide]
-summary: How to solve the general problem an eval/golden set exemplifies instead of overfitting to it — the discipline, plus the advisory check that backstops it.
+summary: How to solve the class behind an eval, golden set or bug report, with tests, review and an advisory answer-key scan.
 id: docs-guides-generic-solution
 created: 2026-06-24
-updated: 2026-11-07
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -129,6 +129,115 @@ input of the *same class* would still fail — you patched the symptom, not the
 cause. The fix is the **smallest change that makes the whole class pass**, carried
 by a test (§17) that samples more than the original case. "It's green" is
 necessary, not sufficient.
+
+## From a bug report to a class fix
+
+A reported bug is evidence of a failing mechanism.
+Use the following path to turn the report into a fix for every input that
+reaches that cause.
+Review alone holds this procedure.
+No structural gate requires these steps.
+The tests selected for a fix enforce only the cases their assertions cover.
+
+1. **Reproduce.** Record the triggering input, the command and the observed
+   failure in the fix brief.
+   Add a regression test that fails on the reported behavior before changing
+   the implementation.
+   Check that the failure comes from the bug rather than a missing dependency.
+   The regression test's assertions enforce the reproduced behavior.
+   Review alone checks that it reproduces the report.
+2. **Name the mechanism.** State how the input reaches the faulty operation.
+   Name the responsible function and the invariant it violates.
+   For the corpus-reader example below, the mechanism was formatting absolute
+   checkout paths into diagnostics forwarded to an MCP client.
+   Review alone checks the causal explanation.
+3. **Widen to the class.** Search for the same operation in sibling callers,
+   adapters, readers and writers.
+   Record the search commands, paths searched, matches and relevant nonmatches
+   in the fix brief.
+   Define the class by reachability of the cause, rather than by resemblance
+   to the reported input.
+   For corpus diagnostics, inspect the error branches in
+   `scripts/query_corpus.py` and `scripts/corpus_level.py`, then follow their
+   messages through `agents/wiki_navigator/_brain.py`.
+   Review alone checks the search's coverage.
+4. **Fix the shared place.** Put the correction where the affected paths
+   converge.
+   Route each caller found by the search through that correction.
+   For corpus diagnostics, `scripts/config_loader.py` `checkout_name` supplies
+   the shared checkout-folder spelling.
+   Allow a narrow fix only with a recorded reason that no other path reaches
+   the cause.
+   Review alone checks that boundary and the caller inventory.
+5. **Prove the class.** Use table-driven or generated tests to vary the inputs
+   that reach the mechanism.
+   Assert the invariant through the public surface as well as the shared helper.
+   Sweep the affected paths with planted faults: restore the faulty operation
+   at the shared place and at callers that could bypass it.
+   Record which test fails for each planting.
+   A planting that stays green exposes a gap in the proof.
+   Keep a "how else can this break?" list in the fix brief.
+   For corpus diagnostics, include missing roots, selector conflicts,
+   unreadable corpora, config refusals and paths repeated inside OS exceptions.
+   `tests/unit/scripts/test_query_corpus.py` checks diagnostic branches.
+   `tests/integration/test_mcp_servers.py` checks the errors exposed by
+   `wiki_answer` and public `answer`.
+   Review alone checks the breadth of the matrix and the planted-fault sweep.
+6. **Repair the fallout.** Identify data the buggy writer already persisted.
+   Supply a repair or regeneration procedure for affected data.
+   State how to detect what needs repair and how to verify the result.
+   Correct the documentation and the other affected places found by the search.
+   If no stored data needs repair, record why the failing path writes none.
+   Review alone checks that the repair inventory is complete.
+
+### Repository evidence
+
+The commit titled "fix(corpus): every corpus-reader refusal names the checkout,
+never its host path" records an audit of the sibling diagnostic paths.
+Its commit message identifies missing-checkout, selector, corpus-read,
+config-read and informational messages beyond the reported served-level refusal.
+The correction uses `scripts/config_loader.py` `checkout_name` across those
+diagnostics.
+`scripts/query_corpus.py` reports an `OSError` through `strerror` to avoid
+repeating its filename.
+The parametrized retrieval-refusal tests in
+[`tests/integration/test_mcp_servers.py`](../../tests/integration/test_mcp_servers.py)
+assert that client errors contain no scratch-root path.
+Those tests also assert that retrieval refusals make no model call.
+The commit message records failures after restoring the missing-checkout call
+site and after making the shared helper return the absolute path.
+These are recorded mutation results, rather than a mutation gate run by this
+guide.
+The query tool is a reader, so its diagnostic correction needs no stored-data
+migration.
+Its read-only contract is stated in `scripts/query_corpus.py`'s module header.
+Review alone checks whether another affected component persisted the messages.
+
+The preceding commit titled "fix(corpus): a refused served level names the
+checkout, not its host path" corrected the reported served-level refusal.
+Its mutation check exercised that refusal.
+The later audit found other messages that still exposed host paths.
+That earlier fix therefore left members of the diagnostic class uncovered.
+A passing regression for the reported branch did not establish class coverage.
+
+### The fix brief and the reviewer
+
+Give a fix brief one evidence entry for each of the six steps.
+Include the reproduction, causal invariant, recorded search, shared correction
+or narrow-scope reason, test matrix and mutation results, breakage list, and
+repair inventory.
+For unfinished evidence, name the remaining work explicitly.
+Review alone holds the brief to this format.
+
+The reviewer traces each search match to a correction or a reason it cannot
+reach the cause.
+The reviewer checks that a sibling input and a bypassing caller are covered by
+the proof.
+The reviewer checks the data-repair instructions against the buggy writer.
+Return the fix for more work when an applicable step lacks evidence.
+Review alone holds these decisions.
+A green test run proves only its assertions.
+`make advise`'s answer-key scan does not enforce this procedure.
 
 ## What the advisor catches (and what it deliberately doesn't)
 

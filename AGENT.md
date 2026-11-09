@@ -7,7 +7,7 @@ owner: TBD
 summary: Global rules for any agent working in this repo.
 id: agent
 created: 2026-06-17
-updated: 2026-11-07
+updated: 2026-11-09
 visibility: internal
 canonical: true
 ---
@@ -161,6 +161,11 @@ of truth for labeling and the directory taxonomy. Each directory's own
   a fix. Treat fixtures as illustrations; if a literal truly is data, it lives in
   a `*_data.py` registry, not in logic. (Advisory only: `make advise` flags
   hardcoded answer keys; the gate stays `make verify`. See CONVENTIONS §18.)
+  For a reported bug, follow the six-step
+  [bug-report path](docs/guides/generic-solution.md#from-a-bug-report-to-a-class-fix):
+  reproduce, name the mechanism, record the
+  class search, fix the shared place, prove the class, and repair the fallout.
+  Review alone holds the search, scope and repair obligations.
 - **Let the gate decide "done."** A step is finished when `make verify` (or
   the smallest sufficient `make` target) exits green — never on self-report.
 - **Keep docs by purpose**, not by source file (except `docs/reference/`).
