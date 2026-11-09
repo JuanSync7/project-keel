@@ -70,12 +70,33 @@ class _LineError(Exception):
     """A fault in one line; parse_cases adds the path:line prefix."""
 
 
+def _safe_library_error(exc: ValueError) -> str:
+    """Display library text without exposing values in either chain link."""
+    message = str(exc)
+    pending: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        # Suppression retains __context__; keep the chain and sanitize its text.
+        if "@" in str(current) or "@" in repr(current.args):
+            current.args = (config_loader.shown(str(current), bare=True),)
+        pending.extend(
+            linked
+            for linked in (current.__cause__, current.__context__)
+            if linked is not None
+        )
+    return config_loader.shown(message, bare=True) if "@" in message else message
+
+
 def _refuse_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
     out: dict[str, object] = {}
     for key, value in pairs:
         if key in out:
             # json.loads would silently keep the last value.
-            raise _LineError("repeated JSON key %s" % json.dumps(key))
+            raise _LineError("repeated JSON key %s" % config_loader.shown(key))
         out[key] = value
     return out
 
@@ -85,7 +106,9 @@ def _object(value: object, where: str, keys: frozenset[str]) -> dict[str, object
         raise _LineError("%s must be an object" % where)
     unknown = sorted(set(value) - keys)
     if unknown:
-        raise _LineError("unknown key %s.%s" % (where, unknown[0]))
+        raise _LineError(
+            "unknown key %s.%s" % (where, config_loader.shown(unknown[0], bare=True))
+        )
     missing = sorted(keys - set(value))
     if missing:
         raise _LineError("missing key %s.%s" % (where, missing[0]))
@@ -117,25 +140,34 @@ def _case(
     version = top["schema_version"]
     if version != schema_version or isinstance(version, bool):
         raise _LineError(
-            "schema_version is %r; this harness reads %d" % (version, schema_version)
+            "schema_version is %s; this harness reads %d"
+            % (config_loader.quoted(version), schema_version)
         )
     case_id = _string(top["id"], "id")
     if not _ID.fullmatch(case_id):
-        raise _LineError("id %r must match %s" % (case_id, _ID.pattern))
+        raise _LineError(
+            "id %s must match %s" % (config_loader.quoted(case_id), _ID.pattern)
+        )
     inp = _object(top["input"], "input", _INPUT)
     doer = _string(inp["doer"], "input.doer")
     if doer not in DOERS:
-        raise _LineError("input.doer %r is not one of %s" % (doer, sorted(DOERS)))
+        raise _LineError(
+            "input.doer %s is not one of %s"
+            % (config_loader.quoted(doer), config_loader.quoted(sorted(DOERS)))
+        )
     text = _string(inp["text"], "input.text")
     scorer = _object(top["scorer"], "scorer", _SCORER)
     name = _string(scorer["name"], "scorer.name")
     if name not in scorers:
-        raise _LineError("scorer.name %r is not one of %s" % (name, sorted(scorers)))
+        raise _LineError(
+            "scorer.name %s is not one of %s"
+            % (config_loader.quoted(name), config_loader.quoted(sorted(scorers)))
+        )
     params = scorer["params"]
     try:
         scorers[name].check_params(params)
     except ValueError as exc:
-        raise _LineError("scorer.params: %s" % exc) from exc
+        raise _LineError("scorer.params: %s" % _safe_library_error(exc)) from exc
     assert isinstance(params, dict)  # check_params proved it
     rec = _object(top["recorded"], "recorded", _RECORDED)
     response = _string(rec["response"], "recorded.response", non_empty=False)
@@ -144,7 +176,8 @@ def _case(
     source = rec["source"]
     if source not in _SOURCES:
         raise _LineError(
-            "recorded.source %r is not one of %s" % (source, list(_SOURCES))
+            "recorded.source %s is not one of %s"
+            % (config_loader.quoted(source), list(_SOURCES))
         )
     model = rec["model"]
     if source == "authored" and model is not None:
@@ -157,7 +190,7 @@ def _case(
     if actual != response_sha:
         raise _LineError(
             "recorded.sha256 is %s but the response hashes to %s"
-            % (response_sha, actual)
+            % (config_loader.shown(response_sha, bare=True), actual)
         )
     return Case(
         id=case_id,
@@ -181,14 +214,19 @@ def parse_cases(
     source: str,
     schema_version: int,
     scorers: Mapping[str, Scorer] = SCORERS,
+    shown_source: str | None = None,
 ) -> list[Case]:
     """The cases in one suite's JSONL *text*, read from *source* (a
-    project-relative path; its stem names the suite). Raises DatasetError."""
+    project-relative path; its stem names the suite). *shown_source* overrides
+    the path in diagnostics only. Raises DatasetError."""
     suite = PurePosixPath(source).stem
+    display_source = (
+        config_loader.shown(source, bare=True) if shown_source is None else shown_source
+    )
     text = text.removeprefix(_BOM)
     if not text.strip():
         raise DatasetError(
-            "%s: no cases; a suite judged over nothing is not a pass" % source
+            "%s: no cases; a suite judged over nothing is not a pass" % display_source
         )
     lines = text.split("\n")
     if lines and lines[-1] == "":
@@ -197,6 +235,7 @@ def parse_cases(
     first_seen: dict[str, str] = {}
     for number, raw in enumerate(lines, start=1):
         where = "%s:%d" % (source, number)
+        shown_where = "%s:%d" % (display_source, number)
         line = raw.removesuffix("\r")
         try:
             if not line.strip():
@@ -204,15 +243,17 @@ def parse_cases(
             obj = json.loads(line, object_pairs_hook=_refuse_duplicates)
             case = _case(obj, suite, where, schema_version, scorers)
         except _LineError as exc:
-            raise DatasetError("%s: %s" % (where, exc)) from exc
+            raise DatasetError("%s: %s" % (shown_where, exc)) from exc
         except ValueError as exc:
-            raise DatasetError("%s: not valid JSON (%s)" % (where, exc)) from exc
+            raise DatasetError(
+                "%s: not valid JSON (%s)" % (shown_where, _safe_library_error(exc))
+            ) from exc
         if case.id in first_seen:
             raise DatasetError(
-                "%s: duplicate id %r (first at %s)"
-                % (where, case.id, first_seen[case.id])
+                "%s: duplicate id %s (first at %s)"
+                % (shown_where, config_loader.quoted(case.id), first_seen[case.id])
             )
-        first_seen[case.id] = where
+        first_seen[case.id] = shown_where
         cases.append(case)
     return cases
 
@@ -272,17 +313,22 @@ def load_suites(cfg: EvalConfig, root: str | os.PathLike[str]) -> list[Suite]:
                 )
             ) from None
         try:
-            cases = parse_cases(text, source=rel, schema_version=cfg.schema_version)
+            cases = parse_cases(
+                text,
+                source=rel,
+                shown_source=config_loader.shown(rel, bare=True),
+                schema_version=cfg.schema_version,
+            )
         except DatasetError as exc:
-            # Preserve record paths on success while hiding them in refusals.
-            raise DatasetError(config_loader.shown(str(exc), bare=True)) from None
+            # Parser diagnostics already use the display path, including causes.
+            raise DatasetError(str(exc)) from exc
         for case in cases:
             if case.id in first_seen:
                 raise DatasetError(
-                    "%s: duplicate id %r (first at %s)"
+                    "%s: duplicate id %s (first at %s)"
                     % (
                         config_loader.shown(case.source, bare=True),
-                        case.id,
+                        config_loader.quoted(case.id),
                         config_loader.shown(first_seen[case.id], bare=True),
                     )
                 )
