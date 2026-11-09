@@ -2,21 +2,24 @@
 title: Integration — every CI adapter runs exactly config/project.json ci_pipeline.steps, in order
 kind: tests
 layer: n/a
-summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, a global `image`, `services`, `cache` or `after_script`, an unquoted `GIT_DEPTH: 1` or `false`, a long-form image naming another image or adding a key), with one fault naming its key path, and a hidden key the `test` job reads through a merge, an anchor, `extends` or `!reference` is a fault too, a key it has that the file lacks, a key set twice (named by both lines), a `<<` merge key set twice even when each merge brings only allowed keys, a file YAML cannot read, a control character in it or in the answers file (named by the file, never raised), a step shell words cannot split (`FOO=\"a b\"`, named by its step), a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault, and so does one that says where keel's job runs or what else the project runs (`tags`, `stage`, `stages`, `interruptible`, `timeout`, `retry`, another job, a hidden job only another job merges, extends or references, a long-form image, an unquoted `GIT_DEPTH: 0`); the rule reads the same in tests/ci_adapters.py, features.md and deterministic-checks.md. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases render the template's .gitlab-ci.yml.jinja with the toolchain answer, so the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
+summary: config/project.json `ci_pipeline.steps` is the one statement of what CI runs, and each adapter file present (`ci_pipeline.adapters`: .github/workflows/ci.yml, .gitlab-ci.yml) is held to it through tests/ci_adapters.py parity_faults. The GitHub workflow has exactly its shipped top-level keys, triggers, job set, per-job and per-step keys, setup values and configured env maps: foreign keys and every missing mapping key, added jobs or steps, job or step conditions, changed triggers, boolean checkout depth, duplicate or merged keys and unreadable YAML are rejected with file/key diagnostics; equivalent YAML passes. The adapters in this tree have no fault; an empty step list, a tree with no adapter, a missing marker line or one that is not the whole line, a dropped, added, reordered or changed step, a changed env value, and a GitLab image or GIT_DEPTH other than the configured one each turn the judge red on a copy, and so does each GitLab key the shipped file lacks, however it is quoted or written (`when: manual`, `"when"`, `? when`, `'rules'`, `needs`, `allow_failure`, a `<<` merge, `MAKEFLAGS: "-n"` at either level, `default:`, `workflow`, `include`, a global `image`, `services`, `cache` or `after_script`, an unquoted `GIT_DEPTH: 1` or `false`, a long-form image naming another image or adding a key), with one fault naming its key path, and a hidden key the `test` job reads through a merge, an anchor, `extends` or `!reference` is a fault too, a key it has that the file lacks, a key set twice (named by both lines), a `<<` merge key set twice even when each merge brings only allowed keys, a file YAML cannot read, a control character in it or in the answers file (named by the file, never raised), a step shell words cannot split (`FOO=\"a b\"`, named by its step), a script item that is not a line, a NAME=value word alone on its line, in a multi-line step or a step of its own (named by its step), and a missing pyyaml; an env prefix never reaches across a line break. A file that differs only in what YAML does not read (comments, key order, quoting, a flow, nested or one-string script) has no fault, and so does one that says where keel's job runs or what else the project runs (`tags`, `stage`, `stages`, `interruptible`, `timeout`, `retry`, another job, a hidden job only another job merges, extends or references, a long-form image, an unquoted `GIT_DEPTH: 0`); the rule reads the same in tests/ci_adapters.py, features.md and deterministic-checks.md. In a project, the `ci_pipeline` answer in .copier-answers.yml picks what is judged: a chosen adapter that is missing, or one that lost its marker, is a fault, and so is an answers file with no valid answer (shown by its line as written), one that answers twice however the second key is written (`"ci_pipeline"`, `ci_pipeline :`, `? ci_pipeline`; named by both lines), and one YAML cannot read; a quoted answer with a trailing comment reads as copier reads it; an unchosen file the project wrote, with no marker, is not judged, and an unchosen one carrying the marker still is. The GitLab cases copy a generated project's judged adapter or render the template's .gitlab-ci.yml.jinja with the configured toolchain answer, so GitLab-only projects run the judge and the shipped twin is judged too, and yaml reads the rendered file to the same script lines the stdlib scanner does and to exactly ci_adapters.gitlab_document.
 """
 
 import json
 import shutil
+import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+from scripts import config_loader
+from scripts.child_env import build_child_env
 
 import ci_adapters
 import optional_deps
 
 _ROOT = Path(__file__).resolve().parents[2]
-_JINJA = _ROOT / ".gitlab-ci.yml.jinja"
 
 pytestmark = pytest.mark.integration
 
@@ -28,14 +31,18 @@ def test_every_adapter_present_runs_the_configured_steps_in_order():
 
 @pytest.mark.parametrize("name", ["github", "gitlab"])
 def test_bom_adapter_preserves_marker_and_steps(tmp_path, name):
-    root = _copy(tmp_path, gitlab=True)
+    root = _copy(tmp_path, gitlab=True, github=name == "github")
     path = ci_adapters.present(root)[name]
     steps = ci_adapters.adapter_steps(path, name)
     path.write_text(path.read_text("utf-8"), encoding="utf-8-sig")
     assert ci_adapters.adapter_steps(path, name) == steps
     assert ci_adapters.parity_faults(root) == []
-    (root / ci_adapters.ANSWERS).write_text("ci_pipeline: both\n", encoding="utf-8-sig")
-    assert ci_adapters.chosen(root) == (["github", "gitlab"], None)
+    names = sorted(ci_adapters.present(root))
+    choice = "both" if len(names) == 2 else name
+    (root / ci_adapters.ANSWERS).write_text(
+        "ci_pipeline: %s\n" % choice, encoding="utf-8-sig"
+    )
+    assert ci_adapters.chosen(root) == (names, None)
     assert ci_adapters.parity_faults(root) == []
 
 
@@ -50,26 +57,39 @@ def test_bom_answers_diagnostic_has_the_written_line_without_bom(tmp_path):
     assert "\ufeff" not in fault
 
 
-def _copy(tmp_path, *, gitlab=False):
-    """A tree with this config, ci.yml and, with *gitlab*, the GitLab twin
-    rendered under the configured toolchain python."""
+def _copy(tmp_path, *, gitlab=False, github=False):
+    """A copy of this project's judged adapters and config, rendering the
+    template's GitLab twin when *gitlab* requests it. Only GitHub-specific
+    cases request *github* and skip when the project ships no such adapter."""
+    found = ci_adapters.judged(_ROOT)
+    if github and "github" not in found:
+        pytest.skip("this project ships no judged GitHub adapter (ci_pipeline choice)")
+    if gitlab:
+        shipped = ci_adapters.shipped(_ROOT)
+        if "gitlab" not in shipped:
+            pytest.skip("this project ships no GitLab adapter (ci_pipeline choice)")
+        found = {**found, "gitlab": shipped["gitlab"]}
     root = tmp_path / "root"
     (root / "config").mkdir(parents=True)
     shutil.copyfile(str(_ROOT / ci_adapters.CONFIG), str(root / ci_adapters.CONFIG))
-    workflows = root / ".github" / "workflows"
-    workflows.mkdir(parents=True)
-    shutil.copyfile(str(_ROOT / ".github/workflows/ci.yml"), str(workflows / "ci.yml"))
-    if gitlab:
-        if not _JINJA.is_file():
-            pytest.skip("no .gitlab-ci.yml.jinja: this is a generated project")
-        jinja2 = optional_deps.importorskip("jinja2", extra="template")
-        python = json.loads((root / ci_adapters.CONFIG).read_text())["toolchain"][
-            "python"
-        ]
-        text = jinja2.Template(_JINJA.read_text(), keep_trailing_newline=True).render(
-            toolchain_python=python
-        )
-        (root / ".gitlab-ci.yml").write_text(text)
+    adapters = ci_adapters.pipeline(root)["adapters"]
+    for name, source in found.items():
+        target = root / adapters[name]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.suffix == ".jinja":
+            jinja2 = optional_deps.importorskip("jinja2", extra="template")
+            python = config_loader.resolve(
+                config_loader.read(str(root)),
+                config_loader.rows(("toolchain", "python")),
+                str(ci_adapters.CONFIG),
+                environ={},
+            )[("toolchain", "python")]
+            text = jinja2.Template(
+                source.read_text(), keep_trailing_newline=True
+            ).render(toolchain_python=python)
+            target.write_text(text)
+        else:
+            shutil.copyfile(str(source), str(target))
     return root
 
 
@@ -84,6 +104,145 @@ def _set_config(root, change):
     config = json.loads(path.read_text())
     change(config["ci_pipeline"])
     path.write_text(json.dumps(config))
+
+
+@pytest.mark.parametrize(
+    "foreign_github", [False, True], ids=["absent", "project-owned"]
+)
+def test_a_gitlab_only_project_still_judges_a_planted_gitlab_fault(
+    tmp_path, monkeypatch, foreign_github
+):
+    """A generated GitLab-only root has answers and a rendered adapter,
+    without GitHub or template files; its GitLab cases must run."""
+    source = _copy(tmp_path / "source", gitlab=True)
+    (source / ".github/workflows/ci.yml").unlink(missing_ok=True)
+    _answer(source, "ci_pipeline: gitlab")
+    if foreign_github:
+        path = source / ".github/workflows/ci.yml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("name: the project's own workflow\n")
+    assert ci_adapters.chosen(source) == (["gitlab"], None)
+    assert set(ci_adapters.shipped(source)) == {"gitlab"}
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", source)
+    try:
+        root = _copy(tmp_path / "case", gitlab=True)
+    except pytest.skip.Exception as exc:
+        pytest.fail("a GitLab-only fixture must run: %s" % exc)
+    assert set(ci_adapters.present(root)) == {"gitlab"}
+    assert ci_adapters.parity_faults(root) == []
+    _edit(root / ".gitlab-ci.yml", "test:\n", "test:\n  when: manual\n")
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and "`test.when`" in faults[0], faults
+    with pytest.raises(pytest.skip.Exception, match="no judged GitHub adapter"):
+        _copy(tmp_path / "github-case", github=True)
+
+
+def test_gitlab_cases_run_in_a_gitlab_only_project(tmp_path, request):
+    """Run every case against a rendered project; only GitHub cases may skip."""
+    root = _copy(tmp_path / "project", gitlab=True)
+    shutil.rmtree(root / ".github", ignore_errors=True)  # noqa: DROP003 -- the copied project may already have no GitHub directory
+    _answer(root, "ci_pipeline: gitlab")
+    module = Path(__file__).resolve()
+    relative = Path("tests/integration") / module.name
+    # The copied module derives _ROOT from its location. Docs are inputs to
+    # its wording check; no template or GitHub file belongs in this project.
+    for source, target in (
+        (module, relative),
+        (_ROOT / "docs/reference/features.md", Path("docs/reference/features.md")),
+        (
+            _ROOT / "docs/guides/deterministic-checks.md",
+            Path("docs/guides/deterministic-checks.md"),
+        ),
+    ):
+        destination = root / target
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+    assert not (root / ".github").exists()
+    assert not (root / ".gitlab-ci.yml.jinja").exists()
+    assert ci_adapters.chosen(root) == (["gitlab"], None)
+    report = tmp_path / "child.xml"
+    timeout_key = ("tests", "child_timeout_seconds")
+    timeout = config_loader.resolve(
+        config_loader.read(str(_ROOT)),
+        config_loader.rows(timeout_key),
+        str(ci_adapters.CONFIG),
+    )[timeout_key]
+    ran = subprocess.run(
+        [
+            "nice",
+            "-n",
+            "10",
+            sys.executable,
+            "-B",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-c",
+            str(_ROOT / "pyproject.toml"),
+            "--rootdir",
+            str(root),
+            "--confcutdir",
+            str(root),
+            "--basetemp",
+            str(tmp_path / "child-scratch"),
+            "--junitxml",
+            str(report),
+            "--deselect",
+            "%s::%s" % (relative, request.node.originalname),
+            str(relative),
+        ],
+        cwd=root,
+        env=build_child_env(
+            extra={
+                "PYTHONPATH": ":".join(
+                    str(path) for path in (_ROOT / "src", _ROOT, _ROOT / "tests")
+                ),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "TMPDIR": str(tmp_path),
+                "KEEL_TEST_SCRATCH": str(tmp_path / "child-scratch"),
+            }
+        ),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+    cases = ET.parse(report).findall(".//testcase")
+    gitlab = [case for case in cases if "gitlab" in case.attrib["name"]]
+    assert gitlab, "the child must collect GitLab cases"
+    skipped = [
+        case.attrib["name"] for case in cases if case.find("skipped") is not None
+    ]
+    assert not [name for name in skipped if "gitlab" in name], skipped
+    # These cases select GitHub in their answers, so they need its adapter
+    # even though their names describe the choice rather than the vendor.
+    github_choices = {
+        "test_an_unchosen_file_the_project_wrote_is_not_judged",
+        "test_an_unchosen_file_carrying_the_marker_is_still_judged",
+        "test_a_chosen_adapter_that_lost_its_marker_is_still_judged",
+    }
+    assert not [
+        name for name in skipped if "github" not in name and name not in github_choices
+    ], skipped
+
+
+@pytest.mark.parametrize("images", [["debian-12"], ["debian-12", "ubuntu-24.04"]])
+def test_github_runner_follows_the_configured_image_membership(tmp_path, images):
+    """Changing the allowlist faults the shipped runner only when it is
+    absent; a configured runner need not be the list's first entry."""
+    root = _copy(tmp_path, github=True)
+    path = root / ci_adapters.CONFIG
+    config = config_loader.read(str(root))
+    config["toolchain"]["runner_images"] = images
+    path.write_text(json.dumps(config))
+    faults = ci_adapters.parity_faults(root)
+    if "ubuntu-24.04" in images:
+        assert faults == [], faults
+    else:
+        assert len(faults) == 1 and "`jobs.test.runs-on`" in faults[0], faults
+        assert "debian-12" in faults[0], faults
 
 
 def test_the_rendered_gitlab_twin_has_no_fault_and_yaml_reads_the_same_lines(tmp_path):
@@ -109,7 +268,8 @@ def test_an_empty_step_list_is_a_fault_not_a_pass(tmp_path):
 
 def test_a_tree_with_no_adapter_is_a_fault_not_a_pass(tmp_path):
     root = _copy(tmp_path)
-    (root / ".github/workflows/ci.yml").unlink()
+    for path in ci_adapters.present(root).values():
+        path.unlink()
     faults = ci_adapters.parity_faults(root)
     assert len(faults) == 1 and "the pipeline runs nowhere" in faults[0], faults
 
@@ -141,9 +301,143 @@ _GITHUB_FAULTS = [
     "old, new", [c[1:] for c in _GITHUB_FAULTS], ids=[c[0] for c in _GITHUB_FAULTS]
 )
 def test_a_github_adapter_that_drifts_is_a_fault(tmp_path, old, new):
-    root = _copy(tmp_path)
+    root = _copy(tmp_path, github=True)
     _edit(root / ".github/workflows/ci.yml", old, new)
     assert ci_adapters.parity_faults(root) != []
+
+
+_GITHUB_SHAPE_FAULTS = [
+    ("top-level key", "name: ci\n", "name: ci\npermissions: {}\n", "permissions"),
+    ("changed on", "on: [push, pull_request]", "on: [workflow_dispatch]", "on"),
+    ("job if", "  test:\n", "  test:\n    if: false\n", "jobs.test.if"),
+    ("added job", "jobs:\n", "jobs:\n  extra: {}\n", "jobs.extra"),
+    (
+        "job key",
+        "  test:\n",
+        "  test:\n    continue-on-error: true\n",
+        "jobs.test.continue-on-error",
+    ),
+    ("global env", "name: ci\n", "name: ci\nenv: {MAKEFLAGS: -n}\n", "env"),
+    ("job env", "  test:\n", "  test:\n    env: {MAKEFLAGS: -n}\n", "jobs.test.env"),
+    (
+        "step if",
+        "      - run: make trace\n",
+        "      - run: make trace\n        if: false\n",
+        "jobs.test.steps.13.if",
+    ),
+    (
+        "extra setup step",
+        "      - uses: actions/setup-python@v6\n",
+        "      - run: echo bypass\n      - uses: actions/setup-python@v6\n",
+        "jobs.test.steps.2",
+    ),
+    (
+        "extra step",
+        "      - run: make test-sh\n",
+        "      - run: make test-sh\n      - uses: example/action@v1\n",
+        "jobs.test.steps.18",
+    ),
+    (
+        "step env key",
+        '          KEEL_REQUIRED_EXTRAS: "template,dev,transport,secrets"\n',
+        '          KEEL_REQUIRED_EXTRAS: "template,dev,transport,secrets"\n'
+        '          MAKEFLAGS: "-n"\n',
+        "jobs.test.steps.12.env.MAKEFLAGS",
+    ),
+    (
+        "boolean fetch depth",
+        "fetch-depth: 0",
+        "fetch-depth: false",
+        "jobs.test.steps.0.with.fetch-depth",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "old, new, key",
+    [case[1:] for case in _GITHUB_SHAPE_FAULTS],
+    ids=[case[0] for case in _GITHUB_SHAPE_FAULTS],
+)
+def test_a_github_shape_mutation_names_the_file_and_key(tmp_path, old, new, key):
+    root = _copy(tmp_path, github=True)
+    _edit(root / ".github/workflows/ci.yml", old, new)
+    faults = ci_adapters.parity_faults(root)
+    assert any("ci.yml" in fault and "`%s" % key in fault for fault in faults), faults
+
+
+def _github_mappings(value, path=()):
+    if isinstance(value, dict):
+        yield path, value
+        for key, child in value.items():
+            yield from _github_mappings(child, path + (key,))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from _github_mappings(child, path + (index,))
+
+
+@pytest.mark.parametrize("change", ["added", "removed"])
+def test_every_github_mapping_has_a_closed_key_set(tmp_path, change):
+    """Every mapping rejects a foreign key and losing any shipped key."""
+    root = _copy(tmp_path, github=True)
+    path = root / ".github/workflows/ci.yml"
+    yaml = optional_deps.importorskip("yaml", extra="dev")
+    # PyYAML's default YAML 1.1 reader treats `on` as True, so quote this
+    # key to keep the independent mutation writer faithful to GitHub's YAML.
+    text = path.read_text().replace("on:", "'on':", 1)
+    document = yaml.safe_load(text)
+    for parents, mapping in _github_mappings(document):
+        keys = ["foreign-key"] if change == "added" else list(mapping)
+        for key in keys:
+            mutated = yaml.safe_load(text)
+            target = mutated
+            for parent in parents:
+                target = target[parent]
+            if change == "added":
+                target[key] = "unexpected"
+            else:
+                del target[key]
+            path.write_text("# keel-adapter: github\n" + yaml.safe_dump(mutated))
+            faults = ci_adapters.parity_faults(root)
+            key_path = ".".join(map(str, parents + (key,)))
+            assert any(
+                "ci.yml" in fault and "`%s`" % key_path in fault for fault in faults
+            ), (change, key_path, faults)
+
+
+@pytest.mark.parametrize(
+    "old, new, key",
+    [
+        ("name: ci\n", "name: ci\nname: another\n", "name"),
+        ("  test:\n", "  test:\n    'if': false\n", "jobs.test.if"),
+        ("  test:\n", "  test:\n    <<: {if: false}\n", "jobs.test.if"),
+        ("on: [push, pull_request]", "on: [", "ci.yml"),
+    ],
+    ids=["duplicate", "quoted", "merged", "invalid yaml"],
+)
+def test_github_yaml_cannot_hide_a_shape_fault(tmp_path, old, new, key):
+    root = _copy(tmp_path, github=True)
+    _edit(root / ".github/workflows/ci.yml", old, new)
+    faults = ci_adapters.parity_faults(root)
+    assert any("ci.yml" in fault and key in fault for fault in faults), faults
+
+
+def test_equivalent_github_yaml_has_no_fault(tmp_path):
+    root = _copy(tmp_path, github=True)
+    path = root / ".github/workflows/ci.yml"
+    yaml = optional_deps.importorskip("yaml", extra="dev")
+    document = yaml.safe_load(path.read_text().replace("on:", "'on':", 1))
+    path.write_text("# keel-adapter: github\n" + yaml.safe_dump(document))
+    assert ci_adapters.parity_faults(root) == []
+
+
+def test_without_pyyaml_a_github_file_is_a_fault(tmp_path, monkeypatch):
+    root = _copy(tmp_path, github=True)
+    for name, path in ci_adapters.present(root).items():
+        if name != "github":
+            path.unlink()
+    monkeypatch.setitem(sys.modules, "yaml", None)
+    faults = ci_adapters.parity_faults(root)
+    assert len(faults) == 1 and "ci.yml" in faults[0] and "pyyaml" in faults[0], faults
 
 
 _GITLAB_FAULTS = [
@@ -489,6 +783,7 @@ def test_a_step_shell_cannot_split_is_a_fault_naming_the_step(tmp_path):
 
 def test_without_pyyaml_a_gitlab_file_is_a_fault_not_a_pass(tmp_path, monkeypatch):
     root = _copy(tmp_path, gitlab=True)
+    (root / ".github/workflows/ci.yml").unlink(missing_ok=True)
     monkeypatch.setitem(sys.modules, "yaml", None)
     faults = ci_adapters.parity_faults(root)
     assert len(faults) == 1 and "pyyaml" in faults[0], faults
@@ -527,7 +822,7 @@ def test_a_gitlab_file_written_another_way_yaml_reads_the_same_has_no_fault(
 @pytest.mark.parametrize("script", ["make check", '"make check"', "[make check]"])
 def test_a_one_step_gitlab_script_may_be_one_string(tmp_path, script):
     root = _copy(tmp_path, gitlab=True)
-    (root / ".github/workflows/ci.yml").unlink()
+    (root / ".github/workflows/ci.yml").unlink(missing_ok=True)
     _set_config(root, lambda block: block.update(steps=[{"run": "make check"}]))
     path = root / ".gitlab-ci.yml"
     text = path.read_text()
@@ -552,7 +847,10 @@ def test_a_config_step_no_adapter_runs_is_a_fault(tmp_path):
     root = _copy(tmp_path, gitlab=True)
     _set_config(root, lambda block: block["steps"].append({"run": "make docs"}))
     faults = ci_adapters.parity_faults(root)
-    assert len(faults) == 2, faults
+    if "github" in ci_adapters.present(root):
+        assert len(faults) == 2, faults
+    else:
+        assert len(faults) == len(ci_adapters.judged(root)), faults
 
 
 def test_a_gitlab_image_key_the_file_does_not_follow_is_a_fault(tmp_path):
@@ -573,8 +871,16 @@ def _answer(root, line):
 def test_a_chosen_adapter_that_is_missing_is_a_fault(tmp_path):
     root = _copy(tmp_path)
     _answer(root, "ci_pipeline: both")
+    adapters = ci_adapters.pipeline(root)["adapters"]
+    missing = sorted(set(adapters) - set(ci_adapters.present(root)))
+    if not missing:
+        missing = ["gitlab"]
+        (root / adapters["gitlab"]).unlink()
     faults = ci_adapters.parity_faults(root)
-    assert faults == ["the chosen adapter gitlab (.gitlab-ci.yml) is missing"], faults
+    assert faults == [
+        "the chosen adapter %s (%s) is missing" % (name, adapters[name])
+        for name in missing
+    ], faults
 
 
 def test_an_answers_file_with_no_valid_choice_is_a_fault(tmp_path):
@@ -627,7 +933,7 @@ def test_an_answer_reads_as_copier_reads_it(tmp_path):
     project that chose gitlab that way has its GitLab file judged and no
     fault; an unknown value written that way is shown as the file has it."""
     root = _copy(tmp_path, gitlab=True)
-    (root / ".github/workflows/ci.yml").unlink()
+    (root / ".github/workflows/ci.yml").unlink(missing_ok=True)
     _answer(root, "ci_pipeline: 'gitlab' # c")
     assert ci_adapters.chosen(root) == (["gitlab"], None)
     assert ci_adapters.parity_faults(root) == []
@@ -647,14 +953,14 @@ def test_an_answers_file_yaml_cannot_read_is_a_fault(tmp_path):
 def test_an_unchosen_file_the_project_wrote_is_not_judged(tmp_path):
     """A .gitlab-ci.yml without keel's marker in a github project is the
     project's own, kept by update, so it is not held to keel's steps."""
-    root = _copy(tmp_path)
+    root = _copy(tmp_path, github=True)
     _answer(root, "ci_pipeline: github")
     (root / ".gitlab-ci.yml").write_text("lint:\n  script:\n    - make lint\n")
     assert ci_adapters.parity_faults(root) == []
 
 
 def test_an_unchosen_file_carrying_the_marker_is_still_judged(tmp_path):
-    root = _copy(tmp_path, gitlab=True)
+    root = _copy(tmp_path, gitlab=True, github=True)
     _answer(root, "ci_pipeline: github")
     _edit(root / ".gitlab-ci.yml", "    - make trace\n", "")
     faults = ci_adapters.parity_faults(root)
@@ -662,7 +968,7 @@ def test_an_unchosen_file_carrying_the_marker_is_still_judged(tmp_path):
 
 
 def test_a_chosen_adapter_that_lost_its_marker_is_still_judged(tmp_path):
-    root = _copy(tmp_path)
+    root = _copy(tmp_path, github=True)
     _answer(root, "ci_pipeline: github")
     _edit(root / ".github/workflows/ci.yml", "# keel-adapter: github\n", "")
     faults = ci_adapters.parity_faults(root)
