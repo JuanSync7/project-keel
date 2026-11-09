@@ -2,7 +2,7 @@
 title: Integration — a copied script carries every project module it imports
 kind: tests
 layer: n/a
-summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers, resolves repository-root names and bound source paths, and recognizes shutil copies, os links and subprocess cp/rsync argv; entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key.
+summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Non-empty guards require routed sites and imported helpers.
 """
 
 import ast
@@ -352,7 +352,82 @@ _COPY_EXEMPTIONS = {
         "integration/test_e2e_coverage.py",
         "_shadow_root",
         "str(real)",
-    ): "Endpoint discovery inspects a complete transport tree with a planted routing fault.",
+    ): "Endpoint discovery copies the whole transport directory to plant a routing fault; an entry import closure cannot preserve that directory.",
+    (
+        "integration/test_e2e_coverage.py",
+        "_shadow_root",
+        "entry",
+    ): "The shadow root links whole repository entries around a fault-injected directory; copying an import closure would replace the link layout under test.",
+    (
+        "integration/test_e2e_coverage.py",
+        "_copy_scenarios",
+        "str(_ROOT / e2e['scenario_dir'])",
+    ): "Marker discovery needs the whole configured scenario directory as source data, including tests outside any entry import closure.",
+    (
+        "integration/test_e2e_coverage.py",
+        "test_a_route_form_the_gate_cannot_derive_is_red",
+        "str(_ROOT / rest)",
+    ): "Route syntax inspection needs the whole configured transport directory with planted faults, not an entry import closure.",
+    (
+        "unit/test_isolation_guard.py",
+        "test_copying_a_tree_with_an_outbound_link_reaches_nothing",
+        "_ROOT",
+    ): "The outbound link itself is isolation-guard input; copying files would remove the link behavior being measured.",
+    (
+        "integration/test_evals_gate.py",
+        "test_a_report_dir_through_a_symlink_writes_and_deletes_nothing",
+        "link",
+    ): "The configured report path carries conservative repository provenance, but the scratch symlink is the refusal input; copying an import closure cannot test link refusal.",
+    (
+        "integration/test_gate_evidence_record.py",
+        "test_a_real_gate_refuses_an_evidence_dir_that_is_a_symlink",
+        "repo / _EVIDENCE['dir']",
+    ): "The configured evidence path carries conservative repository provenance, but the scratch symlink is the refusal input; copying an import closure cannot test link refusal.",
+    (
+        "integration/test_ci_pipeline_gate.py",
+        "_copy",
+        "str(_ROOT / ci_adapters.CONFIG)",
+    ): "The configured manifest is pipeline gate input data, not a Python entry with imports.",
+    (
+        "integration/test_exit_codes_through_make.py",
+        "gate",
+        "str(_ROOT / _EVIDENCE['schema'])",
+    ): "The configured evidence schema is JSON validation data; an import closure cannot derive this runtime data dependency.",
+    (
+        "integration/test_gate_evidence_record.py",
+        "_build",
+        "str(_ROOT / _EVIDENCE['schema'])",
+    ): "The configured evidence schema is JSON validation data; an import closure cannot derive this runtime data dependency.",
+    (
+        "integration/test_gate_evidence_record.py",
+        "test_evidence_dir_is_ignored_in_keel_and_its_template",
+        "str(_ROOT / name)",
+    ): "Gitignore files are copied verbatim as gate input data, not executable entries needing an import closure.",
+    (
+        "integration/test_install_sources_gate.py",
+        "test_the_gitlab_adapter_install_steps_are_judged_too",
+        "str(_ROOT / ci_adapters.CONFIG)",
+    ): "The configured manifest is installer gate input data, not a Python entry with imports.",
+    (
+        "integration/test_requirement_traceability.py",
+        "build_scratch",
+        "str(_ROOT / tree)",
+    ): "Traceability scans whole configuration and specification directories as data; an entry import closure would omit unread specifications.",
+    (
+        "integration/test_requirement_traceability.py",
+        "build_scratch",
+        "str(_ROOT / name)",
+    ): "Gitignore and project metadata are traceability gate input data, not executable entries needing an import closure.",
+    (
+        "integration/test_toolchain_gate.py",
+        "_fe_install_copy",
+        "str(_ROOT / config_loader.CONFIG_FILE)",
+    ): "The configured manifest is frontend installation input data, not a Python entry with imports.",
+    (
+        "unit/evals/test_config.py",
+        "_project",
+        "str(_ROOT / 'config' / 'evals' / name)",
+    ): "The eval schemas are JSON validation data, not executable entries needing an import closure.",
     (
         "integration/test_evals_gate.py",
         "build_scratch",
@@ -360,6 +435,13 @@ _COPY_EXEMPTIONS = {
     ): "Replay evals require complete packages with their runtime datasets and adapters.",
 }
 _COPY_FUNCTIONS = {"copy", "copy2", "copyfile", "copytree", "copy_with_imports"}
+# Import-layer prefixes declare every Python code root, including optional
+# transports; structure.extra_toplevel only names additions to the taxonomy.
+_CODE_ROOTS = {
+    prefix.split("/")[0]
+    for layer in source_tree.import_layers(_ROOT)["order"]
+    for prefix in layer
+}
 
 
 def _path_value(expr, definitions, root, rel, seen=frozenset()):
@@ -372,7 +454,7 @@ def _path_value(expr, definitions, root, rel, seen=frozenset()):
         values = {
             _path_value(value, definitions, root, rel, seen | {expr.id})
             for value in definitions.get(expr.id, [])
-        } - {None}
+        }
         return values.pop() if len(values) == 1 else None
     if isinstance(expr, ast.Constant) and isinstance(expr.value, (str, int)):
         return expr.value
@@ -421,7 +503,9 @@ def _path_value(expr, definitions, root, rel, seen=frozenset()):
     return None
 
 
-def _source_tokens(expr, definitions, imports, root, rel, seen=frozenset()):
+def _source_tokens(
+    expr, definitions, imports, root, rel, seen=frozenset(), *, called=False
+):
     """Conservative path provenance, including rosters and loop variables.
 
     Follow assignments and imported constants without importing test modules or
@@ -443,6 +527,8 @@ def _source_tokens(expr, definitions, imports, root, rel, seen=frozenset()):
                         value, definitions, imports, root, rel, seen | {name}
                     )
                     for value in definitions[name]
+                    if called
+                    or not isinstance(value, (ast.FunctionDef, ast.AsyncFunctionDef))
                 )
             )
         if name in imports:
@@ -456,6 +542,7 @@ def _source_tokens(expr, definitions, imports, root, rel, seen=frozenset()):
                     root,
                     path,
                     seen | {path + ":" + attribute},
+                    called=called,
                 )
         return set()
     if isinstance(expr, ast.Attribute) and isinstance(expr.value, ast.Name):
@@ -472,9 +559,31 @@ def _source_tokens(expr, definitions, imports, root, rel, seen=frozenset()):
                 root,
                 path,
                 seen | {path + ":" + expr.attr},
+                called=called,
             )
     if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
         return {expr.value}
+    if isinstance(expr, ast.Call):
+        return _source_tokens(
+            expr.func, definitions, imports, root, rel, seen, called=True
+        ) | set().union(
+            *(
+                _source_tokens(arg, definitions, imports, root, rel, seen)
+                for arg in [*expr.args, *(key.value for key in expr.keywords)]
+            )
+        )
+    if isinstance(expr, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        local = dict(definitions, **_definitions(expr))
+        # Reading configuration from the repository does not make the returned
+        # config object a repository root. Only a known path return establishes
+        # that a call with no rooted argument supplies repository provenance.
+        return {
+            "<repo>"
+            for node in source_tree.scope_nodes(expr)
+            if isinstance(node, ast.Return)
+            and node.value is not None
+            and _path_value(node.value, local, root, rel) == root
+        }
     return set().union(
         *(
             _source_tokens(child, definitions, imports, root, rel, seen)
@@ -497,7 +606,9 @@ def _definitions(scope):
 
     for node in source_tree.scope_nodes(scope):
         targets, value = [], None
-        if isinstance(node, ast.Assign):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.setdefault(node.name, []).append(node)
+        elif isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
         elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
             targets, value = [node.target], node.value
@@ -554,6 +665,15 @@ def _bound_expressions(expr, definitions, seen=frozenset()):
 def _copy_arguments(callee, node, definitions):
     """Source expressions and the optional roster for supported copy operations."""
     owner, _, method = callee.rpartition(".")
+    if method in {"symlink_to", "hardlink_to"} and isinstance(node.func, ast.Attribute):
+        target = (
+            node.args[0]
+            if node.args
+            else next((k.value for k in node.keywords if k.arg == "target"), None)
+        )
+        # Either endpoint can expose a repository path. Keep one site per call
+        # even when both endpoints are rooted there.
+        return [(expr, None) for expr in (target, node.func.value) if expr is not None]
     if (owner in {"shutil", "script_copy"} and method in _COPY_FUNCTIONS) or (
         owner == "os" and method in {"link", "symlink"}
     ):
@@ -642,6 +762,11 @@ def _copy_sites(root=_ROOT):
                     continue
                 parts = ast.unparse(node.func).split(".")
                 callee = ".".join([aliases.get(parts[0], parts[0]), *parts[1:]])
+                path_link = isinstance(node.func, ast.Attribute) and (
+                    node.func.attr in {"symlink_to", "hardlink_to"}
+                )
+                if path_link:
+                    callee = "Path." + node.func.attr
                 for source, roster in _copy_arguments(callee, node, definitions):
                     tokens = _source_tokens(source, definitions, imports, root, rel)
                     key = (
@@ -650,9 +775,7 @@ def _copy_sites(root=_ROOT):
                         ast.unparse(source),
                     )
                     code = any(
-                        token.split("/")[0]
-                        in {"scripts", "src", "tests", "api", "agents", "mcp", "evals"}
-                        or token.endswith(".py")
+                        token.split("/")[0] in _CODE_ROOTS or token.endswith(".py")
                         for token in tokens
                     )
                     if key in _COPY_EXEMPTIONS or (
@@ -661,9 +784,13 @@ def _copy_sites(root=_ROOT):
                             callee == "script_copy.copy_with_imports"
                             or code
                             or tokens == {"<repo>"}
+                            or path_link
+                            or _path_value(source, definitions, root, rel) is None
                         )
                     ):
                         sites.append((rel, node.lineno, callee, roster, key))
+                        if path_link:
+                            break
 
         scan(tree, {}, {}, imports, "", rel)
     return sites
@@ -761,8 +888,26 @@ def _assert_exemptions(sites, exemptions, root):
 
 def test_copy_discovery_is_nonempty_and_exemptions_still_name_copy_calls():
     sites = _copy_sites()
-    assert sites
+    assert sites, "copy discovery found no sites: %s" % (sites,)
     _assert_exemptions(sites, _COPY_EXEMPTIONS, _ROOT)
+
+
+def test_copy_discovery_includes_routed_sites():
+    sites = _copy_sites()
+    routed = [site for site in sites if site[2] == "script_copy.copy_with_imports"]
+    assert routed, "copy discovery found no copy_with_imports routes; found: %s" % (
+        [(site[0], site[1], site[2]) for site in sites],
+    )
+
+
+def test_copy_discovery_scans_helper_modules():
+    modules = _consumer_modules(_ROOT)
+    helpers = [
+        rel
+        for rel in modules
+        if not Path(rel).name.startswith("test_") and Path(rel).name != "conftest.py"
+    ]
+    assert helpers, "copy discovery scanned no helper modules; found: %s" % modules
 
 
 def test_discovery_finds_a_new_consumer_copying_a_roster_with_shutil(tmp_path):
@@ -828,6 +973,41 @@ def test_discovery_finds_a_new_consumer_copying_a_roster_with_shutil(tmp_path):
             "from os import link as copying\n    copying(os.path.join(REPOSITORY, 'scripts', 'a.py'), dest)",
             "os.link",
         ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "source = REPOSITORY / config['directory']\n    shutil.copytree(source, dest)",
+            "shutil.copytree",
+        ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "source = REPOSITORY / 'config/project.json'\n    if flag:\n        source = REPOSITORY / configured_path()\n    shutil.copy(source, dest)",
+            "shutil.copy",
+        ),
+        (
+            "def repository():\n    base = Path(__file__).parents[1]\n    return base",
+            "shutil.copytree(repository() / configured_path(), dest)",
+            "shutil.copytree",
+        ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "dest.symlink_to(REPOSITORY / config['directory'])",
+            "Path.symlink_to",
+        ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "dest.hardlink_to(target=REPOSITORY / 'config/project.json')",
+            "Path.hardlink_to",
+        ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "(REPOSITORY / 'config/link').symlink_to(dest)",
+            "Path.symlink_to",
+        ),
+        (
+            "REPOSITORY = Path(__file__).parents[1]",
+            "(REPOSITORY / 'scripts/link.py').hardlink_to(REPOSITORY / 'scripts/a.py')",
+            "Path.hardlink_to",
+        ),
     ],
 )
 def test_discovery_follows_root_names_bound_paths_and_copy_operations(
@@ -867,6 +1047,42 @@ def test_discovery_follows_transitive_helpers_and_imported_path_bindings(tmp_pat
     assert [(s[0], s[2], s[4][1:]) for s in sites] == [
         ("tests/helpers/copying.py", "shutil.copy2", ("fixture", "SOURCE"))
     ]
+
+
+def test_discovery_follows_an_imported_root_returning_function(tmp_path):
+    _tree(
+        tmp_path,
+        {
+            "tests/paths.py": "from pathlib import Path\ndef repository():\n    return Path(__file__).parents[1]\n",
+            "tests/test_consumer.py": "from paths import repository as base\nimport shutil\ndef fixture(dest):\n    shutil.copytree(base() / configured_path(), dest)\n",
+        },
+    )
+    sites = _copy_sites(tmp_path)
+    assert [(s[0], s[2], s[4][1]) for s in sites] == [
+        ("tests/test_consumer.py", "shutil.copytree", "fixture")
+    ]
+
+
+def test_discovery_leaves_unrooted_sources_and_literal_metadata_out(tmp_path):
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def fixture(dest, scratch):\n"
+                "    shutil.copytree(configured_path(), dest)\n"
+                "    shutil.copytree(scratch / configured_path(), dest)\n"
+                "    dest.symlink_to(scratch / 'scripts/a.py')\n"
+                "    dest.hardlink_to(scratch / 'scripts/a.py')\n"
+                "    shutil.copy(BASE / 'config/project.json', dest)\n"
+                "def scratch():\n    return BASE\n"
+                "def other(dest, scratch):\n"
+                "    shutil.copytree(scratch / configured_path(), dest)\n"
+            )
+        },
+    )
+    assert _copy_sites(tmp_path) == []
 
 
 @pytest.mark.parametrize("copies", [0, 2])
