@@ -104,6 +104,10 @@ the line whose diagnostic it silenced (it did, in `check_practices.py`). Anchor
 a pragma to the line ruff *reports*, and re-run `make lint` after reformatting —
 `RUF100` makes an unused suppression fail `make lint`.
 The `external` list preserves waivers for deferred rules and custom AST gates.
+`tests/integration/test_external_waiver_gate.py` checks each external code Ruff
+knows against diagnostics with suppressions disabled over Makefile `PY_ROOTS`.
+A waiver without a same-code diagnostic on its line fails with file, line and code.
+An unknown code needs a named custom gate; zero Ruff codes or zero waivers fails.
 
 Kept **off as deliberate house-style policy** (not deferred debt): `UP`
 (house style is `%`-formatting), `RUF022` (semantic `__all__` order),
