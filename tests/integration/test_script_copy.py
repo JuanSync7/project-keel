@@ -544,8 +544,15 @@ def _relative_operand(expr, definitions):
     Every name binding must itself be a relative string literal. A call is
     proven only for an undecorated synchronous function whose entire body is
     one return of a relative string literal; its arguments cannot affect that
-    result. Wrappers and unknown values retain their provenance.
+    result. Wrappers and unknown values retain their provenance. A name declared
+    `global` or `nonlocal` anywhere in the module is never proven relative,
+    whether it is the value or the helper called.
     """
+    name = expr.func if isinstance(expr, ast.Call) else expr
+    if isinstance(name, ast.Name) and any(
+        name.id in declaration.names for declaration in definitions.get("<shared>", [])
+    ):
+        return False
     if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
         return not Path(expr.value).is_absolute()
     if isinstance(expr, ast.Name):
@@ -751,6 +758,14 @@ def _source_tokens(
 
 def _definitions(scope):
     out = {}
+    if isinstance(scope, ast.Module):
+        # Cross-scope writes escape the local binding walk; keep declarations
+        # separate so shadowing cannot restore a module-wide relative proof.
+        out["<shared>"] = [
+            node
+            for node in ast.walk(scope)
+            if isinstance(node, (ast.Global, ast.Nonlocal))
+        ]
 
     def bind(target, value):
         if isinstance(target, ast.Name):
@@ -1488,6 +1503,120 @@ def test_scratch_join_requires_proven_relative_operands(tmp_path, binding, sourc
         },
     )
     assert len(_copy_sites(tmp_path)) == 1, (binding, source)
+
+
+@pytest.mark.parametrize(
+    "definition, operand, expected",
+    [
+        pytest.param(
+            "def test_copy(tmp_path, dest):\n"
+            "    part = 'r'\n"
+            "    def rebind():\n"
+            "        nonlocal part\n"
+            "        part = str(BASE)\n"
+            "    rebind()\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="nonlocal-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "def rebind():\n"
+            "    global part\n"
+            "    part = str(BASE)\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    rebind()\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="global-rebind",
+        ),
+        pytest.param(
+            "class Container:\n"
+            "    async def outer(self):\n"
+            "        def inner():\n"
+            "            global part\n"
+            "            part = str(BASE)\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    part = 'r'\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="deep-global-voids-local-name",
+        ),
+        pytest.param(
+            "def test_copy(tmp_path, dest):\n"
+            "    part = 'r'\n"
+            "    class Container:\n"
+            "        async def outer(self):\n"
+            "            def inner():\n"
+            "                nonlocal part\n"
+            "                part = str(BASE)\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="deep-nonlocal",
+        ),
+        pytest.param(
+            "@functools.cache\n"
+            "def relative(root):\n"
+            "    return 'r'\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    COPY\n",
+            "relative(BASE)",
+            1,
+            id="cached-relative-helper",
+        ),
+        pytest.param(
+            "async def relative(root):\n"
+            "    return 'r'\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    COPY\n",
+            "relative(BASE)",
+            1,
+            id="async-relative-helper",
+        ),
+        pytest.param(
+            "def rebind():\n"
+            "    global other\n"
+            "    other = str(BASE)\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    part = 'r'\n"
+            "    COPY\n",
+            "part",
+            0,
+            id="undeclared-name-control",
+        ),
+        pytest.param(
+            "def relative(root):\n"
+            "    return 'r'\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    COPY\n",
+            "relative(BASE)",
+            0,
+            id="sync-undecorated-helper-control",
+        ),
+    ],
+)
+def test_shared_bindings_and_wrapped_helpers_void_relative_proof(
+    tmp_path, definition, operand, expected
+):
+    definition = definition.replace(
+        "COPY",
+        "shutil.copytree(tmp_path / " + operand + " / load_cfg(BASE), dest)",
+    )
+    _tree(
+        tmp_path,
+        {
+            "tests/test_consumer.py": (
+                "from pathlib import Path\nimport shutil\nimport functools\n"
+                "BASE = Path(__file__).parents[1]\n"
+                "def load_cfg(root):\n    return 'configured'\n" + definition
+            )
+        },
+    )
+    assert len(_copy_sites(tmp_path)) == expected, definition
 
 
 @pytest.mark.parametrize(
