@@ -5,6 +5,7 @@ layer: n/a
 summary: check_N is the render-free half of twin parity — it runs in the 3.6 pre-commit gate with no jinja2, over ALL twins rather than one. It proves every `*.jinja` is declared with a kind in config/project.json template.twins, that the declaration matches reality (a parity/divergence twin has a plain sibling, a generated one does not), that a parity twin carries no non-templated line the plain file has lost, and that a divergence twin actually diverges.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -130,3 +131,60 @@ def test_no_jinja_files_at_all_is_silent():
     """A GENERATED project inherits the declaration but has no twins; it must not
     be told its template is broken."""
     assert _find({"pyproject.toml": _PLAIN}, {}) == []
+
+
+@pytest.mark.parametrize("filename", ["pyproject.toml", "pyproject.toml.jinja"])
+@pytest.mark.parametrize(
+    "missing", ["tmp_path_retention_policy", "tmp_path_retention_count"]
+)
+def test_promised_setting_missing_from_either_twin_errors(
+    tmp_path, monkeypatch, filename, missing
+):
+    manifest = json.loads((_ROOT / "config/project.json").read_text(encoding="utf-8"))
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    for rel in ("pyproject.toml", "pyproject.toml.jinja"):
+        text = (_ROOT / rel).read_text(encoding="utf-8")
+        if rel == filename:
+            text = "\n".join(
+                line
+                for line in text.splitlines()
+                if not line.startswith(missing + " =")
+            )
+        (tmp_path / rel).write_text(text, encoding="utf-8")
+    for name in ("ROOT", "errors", "warnings", "_CONFIG_READ", "_READ_REPORTED"):
+        monkeypatch.setattr(cs, name, getattr(cs, name))
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
+    cs.check_N()
+    protected = [m for m in cs.errors if "required_settings" in m]
+    assert len(protected) == 1, cs.errors
+    assert filename in protected[0] and missing in protected[0]
+
+
+def test_promised_settings_are_configured_not_a_fixed_key_list(tmp_path, monkeypatch):
+    manifest = {
+        "template": {
+            "twins": {"pyproject.toml": "parity"},
+            "required_settings": ["tool.build.future"],
+        }
+    }
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    for rel in ("pyproject.toml", "pyproject.toml.jinja"):
+        (tmp_path / rel).write_text("[tool.build]\nother = 1\n", encoding="utf-8")
+    for name in ("ROOT", "errors", "warnings", "_CONFIG_READ", "_READ_REPORTED"):
+        monkeypatch.setattr(cs, name, getattr(cs, name))
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
+    cs.check_N()
+    assert len(cs.errors) == 2
+    assert all("tool.build.future" in m and "required_settings" in m for m in cs.errors)

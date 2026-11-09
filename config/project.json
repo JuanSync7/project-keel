@@ -1,7 +1,14 @@
 {
   "_comment": "Authoritative project facts: hand-edited, enforced by scripts/check_structure.py (check_H, CONVENTIONS section 15). Choose one frontend stack; list shipped stacks/transports under 'available'.",
   "name": "project_keel",
+  "audit_project": {
+    "settings_tables": ["tool.pytest.ini_options"]
+  },
   "template": {
+    "required_settings": [
+      "tool.pytest.ini_options.tmp_path_retention_policy",
+      "tool.pytest.ini_options.tmp_path_retention_count"
+    ],
     "_comment": "Keel is a copier template: files suffixed .jinja are rendered, everything else is copied verbatim. `twins` declares every .jinja and what it is FOR, so a new one cannot appear unnoticed — scripts/check_structure.py check_N enforces it, render-free, so it runs in the 3.6 pre-commit gate. 'parity' = must reproduce keel's own file except where templated; 'divergence' = must NOT (the difference is the point); 'generated' = copier writes it into a new project and keel commits none of its own. A generated project has no .jinja files, so check_N is silent there.",
     "twins": {
       "pyproject.toml": "parity",

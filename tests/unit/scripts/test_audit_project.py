@@ -2,7 +2,7 @@
 title: Unit — audit_project (another project judged by this template's gates)
 kind: tests
 layer: n/a
-summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked, unless it is an `after` migration refusing over files the update itself leaves conflicted, which the real update will do too: that is named under not checked with its rerun, the tree copier leaves is judged, and when the refused migration is the restamp or one before it the freshness and restamp groups name `make restamp-docs` instead of claiming the update rewrites the stamps, while a refusal naming a file the update did not conflict is still exit 2; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..Z then conflict, config, freshness and restamp, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
+summary: scripts/audit_project.py pinned against a small fake template (a git history of a base and a newer commit, or uncommitted edits) and a keel-shaped DEST in a scratch directory. It refuses, exit 2 and naming each missing item, whatever is not a keel project; with a base it judges the tree a real `copier update` leaves on a scratch copy of DEST: an error the update brings a fix for is resolved, an error the update leaves is owed even in a file the project never edited, a key the update brings is judged with the file that uses it, and a file copier would conflict on is reported in the conflict group and its findings not judged, while the rest of the tree is judged with every conflict hunk the project's way and the template's way, never beside DEST's pre-update bytes: a cross-file finding both resolutions have is owed, one only one has is not judged (`resolve_conflict` keeps one side of each hunk, the diff3 base dropped, and refuses markers copier does not write); an update copier would refuse (DEST outside git, or uncommitted changes, each named) is an `update-refused` config warning with no exit change; `classify` names what the update did to each config key (arrives, updates, merges, removed-upstream; a list is one value; inputs never mutated); without a base nothing is predicted and DEST is judged as it stands; a failed update is exit 2 with the scratch path masked, unless it is an `after` migration refusing over files the update itself leaves conflicted, which the real update will do too: that is named under not checked with its rerun, the tree copier leaves is judged, and when the refused migration is the restamp or one before it the freshness and restamp groups name `make restamp-docs` instead of claiming the update rewrites the stamps, while a refusal naming a file the update did not conflict is still exit 2; a symlink leaving DEST is never written through; the scratch tree is removed on every path. The update's base config is rendered in memory from the template's twin with DEST's answers and copier.yml's derived defaults; findings are grouped A..Z then conflict, config, freshness, restamp, retired and drift, sorted, and the --json output is canonical and byte-identical across runs; an unreadable file has unknown origin, and malformed or wrongly typed answers are a refusal, not a traceback; a not-checked section is always present; and DEST's code, Makefile, git hooks and the commands its git config names (fsmonitor, a clean filter) are never run and its files never written. Excluded from generated projects with the doer.
 """
 
 import copy
@@ -273,6 +273,7 @@ def template(tmp_path, monkeypatch):
     (root / "config").mkdir(parents=True)
     (root / "copier.yml").write_text(_COPIER_YML, encoding="utf-8")
     (root / "config" / "project.json.jinja").write_text(_TWIN, encoding="utf-8")
+    (root / "config" / "project.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(ap, "TEMPLATE", str(root))
     return root
 
@@ -349,6 +350,97 @@ def _generated(tmp_path, template, sha, name="dest"):
 
 def _errors(report, group):
     return [f for f in report["groups"][group] if f["tier"] == "error"]
+
+
+@pytest.mark.parametrize("behind", [0, 1, 3])
+def test_drift_records_commit_and_counts_template_history(tmp_path, template, behind):
+    import datetime
+
+    sha = _template_commits(template, {}, {})
+    for n in range(behind):
+        (template / "history.txt").write_text(str(n), encoding="utf-8")
+        _commit_dest(template)
+    dest = _dest(tmp_path, template, commit=sha)
+    report = ap.audit(str(dest), datetime.date.fromisoformat(TODAY))
+    revision = next(f for f in report["groups"]["drift"] if f["kind"] == "revision")
+    assert revision["commit"] == sha
+    assert revision["behind"] == behind
+    assert "drift" in ap.render_text(report)
+
+
+def test_drift_unknown_commit_is_unknown_not_zero(tmp_path, template):
+    import datetime
+
+    dest = _dest(tmp_path, template, commit="unresolvable")
+    report = ap.audit(str(dest), datetime.date.fromisoformat(TODAY))
+    revision = next(f for f in report["groups"]["drift"] if f["kind"] == "revision")
+    assert revision["commit"] == "unresolvable"
+    assert revision["behind"] is None
+    assert "unknown" in revision["message"]
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_drift_compares_rendered_settings_and_only_reports_absent_keys(
+    tmp_path, template, present
+):
+    import datetime
+
+    (template / "pyproject.toml.jinja").write_text(
+        "[tool.pytest.ini_options]\n"
+        'tmp_path_retention_policy = "failed"\n'
+        "tmp_path_retention_count = 3\n"
+        '{% if project_name == "Demo" %}future_setting = true\n{% endif %}'
+        "[tool.other]\nignored = true\n",
+        encoding="utf-8",
+    )
+    dest = _dest(tmp_path, template)
+    (dest / "pyproject.toml").write_text(
+        "[tool.pytest.ini_options]\ntmp_path_retention_count = 9\n"
+        + ('tmp_path_retention_policy = "all"\n' if present else ""),
+        encoding="utf-8",
+    )
+    report = ap.audit(str(dest), datetime.date.fromisoformat(TODAY))
+    missing = [f for f in report["groups"]["drift"] if f["kind"] == "missing-setting"]
+    assert [f["key"] for f in missing] == [
+        "tool.pytest.ini_options.future_setting",
+    ] + ([] if present else ["tool.pytest.ini_options.tmp_path_retention_policy"])
+    assert all(
+        f["tier"] == "warning" and f["file"] == "pyproject.toml" for f in missing
+    )
+    assert report["exit"] == 0
+    assert ap.render_json(report) == ap.render_json(
+        ap.audit(str(dest), datetime.date.fromisoformat(TODAY))
+    )
+
+
+def test_drift_tables_are_configurable_and_missing_file_lists_all_settings(
+    tmp_path, template
+):
+    import datetime
+
+    (template / "config" / "project.json").write_text(
+        json.dumps({"audit_project": {"settings_tables": ["tool.build"]}}),
+        encoding="utf-8",
+    )
+    (template / "pyproject.toml").write_text(
+        "[tool.build]\nz = 1\na = 2\n[tool.pytest.ini_options]\nignored = 3\n",
+        encoding="utf-8",
+    )
+    dest = _dest(tmp_path, template)
+    report = ap.audit(str(dest), datetime.date.fromisoformat(TODAY))
+    missing = [f for f in report["groups"]["drift"] if f["kind"] == "missing-setting"]
+    assert [f["key"] for f in missing] == ["tool.build.a", "tool.build.z"]
+
+
+@pytest.mark.parametrize("tables", [[], [""], "tool.pytest.ini_options"])
+def test_drift_zero_or_invalid_tables_fail_loudly(tmp_path, template, tables, capsys):
+    (template / "config" / "project.json").write_text(
+        json.dumps({"audit_project": {"settings_tables": tables}}), encoding="utf-8"
+    )
+    dest = _dest(tmp_path, template)
+    code, _out, err = _run([str(dest), "--today", TODAY], capsys)
+    assert code == ap.exit_codes.ExitCode.CONFIG
+    assert "audit_project.settings_tables" in err
 
 
 def _scratch_left(tmp_path):
@@ -718,6 +810,7 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
         "freshness",
         "restamp",
         "retired",
+        "drift",
     ]
     b_block = text.split("[B]", 1)[1].split("[C]", 1)[0]
     w_block = text.split("[W]", 1)[1].split("[X]", 1)[0]
@@ -742,7 +835,14 @@ def test_findings_are_grouped_sorted_and_json_is_byte_identical(
     assert report["summary"]["checks_run"] == _CHECK_LETTERS
     assert report["summary"]["conflicts"] == 0
     assert sorted(report["groups"]) == sorted(ap.GROUPS)  # JSON sorts keys
-    assert ap.GROUPS[-5:] == ("conflict", "config", "freshness", "restamp", "retired")
+    assert ap.GROUPS[-6:] == (
+        "conflict",
+        "config",
+        "freshness",
+        "restamp",
+        "retired",
+        "drift",
+    )
     assert report["summary"]["files_seen"] > 0
     assert [f["tier"] for f in report["groups"]["B"]] == ["error"]
     assert [f["tier"] for f in report["groups"]["W"]] == ["error"]

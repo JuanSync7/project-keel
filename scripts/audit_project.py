@@ -3,7 +3,7 @@
 title: audit_project — another keel project judged by this template's current gates
 kind: script
 layer: n/a
-summary: Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, scripts/template_snapshot.py `snapshot_working_tree`, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..Z) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The `retired` group names each DEST file the update deletes that the project edited (an error, owed: the same `is_edited` rule scripts/jobs/keep_edited_retired.py applies; the prediction runs that guard migration as the real update does, so a file still deleted after it is one a later `rm` migration removes or one copier deleted without running migrations). The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process, its own structure checks (`structure.project_checks`) included. Exit 0 when no letter or `retired` error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update (except an `after` migration the real update stops at too -- one refusing, through scripts/jobs/conflict_guard.py, over files the update itself leaves conflicted, or one copier names as the failed task (its argv carries `--finish-with`, which no `_tasks` entry passes) whose output holds verbatim the message of a letter error the audit judges owed (`owed_refusal`) -- which is named under not checked with its rerun, the tree copier leaves is judged, and when the restamp is among the migrations never reached the freshness and restamp groups name `make restamp-docs`) or a missing extra. Keel-only: excluded from generated projects; a generated project's `make audit-project` stub points back at the template checkout.
+summary: The `drift` group reports DEST's recorded template commit, its commits behind this checkout (unknown when unresolved), and settings absent from DEST in configured pyproject.toml tables compared with the current template render. Missing settings warn because this pre-update comparison cannot establish work owed after update; present values remain project choices. Answers "what would this template's current gates say about DEST once `copier update` has landed?" by judging one consistent tree, the one the update leaves, never a mix of merged and unmerged files. It builds that tree in a scratch directory (`tempfile.TemporaryDirectory`, prefix `keel-audit-`, removed on every exit path): a clone of this checkout with its uncommitted edits committed on top (a snapshot, scripts/template_snapshot.py `snapshot_working_tree`, so the template's own index is never refreshed), a copy of DEST's files (the ones git does not ignore; a symlink leaving DEST is copied as its target's bytes, so nothing is written through it), and a real `copier update --trust --conflict inline` of the copy against the snapshot, run as a child process with an allowlisted environment and a hermetic git config. check_structure's letters (A..Z) run in-process on the copy before and after the update: a letter finding after the update is owed; one present only before is resolved by the update; a path copier leaves conflicted is reported in the `conflict` group, and the tree after the update is then checked twice, every conflict hunk the project's way and every hunk the template's way (`resolve_conflict`, read from copier's own markers), so no check parses a marker and no conflicted file is put back to DEST's bytes beside the update's other files: a finding both resolutions have is owed, one only one has depends on how the conflict is resolved and is not judged, and a finding in a conflicted file is not judged. The `retired` group names each DEST file the update deletes that the project edited (an error, owed: the same `is_edited` rule scripts/jobs/keep_edited_retired.py applies; the prediction runs that guard migration as the real update does, so a file still deleted after it is one a later `rm` migration removes or one copier deleted without running migrations). The config group warns (`update-refused`) when the real update would refuse DEST: outside git, or with uncommitted changes, which it names. The config group names what the update did to each key of each JSON config (`classify`: arrives, updates, merges, removed-upstream) from the template's render at DEST's `_commit`, DEST's file and the predicted file. Every finding carries an origin evidence kind (template-unedited, template-edited, template-rendered, template-new, project, unknown) read from git at `_commit`; a file that cannot be read is `unknown`. When `_commit` does not resolve here nothing is predicted: DEST is judged as it stands and the not-checked section says so. It adds the freshness judge (scripts/jobs/review_docs.py) and the restamp writer's `pending` list (scripts/jobs/restamp_docs.py) on DEST, both of which the update's last migration clears. A "not checked" section names every proof it does not run, including that the update's tasks run the project's merged restamp step inside the scratch copy. DEST and this checkout are never written: DEST is read with open() and ast and its git with name-level commands built by `review_docs.git_argv` that write nothing and switch off fsmonitor, signature verification and every filter driver its git config names; no make target, hook or module of DEST runs in this process, its own structure checks (`structure.project_checks`) included. Exit 0 when no letter or `retired` error is owed, 1 when one is (or no file was seen), 2 on a usage error, a refusal (DEST is not a keel project, or its answers are malformed), a template render error (including answers of the wrong type), a failed copier update (except an `after` migration the real update stops at too -- one refusing, through scripts/jobs/conflict_guard.py, over files the update itself leaves conflicted, or one copier names as the failed task (its argv carries `--finish-with`, which no `_tasks` entry passes) whose output holds verbatim the message of a letter error the audit judges owed (`owed_refusal`) -- which is named under not checked with its rerun, the tree copier leaves is judged, and when the restamp is among the migrations never reached the freshness and restamp groups name `make restamp-docs`) or a missing extra; 14 when audit configuration is refused. Keel-only: excluded from generated projects; a generated project's `make audit-project` stub points back at the template checkout.
 Copied destinations and conflict rewrites are confined to the copy root before writes. Checks judge paths at call time; a link swapped before the write is not caught.
 effect: writes
 rerun: fixed-point
@@ -47,7 +47,7 @@ TEMPLATE = os.path.dirname(_SCRIPTS)
 ANSWERS = ".copier-answers.yml"
 MANIFEST = "config/project.json"
 LETTERS = tuple(letter for letter, _fn in check_structure.CHECKS)
-GROUPS = LETTERS + ("conflict", "config", "freshness", "restamp", "retired")
+GROUPS = LETTERS + ("conflict", "config", "freshness", "restamp", "retired", "drift")
 TIERS = ("error", "warning", "info")
 FRESHNESS_RESOLVED_BY = "copier update (_migrations: restamp_docs)"
 # The restamp migration's job name, as conflict_guard's refusal line names it:
@@ -287,13 +287,15 @@ def _cast(yaml, value, qtype):
     return value
 
 
-def render_configs(reader, answers):
+def render_configs(reader, answers, *, paths=None):
     """({config relpath: parsed data or None}, notes) for every path in
-    check_structure.JSON_CONFIGS, rendered in memory from the template *reader*
-    reads, with *answers* (DEST's) as the context.
+    check_structure.JSON_CONFIGS (or explicit *paths*), rendered in memory
+    from the template *reader* reads, with *answers* (DEST's) as the context.
 
     A `<path><suffix>` twin is rendered with jinja2 under StrictUndefined; a
-    plain file is copied verbatim, as copier copies it. Every copier.yml
+    plain file is copied verbatim, as copier copies it. TOML paths yield the
+    existing structure scanner's dotted assignments; JSON paths yield data.
+    Every copier.yml
     question absent from the answers is given its default, rendered in
     copier.yml order, so a derived (`when: false`) value such as project_slug
     is computed, never re-typed. *notes* names each question the answers lack
@@ -375,7 +377,7 @@ def render_configs(reader, answers):
     )
 
     configs = {}
-    for relpath in check_structure.JSON_CONFIGS:
+    for relpath in check_structure.JSON_CONFIGS if paths is None else paths:
         rel = relpath.replace(os.sep, "/")
         twin = reader(rel + suffix) if suffix else None
         if twin is not None:
@@ -386,6 +388,9 @@ def render_configs(reader, answers):
                 text = render(text, context, rel)
         if text is None:
             configs[rel] = None
+            continue
+        if rel.endswith(".toml"):
+            configs[rel] = check_structure._toml_targets(text)
             continue
         try:
             configs[rel] = json.loads(text)
@@ -1302,6 +1307,53 @@ def _retired(dest, base_sha, tree, after_root):
     return found
 
 
+def _drift(dest, answers, base_sha):
+    """Recorded revision, commits behind HEAD, and absent rendered settings.
+
+    Missing settings warn: this compares DEST before update, so absence does
+    not establish an error still owed after update. Present values are project
+    choices, not drift. Unknown history is None, never a guessed zero.
+    """
+    key = ("audit_project", "settings_tables")
+    tables = config_loader.resolve(
+        config_loader.read(TEMPLATE), config_loader.rows(key), MANIFEST, environ={}
+    )[key]
+    behind = None
+    if base_sha is not None:
+        code, out, _err = _git(TEMPLATE, "rev-list", "--count", base_sha + "..HEAD")
+        if code == 0 and out.strip().isdigit():
+            behind = int(out.strip())
+    found = [
+        {
+            "tier": "info",
+            "kind": "revision",
+            "commit": answers["_commit"],
+            "behind": behind,
+            "message": "template commit %s; commits behind this checkout: %s"
+            % (answers["_commit"], "unknown" if behind is None else behind),
+        }
+    ]
+    rendered, _notes = render_configs(
+        worktree_reader(TEMPLATE), answers, paths=("pyproject.toml",)
+    )
+    expected = rendered["pyproject.toml"] or {}
+    text = worktree_reader(dest)("pyproject.toml")
+    present = check_structure._toml_targets(text) if text is not None else {}
+    found.extend(
+        {
+            "tier": "warning",
+            "kind": "missing-setting",
+            "file": "pyproject.toml",
+            "key": setting,
+            "message": "pyproject.toml: missing template setting %s" % setting,
+        }
+        for setting in sorted(expected)
+        if setting not in present
+        and any(setting.startswith(table + ".") for table in tables)
+    )
+    return found
+
+
 def audit(dest, today):
     """The report for the keel project at *dest* (a realpath), as a dict.
     Raises _Refusal or AuditError."""
@@ -1328,6 +1380,7 @@ def audit(dest, today):
 
     commit = answers["_commit"]
     base_sha = resolve_commit(commit)
+    groups["drift"].extend(_drift(dest, answers, base_sha))
     tree = {}
     not_run = []
     if base_sha is None:
@@ -1564,7 +1617,10 @@ hunk the project's way and again the template's way, and a finding only one
 of the two has is not judged either. The config group names what the update
 does to each key of DEST's JSON configs, and warns when the real update would
 refuse DEST (outside git, or uncommitted changes). The doc-freshness judge and the restamp
-writer's pending list are read from DEST.
+writer's pending list are read from DEST. The drift group reports the recorded
+template commit, commits behind this checkout (unknown if unresolved), and
+missing settings in configured pyproject.toml tables against the current render.
+Missing settings warn because this pre-update comparison cannot prove owed work.
 
 The update's own tasks and migrations run in the scratch copy: keel's run the
 project's restamp step there, as the project's own update would.
@@ -1582,7 +1638,7 @@ no unmerged files, so the migrations run and the conflicts hide in .rej files.
 Exit: 0 no owed letter error; 1 one is owed (or no file was seen); 2 usage
 error, DEST is not a keel project, a template render error, a failed copier
 update other than a migration stopping over conflicts the update leaves or
-an owed error, or a missing extra.
+an owed error, or a missing extra; 14 refused audit configuration.
 """
 
 

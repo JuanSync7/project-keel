@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity and promised pyproject settings in both twins, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -63,7 +63,8 @@ Checks:
      twin carries no stale non-templated line, a divergence twin still diverges,
      a generated one has no committed plain file. Render-free (no jinja2 here),
      so it bounds what it proves; the byte-exact rendered comparison lives in
-     tests/integration. Silent in a generated project, which has no twins.
+     tests/integration. template.required_settings protects promised pyproject
+     keys in both siblings. Silent without twins or promised settings.
   O. Module header contract (ERR): every CODE_ROOTS module docstring carries
      explicit, non-empty title:/summary: lines — the grammar build_corpus
      reads. Without them the corpus falls back to filename/first-prose-line
@@ -3122,7 +3123,8 @@ def check_N():
     """Template twin parity — see _twin_parity_findings for what this can and
     cannot prove without a jinja renderer. Silent in a generated project (no
     twins). Waivable with `# practice-ok`? No: a twin has no line to hang a
-    pragma on that copier would not then render."""
+    pragma on that copier would not then render. template.required_settings
+    also protects promised pyproject keys on both sides, even if both lose one."""
     declared = _declared_twins()
     if declared is None:
         return
@@ -3146,6 +3148,31 @@ def check_N():
                 unreadable.add(relp)
     for m in _twin_parity_findings(files, declared, unreadable=unreadable):
         err(m)
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA or manifest is _REFUSED:
+        return
+    key = ("template", "required_settings")
+    try:
+        required = config_loader.resolve(
+            manifest,
+            config_loader.rows(key),
+            "config/project.json",
+            environ={},
+            stream=io.StringIO(),
+        )[key]
+    except config_loader.ConfigError as exc:
+        for line in exc.lines:
+            err(line)
+        return
+    for path in ("pyproject.toml", "pyproject.toml" + _TWIN_SUFFIX):
+        if path in unreadable:
+            continue
+        present = _toml_targets(files.get(path, ""))
+        for setting in sorted(set(required) - set(present)):
+            err(
+                "%s: missing setting %s promised by config/project.json "
+                "template.required_settings; restore it" % (path, _shown(setting))
+            )
 
 
 def _declared_twins():
