@@ -70,25 +70,67 @@ class _LineError(Exception):
     """A fault in one line; parse_cases adds the path:line prefix."""
 
 
-def _safe_library_error(exc: ValueError) -> str:
-    """Display library text without exposing values in either chain link."""
-    message = str(exc)
+class _LibraryError(ValueError):
+    """A library failure's safe text and original type name."""
+
+    def __init__(self, message: str, type_name: str) -> None:
+        super().__init__(message)
+        self.type_name = type_name
+
+
+def _safe_library_error(exc: ValueError) -> ValueError:
+    """Copy both chain links without mutating library exceptions.
+
+    No input text holding @ may survive in args or public string/bytes
+    attributes. Stand-ins retain sanitized public text, type names and integer
+    positions; other library attributes can hold arbitrary input objects.
+    Raise outside the handler so its raw exception cannot become context.
+    """
     pending: list[BaseException] = [exc]
-    seen: set[int] = set()
+    originals: list[BaseException] = []
+    copies: dict[int, _LibraryError] = {}
     while pending:
         current = pending.pop()
-        if id(current) in seen:
+        if id(current) in copies:
             continue
-        seen.add(id(current))
-        # Suppression retains __context__; keep the chain and sanitize its text.
-        if "@" in str(current) or "@" in repr(current.args):
-            current.args = (config_loader.shown(str(current), bare=True),)
+        message = str(current)
+        safe = _LibraryError(
+            config_loader.shown(message, bare=True) if "@" in message else message,
+            config_loader.shown(type(current).__name__, bare=True),
+        )
+        for name in dir(current):
+            if name.startswith("_") or name == "type_name":
+                continue
+            value = getattr(current, name)
+            if isinstance(value, str):
+                setattr(safe, name, config_loader.shown(value, bare=True))
+            elif isinstance(value, bytes):
+                setattr(
+                    safe,
+                    name,
+                    config_loader.shown(str(value), bare=True).encode("utf-8")
+                    if b"@" in value
+                    else value,
+                )
+        for name in ("lineno", "colno", "pos"):
+            position = getattr(current, name, None)
+            if isinstance(position, int):
+                setattr(safe, name, position)
+        copies[id(current)] = safe
+        originals.append(current)
         pending.extend(
             linked
             for linked in (current.__cause__, current.__context__)
             if linked is not None
         )
-    return config_loader.shown(message, bare=True) if "@" in message else message
+    for current in originals:
+        safe = copies[id(current)]
+        if current.__cause__ is not None:
+            safe.__cause__ = copies[id(current.__cause__)]
+        if current.__context__ is not None:
+            safe.__context__ = copies[id(current.__context__)]
+        safe.__suppress_context__ = current.__suppress_context__
+    return copies[id(exc)]
 
 
 def _refuse_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -164,10 +206,16 @@ def _case(
             % (config_loader.quoted(name), config_loader.quoted(sorted(scorers)))
         )
     params = scorer["params"]
+    params_error: _LineError | None = None
     try:
         scorers[name].check_params(params)
     except ValueError as exc:
-        raise _LineError("scorer.params: %s" % _safe_library_error(exc)) from exc
+        safe = _safe_library_error(exc)
+        params_error = _LineError("scorer.params: %s" % safe)
+        params_error.__cause__ = safe
+    if params_error is not None:
+        # Raising in the handler would attach the raw library error as context.
+        raise params_error
     assert isinstance(params, dict)  # check_params proved it
     rec = _object(top["recorded"], "recorded", _RECORDED)
     response = _string(rec["response"], "recorded.response", non_empty=False)
@@ -237,17 +285,22 @@ def parse_cases(
         where = "%s:%d" % (source, number)
         shown_where = "%s:%d" % (display_source, number)
         line = raw.removesuffix("\r")
+        refusal: DatasetError | None = None
         try:
             if not line.strip():
                 raise _LineError("blank line inside the suite")
             obj = json.loads(line, object_pairs_hook=_refuse_duplicates)
             case = _case(obj, suite, where, schema_version, scorers)
         except _LineError as exc:
-            raise DatasetError("%s: %s" % (shown_where, exc)) from exc
+            refusal = DatasetError("%s: %s" % (shown_where, exc))
+            refusal.__cause__ = exc
         except ValueError as exc:
-            raise DatasetError(
-                "%s: not valid JSON (%s)" % (shown_where, _safe_library_error(exc))
-            ) from exc
+            safe = _safe_library_error(exc)
+            refusal = DatasetError("%s: not valid JSON (%s)" % (shown_where, safe))
+            refusal.__cause__ = safe
+        if refusal is not None:
+            # `from None` only hides context from printing; handlers can read it.
+            raise refusal
         if case.id in first_seen:
             raise DatasetError(
                 "%s: duplicate id %s (first at %s)"

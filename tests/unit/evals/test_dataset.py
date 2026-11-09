@@ -10,6 +10,7 @@ import hashlib
 import json
 import sys
 import traceback
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from evals import (  # noqa: E402
     Case,
     DatasetError,
     EvalConfig,
+    Scorer,
     load_suites,
     parse_cases,
 )
@@ -298,6 +300,126 @@ def test_load_suites_keeps_refusal_detail_and_safe_causes(
             for linked in (current.__cause__, current.__context__)
             if linked is not None
         )
+
+
+def _exception_texts(error: BaseException) -> list[str]:
+    """Inspect args and public text attributes on both links, even suppressed ones."""
+    pending = [error]
+    seen: set[int] = set()
+    texts: list[str] = []
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        texts.extend((str(current), repr(current.args)))
+        for name in dir(current):
+            if name.startswith("_"):
+                continue
+            value = getattr(current, name)
+            if isinstance(value, str):
+                texts.append(value)
+            elif isinstance(value, bytes):
+                texts.append(value.decode("utf-8", errors="replace"))
+        pending.extend(
+            linked
+            for linked in (current.__cause__, current.__context__)
+            if linked is not None
+        )
+    return texts
+
+
+@pytest.mark.parametrize("source_kind", ["json", "json-message", "regex", "scorer"])
+@pytest.mark.parametrize("value", ["sensitive@host", "ordinary-value"])
+@pytest.mark.parametrize("via_loader", [False, True])
+def test_library_refusals_expose_only_safe_exception_attributes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_kind: str,
+    value: str,
+    *,
+    via_loader: bool,
+) -> None:
+    scorers = dict(SCORERS)
+    if source_kind.startswith("json"):
+        text = json.dumps(value) + " trailing"
+        reason = "not valid JSON"
+        if source_kind == "json-message":
+            real_loads = json.loads
+
+            def loads(document: str, **kwargs: Any) -> Any:
+                if document == text:
+                    raise json.JSONDecodeError("invalid value " + value, document, 1)
+                return real_loads(document, **kwargs)
+
+            monkeypatch.setattr(json, "loads", loads)
+    elif source_kind == "regex":
+        text = _mutated(
+            "scorer", {"name": "regex", "params": {"pattern": "(?P<" + value + ">x)"}}
+        )
+        reason = "scorer.params:"
+    else:
+        text = _mutated("scorer.params", {"expected": value})
+        reason = "scorer.params: invalid expected value"
+
+        class ParameterError(ValueError):
+            def __init__(self, raw: str) -> None:
+                super().__init__("invalid expected value")
+                self.payload = raw
+                self.raw_bytes = raw.encode("utf-8")
+
+        def check(params: Mapping[str, object]) -> None:
+            raise ParameterError(str(params["expected"]))
+
+        scorer = SCORERS["exact"]
+        scorers["exact"] = Scorer("exact", scorer.params, check, scorer.score)
+
+    with pytest.raises(DatasetError) as refused:
+        if via_loader:
+            # load_suites uses the shared registry's scorer objects.
+            if source_kind == "scorer":
+                monkeypatch.setattr(
+                    Scorer, "check_params", lambda _self, params: check(params)
+                )
+            base = tmp_path / "datasets"
+            base.mkdir()
+            (base / "one.jsonl").write_text(text, encoding="utf-8")
+            cfg = EvalConfig(
+                "case.json", "report.json", "datasets", "reports", 1.0, None, 0
+            )
+            load_suites(cfg, tmp_path)
+        else:
+            parse_cases(text, source=SOURCE, schema_version=1, scorers=scorers)
+    expected_source = "datasets/one.jsonl" if via_loader else SOURCE
+    assert str(refused.value).startswith(expected_source + ":1: " + reason)
+    texts = _exception_texts(refused.value)
+    if "@" in value:
+        assert all(value not in text for text in texts), texts
+    else:
+        assert any(value in text for text in texts), texts
+
+
+def test_library_exception_is_unchanged_and_safe_copy_keeps_its_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    text = '"private@value" trailing'
+    original = json.JSONDecodeError("invalid private@value", text, 3)
+    original_args = original.args
+
+    def loads(_document: str, **_kwargs: Any) -> Any:
+        raise original
+
+    monkeypatch.setattr(json, "loads", loads)
+    with pytest.raises(DatasetError) as refused:
+        _parse(text)
+    assert original.args == original_args
+    assert original.doc == text
+    assert original.msg == "invalid private@value"
+    safe = refused.value.__cause__
+    assert safe is not None and safe is not original
+    assert vars(safe)["type_name"] == "JSONDecodeError"
+    assert vars(safe)["lineno"] == original.lineno
+    assert vars(safe)["colno"] == original.colno
 
 
 @pytest.mark.parametrize(
