@@ -23,10 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import child_env  # noqa: E402
 import config_loader  # noqa: E402
-import exit_code_table  # noqa: E402
 import exit_codes  # noqa: E402
-import test_evals_gate as evals_gate  # noqa: E402
-import test_gate_evidence_record as gate_record  # noqa: E402
 
 import hermetic_git  # noqa: E402
 import root_config_cli  # noqa: E402
@@ -34,7 +31,6 @@ from live_server import free_port, load_server_config  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
-_SERVER = load_server_config(str(_ROOT))
 _GATE_SCRIPT = "gate_evidence.py"
 _EVAL_SCRIPT = "run_evals.py"
 # The registry name of the adapter whose backend the absent case points at.
@@ -62,6 +58,8 @@ def _pin_the_interpreter(repo, env):
     would hand `PY=` to the driver in MAKEFLAGS, which no child environment
     built by scripts/child_env.py may carry, so a driver started directly
     reads it from the makefile."""
+    import test_gate_evidence_record as gate_record
+
     makefile = repo / "Makefile"
     text = makefile.read_text("utf-8")
     makefile.write_text("PY := %s\n%s" % (sys.executable, text), encoding="utf-8")
@@ -71,6 +69,8 @@ def _pin_the_interpreter(repo, env):
 
 def _gate_scenario(goals, gate=_GATE):
     def prepare(base):
+        import test_gate_evidence_record as gate_record
+
         repo, env = gate_record._build(base)
         _pin_the_interpreter(repo, env)
         argv = ["--gate", gate, "--", "make"] + list(goals)
@@ -86,6 +86,8 @@ def _eval_manifest(repo):
 
 def _eval_scenario(mode, *, absent=False):
     def prepare(base):
+        import test_evals_gate as evals_gate
+
         repo, _env = evals_gate.build_scratch(base)
         extra = dict(hermetic_git.git_env_vars(base / "work"))
         # urllib honours proxy variables; a loopback port must not be routed away.
@@ -100,7 +102,8 @@ def _eval_scenario(mode, *, absent=False):
 
 def _point_at_a_port_nothing_listens_on(repo):
     path, manifest = _eval_manifest(repo)
-    host = _SERVER["host"]
+    server = load_server_config(str(_ROOT))
+    host = server["host"]
     endpoint = "%s:%d" % (host, free_port(host))
     cases = [
         line
@@ -114,7 +117,7 @@ def _point_at_a_port_nothing_listens_on(repo):
     live["model_options"] = {
         "base_url": "http://%s/v1" % endpoint,
         "model": "absent",
-        "timeout": _SERVER["request_timeout_s"],
+        "timeout": server["request_timeout_s"],
     }
     # The scratch project lists the host it is about to find absent, so the
     # run is not refused for naming an unlisted one before it can be absent.
@@ -123,56 +126,72 @@ def _point_at_a_port_nothing_listens_on(repo):
 
 
 def _evidence_dir():
+    import test_gate_evidence_record as gate_record
+
     return gate_record._EVIDENCE["dir"]
 
 
 def _eval_report(mode):
+    import test_evals_gate as evals_gate
+
     return "%s/%s.json" % (evals_gate._CONFIG.report_dir, mode)
 
 
-_CASES = {
-    (_GATE_SCRIPT, "success"): Case(
-        _GATE_SCRIPT, _gate_scenario(gate_record._SCRATCH_GOALS), _SUCCESS, "", (), ""
-    ),
-    # A goal that passes and writes no test report: nothing failed, and the
-    # record is red.
-    (_GATE_SCRIPT, "red-record"): Case(
-        _GATE_SCRIPT,
-        _gate_scenario(gate_record._SCRATCH_GOALS[:1]),
-        _RED_RECORD,
-        "gate_evidence: the evidence record is red though no goal failed",
-        ("%s/%s.json" % (_evidence_dir(), _GATE), "no-test-report"),
-        "read the record's `reasons`, fix what they name and run the gate again",
-    ),
-    (_GATE_SCRIPT, "usage"): Case(
-        _GATE_SCRIPT,
-        _gate_scenario(gate_record._SCRATCH_GOALS[:1], gate="BAD!"),
-        _USAGE,
-        "gate_evidence: refused before any goal ran",
-        ("--gate", "BAD!"),
-        _GATE_USAGE_STEP,
-    ),
-    (_EVAL_SCRIPT, "success"): Case(
-        _EVAL_SCRIPT, _eval_scenario("replay"), _SUCCESS, "", (), ""
-    ),
-    (_EVAL_SCRIPT, "backend-absent"): Case(
-        _EVAL_SCRIPT,
-        _eval_scenario("live", absent=True),
-        _BACKEND_ABSENT,
-        "run_evals: the live backend is absent, so nothing was judged",
-        (_eval_report("live"), "backend-absent"),
-        "configure the model config/project.json `evals` names, then run it again",
-    ),
-    # The shipped config names no live model.
-    (_EVAL_SCRIPT, "usage"): Case(
-        _EVAL_SCRIPT,
-        _eval_scenario("live"),
-        _USAGE,
-        "run_evals: the live run was refused",
-        ("evals.live.model",),
-        "correct config/project.json `evals` and run it again",
-    ),
-}
+@pytest.fixture(scope="module")
+def cases():
+    """Build config-dependent expectations during execution, after collection."""
+    import test_gate_evidence_record as gate_record
+
+    return {
+        (_GATE_SCRIPT, "success"): Case(
+            _GATE_SCRIPT,
+            _gate_scenario(gate_record._SCRATCH_GOALS),
+            _SUCCESS,
+            "",
+            (),
+            "",
+        ),
+        # A goal that passes and writes no test report: nothing failed, and the
+        # record is red.
+        (_GATE_SCRIPT, "red-record"): Case(
+            _GATE_SCRIPT,
+            _gate_scenario(gate_record._SCRATCH_GOALS[:1]),
+            _RED_RECORD,
+            "gate_evidence: the evidence record is red though no goal failed",
+            ("%s/%s.json" % (_evidence_dir(), _GATE), "no-test-report"),
+            "read the record's `reasons`, fix what they name and run the gate again",
+        ),
+        (_GATE_SCRIPT, "usage"): Case(
+            _GATE_SCRIPT,
+            _gate_scenario(gate_record._SCRATCH_GOALS[:1], gate="BAD!"),
+            _USAGE,
+            "gate_evidence: refused before any goal ran",
+            ("--gate", "BAD!"),
+            _GATE_USAGE_STEP,
+        ),
+        (_EVAL_SCRIPT, "success"): Case(
+            _EVAL_SCRIPT, _eval_scenario("replay"), _SUCCESS, "", (), ""
+        ),
+        (_EVAL_SCRIPT, "backend-absent"): Case(
+            _EVAL_SCRIPT,
+            _eval_scenario("live", absent=True),
+            _BACKEND_ABSENT,
+            "run_evals: the live backend is absent, so nothing was judged",
+            (_eval_report("live"), "backend-absent"),
+            "configure the model config/project.json `evals` names, then run it again",
+        ),
+        # The shipped config names no live model.
+        (_EVAL_SCRIPT, "usage"): Case(
+            _EVAL_SCRIPT,
+            _eval_scenario("live"),
+            _USAGE,
+            "run_evals: the live run was refused",
+            ("evals.live.model",),
+            "correct config/project.json `evals` and run it again",
+        ),
+    }
+
+
 _SCRIPTS = (_GATE_SCRIPT, _EVAL_SCRIPT)
 # The ends every script is driven to, beside the one that is its own red fact.
 _SHARED_ENDS = ("success", "usage")
@@ -257,30 +276,38 @@ def _detail(run):
 
 
 @pytest.fixture(scope="module")
-def runs(tmp_path_factory):
+def runs(tmp_path_factory, cases):
     """Every case driven once, each in its own scratch repository."""
     return {
         key: _drive(case, tmp_path_factory.mktemp("cli"))
-        for key, case in sorted(_CASES.items())
+        for key, case in sorted(cases.items())
     }
 
 
-def test_the_cases_cover_every_script_at_every_end():
+def test_the_cases_cover_every_script_at_every_end(cases):
     wanted = {
         (script, end)
         for script in _SCRIPTS
         for end in _SHARED_ENDS + (_OWN_END[script],)
     }
     assert wanted, "no case -- zero items"
-    assert set(_CASES) == wanted
-    assert all(case.script == script for (script, _end), case in _CASES.items())
+    assert set(cases) == wanted
+    assert all(case.script == script for (script, _end), case in cases.items())
     # A failure case with nothing to compare its line with would pass any line.
-    for key, case in _CASES.items():
+    for key, case in cases.items():
         if case.member != _SUCCESS:
             assert case.what and case.names and case.next_step, key
 
 
-@pytest.mark.parametrize("key", sorted(_CASES), ids="-".join)
+@pytest.mark.parametrize(
+    "key",
+    [
+        (script, end)
+        for script in _SCRIPTS
+        for end in _SHARED_ENDS + (_OWN_END[script],)
+    ],
+    ids="-".join,
+)
 def test_each_script_reaches_each_code_as_a_child_process(runs, key):
     run = runs[key]
     assert judge(run) == [], _detail(run)
@@ -288,8 +315,11 @@ def test_each_script_reaches_each_code_as_a_child_process(runs, key):
 
 def test_the_two_red_facts_end_on_different_numbers_and_no_script_can_return_the_others(
     runs,
+    cases,
 ):
-    assert len(runs) == len(_CASES) == len(_SCRIPTS) * (len(_SHARED_ENDS) + 1)
+    import exit_code_table
+
+    assert len(runs) == len(cases) == len(_SCRIPTS) * (len(_SHARED_ENDS) + 1)
     red = runs[(_GATE_SCRIPT, _OWN_END[_GATE_SCRIPT])].proc.returncode
     absent = runs[(_EVAL_SCRIPT, _OWN_END[_EVAL_SCRIPT])].proc.returncode
     assert red == exit_codes.ExitCode[_RED_RECORD]
@@ -325,11 +355,11 @@ def test_the_two_red_facts_end_on_different_numbers_and_no_script_can_return_the
     ids=[_GATE_SCRIPT, _EVAL_SCRIPT],
 )
 def test_swapping_the_two_members_in_one_script_is_seen_by_the_child(
-    tmp_path, script, own, other
+    tmp_path, script, own, other, cases
 ):
     """Fault injection: the scratch copy of a script returns the other script's
     member for its own red fact, and the judge the cases use says so."""
-    case = _CASES[(script, _OWN_END[script])]
+    case = cases[(script, _OWN_END[script])]
     scenario = case.prepare(tmp_path)
     path = scenario.repo / "scripts" / script
     text = path.read_text("utf-8")
@@ -371,10 +401,6 @@ _ROOT_CONFIG_EXEMPTIONS = {
     ),
 }
 
-_ROOT_CONFIG_CASES, _ROOT_CONFIG_EXCLUSIONS = root_config_cli.select_cases(
-    _ROOT, _ROOT_CONFIG_FIRST
-)
-
 
 def test_config_first_cases_match_the_scripts_derived_from_root_config_reads():
     """Root-config rule: a declared --root reaches config_loader.read, directly
@@ -386,33 +412,32 @@ def test_config_first_cases_match_the_scripts_derived_from_root_config_reads():
     """
     import source_tree
 
+    selected, exclusions = root_config_cli.select_cases(_ROOT, _ROOT_CONFIG_FIRST)
     derived = root_config_cli.derive_scripts(
         _ROOT, source_tree.import_layers(_ROOT)["search_roots"]
     )
     root_config_cli.check_cases(
         derived,
-        {script for script, _extra in _ROOT_CONFIG_CASES},
+        {script for script, _extra in selected},
         {
             script: reason
             for script, reason in _ROOT_CONFIG_EXEMPTIONS.items()
-            if script not in _ROOT_CONFIG_EXCLUSIONS
+            if script not in exclusions
         },
     )
 
 
-@pytest.mark.parametrize(
-    "script,extra",
-    _ROOT_CONFIG_CASES
-    + [
-        pytest.param(script, extra, marks=pytest.mark.skip(reason=reason))
-        for script, extra in _ROOT_CONFIG_FIRST
-        if (reason := _ROOT_CONFIG_EXCLUSIONS.get(script))
-    ],
-)
+@pytest.mark.parametrize("script,extra", _ROOT_CONFIG_FIRST)
 @pytest.mark.parametrize("kind", ["missing", "file"])
 def test_config_first_cli_refuses_a_root_that_is_not_a_directory(
     tmp_path, script, extra, kind
 ):
+    _selected, exclusions = root_config_cli.select_cases(_ROOT, _ROOT_CONFIG_FIRST)
+    if script in exclusions:
+        pytest.skip(exclusions[script])
+    assert (_ROOT / "scripts" / script).is_file(), (
+        "scripts/%s: listed script missing from copier template" % script
+    )
     root = tmp_path / "invalid-checkout"
     if kind == "file":
         root.write_text("not a directory", "utf-8")

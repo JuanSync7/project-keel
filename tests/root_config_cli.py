@@ -403,21 +403,20 @@ def derive_scripts(root, search_roots):
 
 
 def select_cases(root, cases):
-    """Template completeness rule: copier.yml requires every listed script.
+    """Keep every listed template case, including missing scripts, without raising.
 
-    Generated projects may omit scripts already checked by the template; return
-    each exclusion's reason so callers can expose it as a skip. Use the included
-    rows for both discovery comparison and executable CLI cases.
+    A tree with copier.yml requires every listed script: retain missing rows so
+    the CLI test fails on its named script during execution and the discovery
+    comparison reports it as listed but not derived. Generated projects may omit
+    those scripts: exclude them with reasons the CLI test exposes as skips.
+    Both consumers apply this rule during execution, never during collection.
     """
     root = Path(root)
+    if (root / "copier.yml").is_file():
+        return list(cases), {}
     missing = {
         script for script, _extra in cases if not (root / "scripts" / script).is_file()
     }
-    if (root / "copier.yml").is_file():
-        assert not missing, "\n".join(
-            "scripts/%s: listed script missing from copier template" % script
-            for script in sorted(missing)
-        )
     excluded = {
         script: (
             "scripts/%s: absent in generated project; "
