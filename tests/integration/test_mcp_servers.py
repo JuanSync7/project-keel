@@ -101,7 +101,7 @@ def test_qa_tool_answers_with_citations_using_the_fake_model(tmp_path):
     assert any(c["node_id"] == "keel" for c in answer["citations"])  # cited its source
 
 
-def test_qa_tool_filters_non_public_nodes(tmp_path):
+def test_qa_tool_filters_non_public_nodes(tmp_path, monkeypatch):
     """A confidential node must never reach a citation (visibility honoured)."""
     corpus = json.loads(Path(_tiny_corpus(tmp_path)).read_text())
     corpus["nodes"][0]["visibility"] = "confidential"
@@ -111,10 +111,12 @@ def test_qa_tool_filters_non_public_nodes(tmp_path):
     server = build_qa_server(
         model="fake", corpus=str(p), max_model_calls=1, max_session_model_calls=1
     )
-    answer = server.call_tool("wiki_answer", {"question": "what is keel"})[
-        "structuredContent"
-    ]
-    assert all(c["node_id"] != "keel" for c in answer["citations"])
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    assert "no context nodes" in result["content"][0]["text"]
+    assert _Counted.prompts == []
 
 
 class _Counted(FakeModel):
@@ -264,12 +266,13 @@ def test_qa_uses_the_corpus_checkouts_allowlist(tmp_path, monkeypatch, level):
         model="fake", corpus=str(path), max_model_calls=1, max_session_model_calls=1
     )
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
-    assert result["isError"] is False
-    answer = result["structuredContent"]
-    assert bool(answer["citations"]) is (level in served)
-    assert ("a project skeleton that stays honest" in _Counted.prompts[0]) is (
-        level in served
-    )
+    assert result["isError"] is (level not in served)
+    if level in served:
+        assert result["structuredContent"]["citations"]
+        assert "a project skeleton that stays honest" in _Counted.prompts[0]
+    else:
+        assert "no context nodes" in result["content"][0]["text"]
+        assert _Counted.prompts == []
 
 
 @pytest.mark.parametrize("level", ["public", "confidential"])
@@ -293,13 +296,14 @@ def test_qa_tool_answers_another_projects_corpus_against_that_projects_files(
         model="fake", corpus=corpus, max_model_calls=1, max_session_model_calls=1
     )
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
-    assert result["isError"] is False, result
-    cited = {c["node_id"] for c in result["structuredContent"]["citations"]}
-    sent = "\n".join(_Counted.prompts)
+    assert result["isError"] is (level != "public")
     if level == "public":
-        assert cited == {"keel"} and "honest" in sent
+        cited = {c["node_id"] for c in result["structuredContent"]["citations"]}
+        assert cited == {"keel"}
+        assert "honest" in "\n".join(_Counted.prompts)
     else:
-        assert cited == set() and "honest" not in sent
+        assert "no context nodes" in result["content"][0]["text"]
+        assert _Counted.prompts == []
 
 
 @pytest.mark.parametrize("approved", [None, 0])
@@ -350,7 +354,10 @@ def test_qa_tool_makes_one_call_per_question_within_its_count(tmp_path, monkeypa
         max_session_model_calls=2,
     )
     for _ in range(2):
-        assert server.call_tool("wiki_answer", {"question": "q"})["isError"] is False
+        assert (
+            server.call_tool("wiki_answer", {"question": "what is keel"})["isError"]
+            is False
+        )
     assert len(_Counted.prompts) == 2
 
 
@@ -734,4 +741,23 @@ def test_each_question_is_held_to_the_tool_limits_its_root_configures(
     result = server.call_tool("wiki_answer", {"question": "what is keel"})
     assert result["isError"] is True, result
     assert "agents.tool_max_output_bytes" in json.dumps(result)
+    assert _Counted.prompts == []
+
+
+@pytest.mark.parametrize("contents", ["{}", '{"nodes": []}'])
+def test_qa_empty_corpus_refuses_without_a_model_call(tmp_path, monkeypatch, contents):
+    corpus = Path(_tiny_corpus(tmp_path))
+    corpus.write_text(contents, "utf-8")
+    monkeypatch.setitem(registry._REGISTRY, "fake", _Counted)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    server = build_qa_server(
+        model="fake", corpus=str(corpus), max_model_calls=1, max_session_model_calls=1
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    assert "no" in text and "retrieved" in text
+    assert tmp_path.name in text
+    assert str(tmp_path) not in text
+    assert "make site-data" in text
     assert _Counted.prompts == []

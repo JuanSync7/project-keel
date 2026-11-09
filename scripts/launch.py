@@ -1209,6 +1209,13 @@ def main(argv=None, runner=None, clock=None, nicer=None, loadavg=None):
     if not command:
         return _refuse("no command after `--`", usage)
     root = os.path.abspath(args.root or _DEFAULT_ROOT)
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "launch: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         cfg = load_launcher_config(config_loader.read(root, _MANIFEST))
     except LauncherConfigError as exc:

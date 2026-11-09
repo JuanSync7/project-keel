@@ -145,6 +145,13 @@ def main(argv=None):
             "argparse refused the arguments above", "call it as `long_scripts.py`"
         )
     root = os.path.abspath(args.root or _DEFAULT_ROOT)
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "long_scripts: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         cfg = load_launcher_config(config_loader.read(root, _MANIFEST))
     except LauncherConfigError as exc:

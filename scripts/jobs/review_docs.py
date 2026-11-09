@@ -909,6 +909,13 @@ def _main(argv=None):
         "today; tests pin it)",
     )
     args = ap.parse_args(argv)
+    if not os.path.isdir(args.root):
+        return report(
+            ExitCode.USAGE,
+            "review_docs: the root is not an existing directory",
+            config_loader.checkout_name(args.root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         today = resolve_today(args.today, os.environ).isoformat()
     except DateSourceError as exc:

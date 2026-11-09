@@ -86,6 +86,13 @@ def main(argv=None):
         return exit_codes.report(
             exit_codes.ExitCode.USAGE, "doc_review: " + what, on, next_step
         )
+    if not os.path.isdir(root):
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "doc_review: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     if args.execute:
         # Held to the cap before the agent runs, so a refused run calls no
         # model and writes nothing; a dry run calls none, so it is never held.

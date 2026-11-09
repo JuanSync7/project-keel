@@ -22,6 +22,7 @@ sys.path.insert(0, str(_ROOT / "tests"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import child_env  # noqa: E402
+import config_loader  # noqa: E402
 import exit_code_table  # noqa: E402
 import exit_codes  # noqa: E402
 import test_evals_gate as evals_gate  # noqa: E402
@@ -338,3 +339,48 @@ def test_swapping_the_two_members_in_one_script_is_seen_by_the_child(
     findings = judge(run)
     assert len(findings) == 1, (findings, _detail(run))
     assert own in findings[0] and other in findings[0], findings
+
+
+_ROOT_CONFIG_FIRST = [
+    ("doc_review.py", []),
+    ("refactor_practice.py", ["readability"]),
+    ("apply_refactor.py", ["--dry-run"]),
+    ("run_evals.py", []),
+    ("trace_requirements.py", []),
+    ("launch.py", ["--dry-run", "--", "true"]),
+    ("long_scripts.py", []),
+    ("jobs/build_corpus.py", []),
+    ("jobs/check_corpus.py", []),
+    ("jobs/build_llms_txt.py", []),
+    ("jobs/export_showcase_static.py", []),
+    ("jobs/review_docs.py", []),
+    ("jobs/resolve_stamp_conflicts.py", []),
+    ("jobs/declare_no_app.py", []),
+]
+
+
+@pytest.mark.parametrize("script,extra", _ROOT_CONFIG_FIRST)
+@pytest.mark.parametrize("kind", ["missing", "file"])
+def test_config_first_cli_refuses_a_root_that_is_not_a_directory(
+    tmp_path, script, extra, kind
+):
+    root = tmp_path / "invalid-checkout"
+    if kind == "file":
+        root.write_text("not a directory", "utf-8")
+    proc = subprocess.run(
+        [sys.executable, str(_ROOT / "scripts" / script), "--root", str(root), *extra],
+        cwd=_ROOT,
+        env=child_env.build_child_env(root=str(_ROOT)),
+        capture_output=True,
+        text=True,
+        timeout=config_loader.resolve(
+            config_loader.read(str(_ROOT)),
+            config_loader.rows(("tests", "child_timeout_seconds")),
+            config_loader.CONFIG_FILE,
+        )[("tests", "child_timeout_seconds")],
+    )
+    assert proc.returncode == exit_codes.ExitCode.USAGE
+    assert "invalid-checkout" in proc.stderr
+    assert "directory" in proc.stderr
+    assert str(tmp_path) not in proc.stderr
+    assert "config/project.json" not in proc.stderr

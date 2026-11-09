@@ -182,6 +182,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root or _REPO)
+    if not os.path.isdir(root):
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE,
+            "run_evals: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     mode = args.mode
     try:
         cfg = load_config(root)

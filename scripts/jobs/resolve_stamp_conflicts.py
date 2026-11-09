@@ -373,6 +373,13 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root or os.getcwd())
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "resolve_stamp_conflicts: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         resolved, left, failed = run(root)
     except (JobError, PathEscape) as e:

@@ -14,7 +14,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-from agents.wiki_navigator import answer, synthesize  # noqa: E402
+from agents.wiki_navigator import ContextRefused, answer, synthesize  # noqa: E402
 from models import ModelBackend  # noqa: E402
 from scripts import corpus_level  # noqa: E402
 from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
@@ -119,8 +119,9 @@ def test_synthesize_never_sends_a_confidential_or_restricted_node():
 
 def test_synthesize_with_nothing_visible_says_so():
     seen = _Seen("x")
-    synthesize("q", _NODES[1:], backend=seen)
-    assert "(nothing retrieved)" in seen.prompts[0]
+    with pytest.raises(ContextRefused, match="no context nodes"):
+        synthesize("q", _NODES[1:], backend=seen)
+    assert seen.prompts == []
 
 
 @pytest.mark.parametrize(
@@ -135,8 +136,9 @@ def test_synthesize_never_sends_a_node_outside_the_vocabulary(level):
     else:
         node["visibility"] = level
     seen = _Seen("x")
-    synthesize("q", [node], backend=seen)
-    assert "docs/odd.md" not in seen.prompts[0] and "Odd body." not in seen.prompts[0]
+    with pytest.raises(ContextRefused, match="no context nodes"):
+        synthesize("q", [node], backend=seen)
+    assert seen.prompts == []
 
 
 def test_synthesize_reads_the_configured_levels(monkeypatch):
@@ -148,9 +150,9 @@ def test_synthesize_reads_the_configured_levels(monkeypatch):
         config_loader, "served_visibilities", lambda root: frozenset({"public"})
     )
     seen = _Seen("x")
-    synthesize("What is alpha?", _NODES, backend=seen)
-    assert "docs/a.md" not in seen.prompts[0]
-    assert "(nothing retrieved)" in seen.prompts[0]
+    with pytest.raises(ContextRefused, match="no context nodes"):
+        synthesize("What is alpha?", _NODES, backend=seen)
+    assert seen.prompts == []
 
 
 def test_synthesize_takes_the_levels_it_is_given():
@@ -360,3 +362,39 @@ def test_a_node_whose_file_now_states_a_stricter_level_is_not_sent(tmp_path, how
     sent, cited = context()
     assert "About pubguide." not in sent and "pubguide" not in sent
     assert cited == ()
+
+
+@pytest.mark.parametrize("nodes", [[], _NODES[1:]], ids=["empty", "withheld"])
+def test_synthesize_refuses_empty_context_without_a_model_call(nodes):
+    seen = _Seen("should not be called")
+    with pytest.raises(ContextRefused, match="no.*retrieved") as caught:
+        synthesize("q", nodes, backend=seen)
+    assert all(part.strip() for part in caught.value.parts)
+    assert seen.prompts == []
+
+
+def test_answer_refuses_an_empty_corpus_before_building_a_model(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
+    (tmp_path / "wiki").mkdir()
+    (tmp_path / "wiki" / "corpus.json").write_text("{}", "utf-8")
+    built = []
+    seen = _Seen("should not be called")
+
+    def factory(name):
+        built.append(name)
+        return seen
+
+    with pytest.raises(ContextRefused, match="no.*retrieved") as caught:
+        answer(
+            "q",
+            root=str(tmp_path),
+            execute=True,
+            max_model_calls=1,
+            backend_factory=factory,
+        )
+    assert len(caught.value.parts) == 3
+    assert tmp_path.name in caught.value.parts[1]
+    assert "make site-data" in caught.value.parts[2]
+    assert built == []
+    assert seen.prompts == []

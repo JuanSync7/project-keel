@@ -1014,6 +1014,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     ap.add_argument("--json", action="store_true", help="emit the result as JSON")
     args = ap.parse_args(argv)
+    if not os.path.isdir(args.root):
+        return report(
+            ExitCode.USAGE,
+            "apply_refactor: the root is not an existing directory",
+            config_loader.checkout_name(args.root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     if args.discard_journal != args.yes:
         return report(
             ExitCode.USAGE,

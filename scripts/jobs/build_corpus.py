@@ -729,6 +729,13 @@ def main(argv=None) -> int:
     )
     args = ap.parse_args(argv)
     args.root = os.path.abspath(args.root)
+    if not os.path.isdir(args.root):
+        return report(
+            ExitCode.USAGE,
+            "build_corpus: the root is not an existing directory",
+            config_loader.checkout_name(args.root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         corpus = build_corpus(args.root)
     except config_loader.ConfigError as exc:

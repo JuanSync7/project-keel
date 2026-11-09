@@ -5,6 +5,6 @@ public_api: yes
 summary: Answers a question by traversing the corpus tree+links; cited answer + provenance.
 """
 
-from ._brain import Answer, Citation, answer, synthesize
+from ._brain import Answer, Citation, ContextRefused, answer, synthesize
 
-__all__ = ["answer", "synthesize", "Answer", "Citation"]
+__all__ = ["answer", "synthesize", "Answer", "Citation", "ContextRefused"]

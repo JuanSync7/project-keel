@@ -2,7 +2,7 @@
 title: Wiki navigator brain
 layer: backend
 public_api: no
-summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. answer is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist, so a mistyped corpus is not answered from an empty context. Checkout refusals use config_loader.checkout_name so clients see the checkout folder and relative file without the host path. Retrieval, synthesis and citations use the served levels from the derived checkout's config/project.json. Retrieval hands query_corpus that root alone as `--root`, so it reads the root's own corpus and files, and a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now): a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist) fails retrieval, so answer raises before any model call. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
+summary: Plan: deterministic retrieval (query_corpus) -> synthesize a cited answer; on a Runtime. answer is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist, so a mistyped corpus is not answered from an empty context. Checkout refusals use config_loader.checkout_name so clients see the checkout folder and relative file without the host path. Retrieval, synthesis and citations use the served levels from the derived checkout's config/project.json. Retrieval hands query_corpus that root alone as `--root`, so it reads the root's own corpus and files, and a node is retrieved, sent and cited only when its file there may be served as it stands on disk now (config_loader.is_served_now): a file reclassified after the corpus was built is neither sent nor named in a served node's links. A root query_corpus refuses (one that does not exist) fails retrieval, so answer raises before any model call. An execute run with no visible node raises ContextRefused with three diagnostic parts before a backend is built; a dry run retains its empty preview. synthesize also refuses empty visible context, including eval calls. An execute run needs its approved count of model calls and makes its one call through a models.ModelMeter of that count, whose backend the caller's backend_factory builds when it gives one (models.get_model otherwise), so a caller can count calls across answers. Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes` of the checkout answer's limits_root names (this one when None): past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key.
 """
 
 from __future__ import annotations
@@ -17,7 +17,26 @@ from runtimes import END, MODEL_CALL, READ_ONLY, Edge, Plan, Step, get_runtime
 from scripts import config_loader, corpus_level, tool_reports
 from scripts.resource_limits import run_tool
 
-__all__ = ["answer", "synthesize", "Answer", "Citation"]
+__all__ = ["answer", "synthesize", "Answer", "Citation", "ContextRefused"]
+
+
+class ContextRefused(RuntimeError):
+    """An empty answer context, carrying report()'s three diagnostic parts."""
+
+    def __init__(self, what, on, next_step):
+        super().__init__("%s: %s; %s" % (what, on, next_step))
+        self.parts = (what, on, next_step)
+
+
+def _require_context(nodes, on):
+    if not nodes:
+        raise ContextRefused(
+            "no context nodes were retrieved, so no model is asked for an answer",
+            on,
+            "run `make site-data` in that checkout and check the query and served "
+            "levels, then rerun",
+        )
+
 
 _REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -117,6 +136,12 @@ def _retrieve(state):
     )
     served = config_loader.served_visibilities(state["root"])
     visible = _visible(hits, served)
+    if state.get("execute"):
+        _require_context(
+            visible,
+            "query_corpus found no visible node in the corpus under %s"
+            % config_loader.checkout_name(state["root"]),
+        )
     citations = tuple(
         Citation(
             node_id=h.get("node_id", ""),
@@ -144,11 +169,14 @@ def synthesize(
 ) -> str:
     """The agent's one model call: answer *question* from the visible members of
     *nodes* (retrieved corpus nodes) on *backend*, citing each by node_id, and
-    return the reply stripped. A node at a level outside *served* (None reads
+    return the reply stripped. Raises ContextRefused with three diagnostic parts
+    when no visible node remains, before calling the backend. A node at a level outside *served* (None reads
     ``corpus.served_visibilities``) is dropped here as well as at retrieval, so
     no caller can send one. The plan's synthesize step and the eval harness
     (evals/_doers.py) both call it."""
-    return backend.run(_answer_prompt(question, _visible(nodes, served))).strip()
+    visible = _visible(nodes, served)
+    _require_context(visible, "the visible corpus nodes supplied to synthesize")
+    return backend.run(_answer_prompt(question, visible)).strip()
 
 
 def _synthesize(state, meter):
@@ -230,6 +258,7 @@ def answer(
         root, corpus, _REPO, name=config_loader.checkout_name
     )
     init = {
+        "execute": execute,
         "question": question,
         "model": model,
         "max_nodes": max_nodes,

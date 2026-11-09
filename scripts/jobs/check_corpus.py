@@ -259,6 +259,13 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--max-links", type=int, default=8, help="max edges per node")
     args = ap.parse_args(argv)
+    if not os.path.isdir(args.root):
+        return report(
+            ExitCode.USAGE,
+            "check_corpus: the root is not an existing directory",
+            config_loader.checkout_name(args.root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         return _check(args)
     except config_loader.ConfigError as exc:

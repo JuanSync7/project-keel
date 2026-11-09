@@ -308,6 +308,13 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root)
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "declare_no_app: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         manifest = config_loader.read(root, MANIFEST)
     except config_loader.ConfigAbsent:

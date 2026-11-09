@@ -155,6 +155,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     root = os.path.abspath(args.root or _REPO)
+    if not os.path.isdir(root):
+        return report(
+            ExitCode.USAGE,
+            "trace_requirements: the root is not an existing directory",
+            config_loader.checkout_name(root),
+            "pass --root a checkout directory that exists, then rerun",
+        )
     try:
         try:
             policy = _load_policy(root)
