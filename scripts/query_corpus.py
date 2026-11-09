@@ -229,7 +229,7 @@ def main(argv=None) -> int:
     if not os.path.isdir(root):
         return report(
             ExitCode.USAGE,
-            "query_corpus: the checkout whose corpus is read does not exist",
+            "query_corpus: the checkout whose corpus is read is not an existing directory",
             config_loader.checkout_name(root),
             "pass --root a checkout that exists, or --corpus its %s, then rerun"
             % corpus_level.CORPUS_PATH,

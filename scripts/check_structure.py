@@ -8600,7 +8600,7 @@ def main(argv=None):
         return exit_codes.report(
             exit_codes.ExitCode.USAGE,
             "check_structure: --root is not a directory",
-            args.root,
+            config_loader.checkout_name(args.root),
             "name the directory of the tree to judge",
         )
     try:

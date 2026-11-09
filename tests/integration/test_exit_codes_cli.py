@@ -29,6 +29,7 @@ import test_evals_gate as evals_gate  # noqa: E402
 import test_gate_evidence_record as gate_record  # noqa: E402
 
 import hermetic_git  # noqa: E402
+import root_config_cli  # noqa: E402
 from live_server import free_port, load_server_config  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -342,6 +343,8 @@ def test_swapping_the_two_members_in_one_script_is_seen_by_the_child(
 
 
 _ROOT_CONFIG_FIRST = [
+    ("check_structure.py", []),
+    ("query_corpus.py", ["root-config-probe"]),
     ("doc_review.py", []),
     ("refactor_practice.py", ["readability"]),
     ("apply_refactor.py", ["--dry-run"]),
@@ -359,10 +362,52 @@ _ROOT_CONFIG_FIRST = [
 ]
 
 
-# Copier prunes optional scripts; only a shipped CLI can refuse its --root.
+# Keep this refusal case even though its child environment reads this
+# executable checkout's config, independently of the --root it operates on.
+_ROOT_CONFIG_EXEMPTIONS = {
+    "jobs/resolve_stamp_conflicts.py": (
+        "Its child_env.build_child_env() reads the executable checkout's config; "
+        "the parsed --root never reaches config_loader.read."
+    ),
+}
+
+_ROOT_CONFIG_CASES, _ROOT_CONFIG_EXCLUSIONS = root_config_cli.select_cases(
+    _ROOT, _ROOT_CONFIG_FIRST
+)
+
+
+def test_config_first_cases_match_the_scripts_derived_from_root_config_reads():
+    """Root-config rule: a declared --root reaches config_loader.read, directly
+    or through imported/local helpers, with aliases and checkout normalization
+    followed; every derived script must run the invalid-directory cases.
+    Unresolved loader roots fail with their source file and line. The template
+    completeness rule selects the same shipped cases for this comparison and
+    the CLI tests, with reasoned skips for generated-project exclusions.
+    """
+    import source_tree
+
+    derived = root_config_cli.derive_scripts(
+        _ROOT, source_tree.import_layers(_ROOT)["search_roots"]
+    )
+    root_config_cli.check_cases(
+        derived,
+        {script for script, _extra in _ROOT_CONFIG_CASES},
+        {
+            script: reason
+            for script, reason in _ROOT_CONFIG_EXEMPTIONS.items()
+            if script not in _ROOT_CONFIG_EXCLUSIONS
+        },
+    )
+
+
 @pytest.mark.parametrize(
     "script,extra",
-    [row for row in _ROOT_CONFIG_FIRST if (_ROOT / "scripts" / row[0]).is_file()],
+    _ROOT_CONFIG_CASES
+    + [
+        pytest.param(script, extra, marks=pytest.mark.skip(reason=reason))
+        for script, extra in _ROOT_CONFIG_FIRST
+        if (reason := _ROOT_CONFIG_EXCLUSIONS.get(script))
+    ],
 )
 @pytest.mark.parametrize("kind", ["missing", "file"])
 def test_config_first_cli_refuses_a_root_that_is_not_a_directory(
