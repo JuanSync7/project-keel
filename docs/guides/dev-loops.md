@@ -9,7 +9,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-11-09
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -63,6 +63,15 @@ name before collection when `addopts` or `PYTEST_ADDOPTS` disables
 Every other pytest recipe explicitly passes `-p no:cacheprovider`, so
 `make test`, `make verify`, `make test-ship` and the tier targets never read
 the loop's cache. The loop writes no gate evidence.
+
+`make test`, and therefore `make verify`, reports the slowest test durations
+with `--durations`, sized by config/project.json `tests.durations` (default
+10, positive integers only; 0 is refused because pytest means every duration).
+`make unit` selects `unit and not slow`: it skips tests marked `slow` and
+is never the gate. `make test` and `make verify` include slow tests;
+`make test-ship` retains them within its configured renderer modules.
+Mark a unit test `slow` only after measuring it with pytest `--durations`,
+and cite its measured time in a comment beside the marker.
 
 `make verify` also writes its verdict to `.evidence/verify.json` (config/project.json
 `evidence.dir`), and the record's `source.commit` names the commit that verdict

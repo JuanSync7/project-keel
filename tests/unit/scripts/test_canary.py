@@ -372,6 +372,8 @@ def test_a_conflict_marker_left_in_a_file_fails_at_the_update_step(root, capsys)
     assert make.calls == []
 
 
+# 12.05s call in the coordinator's serial unit run, 2026-11-09.
+@pytest.mark.slow
 def test_the_pool_never_runs_more_children_than_canary_workers(root, capsys):
     for workers in (1, 2):
         _config(root, workers=workers)

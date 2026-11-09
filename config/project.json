@@ -622,6 +622,7 @@
     "cache_dir": ".pytest_cache",
     "cache_max_entries": 256,
     "child_timeout_seconds": 600,
+    "durations": 10,
     "scratch_root": "~/.cache/project_keel/tests",
     "memory_scratch_root": "/dev/shm/project_keel-tests",
     "memory_scratch_min_free_mb": 4096,

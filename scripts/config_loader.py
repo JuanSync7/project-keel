@@ -1805,6 +1805,14 @@ KEYS = tuple(
                 accepts=(_not_negative, "a value >= 0"),
             ),
             _row(
+                ("tests", "durations"),
+                "int",
+                10,
+                "how many slowest test durations `make test` reports; "
+                "0 is refused because pytest uses it to report every duration",
+                accepts=(_at_least_one, "a value >= 1"),
+            ),
+            _row(
                 ("tests", "workers"),
                 "int",
                 0,

@@ -218,6 +218,8 @@ def test_a_clean_tree_prints_no_deferral(tmp_path):
     assert not [f for f in found if "Python file(s)" in f[2]], found
 
 
+# 16.66s call in the coordinator's serial unit run, 2026-11-09.
+@pytest.mark.slow
 def test_keel_parses_whole_under_this_interpreter(monkeypatch):
     """Vacuity control: keel's own tree reports and defers nothing."""
     found = cs.run_checks(str(_ROOT), project_checks=False)

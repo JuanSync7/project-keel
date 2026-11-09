@@ -84,6 +84,7 @@ tmp_path_retention_policy = "failed"
 tmp_path_retention_count = 3
 markers = [
   "unit: fast isolated tests (mirror src/)",
+  "slow: measured slow tests skipped by make unit and retained by the full gate",
   "integration: 2+ real components",
   "e2e: full-system journeys",
   "smoke: liveness checks",

@@ -196,7 +196,8 @@ verify: ## [local] Check local installs first, then run all gates (all checks + 
 # the CLI flag also checks the actual invocation, without leaking to children.
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
 	$(PY) tests/selection_guard.py
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider --keel-full-gate -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+	@durations="$$($(PY) scripts/config_get.py tests.durations)" && \
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider --keel-full-gate -n auto --durations "$$durations" $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 # Paths come only from the loader. An empty downstream declaration refuses
 # instead of letting pytest's default selection run the whole suite.
@@ -225,8 +226,8 @@ eval: check-python ## [local] Replay every eval suite in config/project.json eva
 eval-live: check-python ## [read,cost] Run every eval case through the model named in config/project.json evals.live.model, refusing before any call when the cases exceed evals.live.max_calls
 	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_evals.py --mode live
 
-unit: check-python ## [local] Run unit tests only
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m unit
+unit: check-python ## [local] Run unit tests except slow (never the gate)
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m "unit and not slow"
 integration: check-python ## [local] Run integration tests
 	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m integration
 e2e: check-python ## [local] Run end-to-end tests
