@@ -3,7 +3,7 @@
 title: Build corpus job
 kind: script
 layer: n/a
-summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index). An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
+summary: Deterministic: walk the repo into wiki/corpus.json (the one-brain index), published atomically through a sibling temporary file so readers see only complete JSON. An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-corpus
@@ -32,6 +32,7 @@ if _SCRIPTS not in sys.path:
 from urllib.parse import unquote  # noqa: E402
 
 import config_loader  # noqa: E402
+from atomic_write import write_if_changed  # noqa: E402
 from check_structure import (  # noqa: E402
     _INLINE_CODE,
     _MD_LINK,
@@ -760,9 +761,9 @@ def main(argv=None) -> int:
             "keep relative --out inside --root or choose an explicit absolute output",
         )
     os.makedirs(os.path.dirname(out), exist_ok=True)
-    with open(out, "w", encoding="utf-8") as fh:
-        json.dump(corpus, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    write_if_changed(
+        out, (json.dumps(corpus, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    )
     gaps = sum(1 for n in corpus["nodes"] if not n["summary_source"])
     unowned = sum(1 for n in corpus["nodes"] if n["owner_source"] == "none")
     defaulted = sum(1 for n in corpus["nodes"] if n["owner_source"] == "default")

@@ -6,6 +6,7 @@ summary: scripts/jobs/build_llms_txt.py writes the agent front door into wiki/; 
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +65,34 @@ def _written(out):
     files = sorted(p for p in out.rglob("*") if p.is_file())
     assert files, "the export wrote nothing"
     return {p.relative_to(out).as_posix(): p.read_text(encoding="utf-8") for p in files}
+
+
+@pytest.mark.parametrize("name", ["llms.txt", "llms-full.txt"])
+def test_interrupted_publication_keeps_the_previous_text(tmp_path, monkeypatch, name):
+    _project(tmp_path)
+    out = tmp_path / "site"
+    out.mkdir()
+    path = out / name
+    path.write_text("previous complete text", encoding="utf-8")
+    replace = os.replace
+    seen = []
+
+    def publish(source, destination):
+        source, destination = Path(source), Path(destination)
+        assert source.parent == destination.parent and source != destination
+        if destination == path:
+            assert path.read_text("utf-8") == "previous complete text"
+            assert source.read_text("utf-8") != "previous complete text"
+            seen.append(source)
+            raise InterruptedError("interrupted before publication")
+        replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", publish)
+    with pytest.raises(InterruptedError, match="before publication"):
+        llms.main(["--root", str(tmp_path), "--out-dir", str(out)])
+    assert len(seen) == 1
+    assert path.read_text("utf-8") == "previous complete text"
+    assert {p.name for p in out.iterdir()} <= {"llms.txt", "llms-full.txt"}
 
 
 def test_neither_llms_file_holds_a_confidential_node(tmp_path):

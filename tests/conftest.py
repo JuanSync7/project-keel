@@ -26,6 +26,10 @@ import isolation_guard
 import selection_guard
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_ROOT, "scripts"))
+
+import config_loader  # noqa: E402
+from child_env import build_child_env  # noqa: E402
 
 # Test scratch, at import: before pytest makes its basetemp (from
 # tempfile.gettempdir()), before the hermetic git directory below and the
@@ -250,11 +254,11 @@ def real_corpus():
     runs, in subprocesses, keeps one definition of how the view is produced.
 
     Built by one xdist worker at a time, under an exclusive lock on a file in
-    the scratch root named for the corpus path: both jobs write the file in
-    place, so a worker that found it present while another was still writing
-    read a half-built corpus (`make test`, `-n auto`, in a project with no
-    corpus, measured red on main). The kernel drops the lock if its holder
-    dies, so a crashed worker leaves no stale lock.
+    the scratch root named for the corpus path: the lock keeps workers from
+    reading the build before the link job has finished. Each job publishes a
+    complete file atomically. The kernel drops the lock if its holder dies,
+    so a crashed worker leaves no stale lock. Each child is bounded by
+    tests.child_timeout_seconds; a timeout fails with the command and bound.
     """
     path = os.path.join(_ROOT, "wiki", "corpus.json")
     digest = hashlib.sha256(path.encode("utf-8")).hexdigest()[:16]
@@ -263,13 +267,29 @@ def real_corpus():
         fcntl.flock(held, fcntl.LOCK_EX)
         if os.path.isfile(path):
             return path
+        key = ("tests", "child_timeout_seconds")
+        timeout = config_loader.resolve(
+            config_loader.read(_ROOT),
+            config_loader.rows(key),
+            config_loader.CONFIG_FILE,
+        )[key]
         for job in ("build_corpus.py", "link_corpus.py"):
-            result = subprocess.run(
-                [sys.executable, os.path.join("scripts", "jobs", job)],
-                cwd=_ROOT,
-                capture_output=True,
-                text=True,
-            )
+            command = [sys.executable, os.path.join("scripts", "jobs", job)]
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=_ROOT,
+                    capture_output=True,
+                    text=True,
+                    env=build_child_env(),
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired:
+                pytest.fail(
+                    "corpus command %s exceeded tests.child_timeout_seconds=%s seconds"
+                    % (command, timeout),
+                    pytrace=False,
+                )
             assert result.returncode == 0, (
                 "could not build the corpus this suite reads (%s):\n%s%s"
                 % (job, result.stdout, result.stderr)

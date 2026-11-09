@@ -3,7 +3,7 @@
 title: Link corpus job
 kind: script
 layer: n/a
-summary: Deterministic: add keyword/entity link edges to wiki/corpus.json in place. An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
+summary: Deterministic: add keyword/entity link edges to wiki/corpus.json, published atomically through a sibling temporary file so readers see only complete JSON. An explicit absolute output file authorizes its parent directory; relative outputs stay under the project root. Escapes exit USAGE before writing. Internal links are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-corpus
@@ -19,6 +19,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
+from atomic_write import write_if_changed  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from git_tree import PathEscape, confined_path  # noqa: E402
 
@@ -82,7 +83,7 @@ def link_corpus(corpus: dict, max_links: int = 8, min_score: float = 0.12) -> di
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Add link edges to wiki/corpus.json (deterministic, in place)."
+        description="Add link edges to wiki/corpus.json (deterministic, atomic replacement)."
     )
     ap.add_argument(
         "--corpus",
@@ -110,9 +111,10 @@ def main(argv=None) -> int:
     with open(path, encoding="utf-8") as fh:
         corpus = json.load(fh)
     link_corpus(corpus, max_links=args.max_links)
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(corpus, fh, indent=2, sort_keys=True)
-        fh.write("\n")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_if_changed(
+        path, (json.dumps(corpus, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    )
     edges = sum(len(n.get("links", [])) for n in corpus.get("nodes", []))
     print(
         "linked %s: %d edges across %d nodes"

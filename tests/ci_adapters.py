@@ -79,7 +79,7 @@ def chosen(root):
     return [], "%s line %d `%s` is not ci_pipeline 'both' or one of %s" % (
         ANSWERS,
         number,
-        path.read_text("utf-8").splitlines()[number - 1],
+        path.read_text("utf-8-sig").splitlines()[number - 1],
         names,
     )
 
@@ -185,7 +185,7 @@ _READERS = {"github": _github_steps, "gitlab": _gitlab_steps}
 
 def adapter_steps(path, name):
     """[{run, env, soft}] the adapter *name* at *path* runs, in order."""
-    return _READERS[name](Path(path).read_text("utf-8"))
+    return _READERS[name](Path(path).read_text("utf-8-sig"))
 
 
 def gitlab_line(step):
@@ -283,7 +283,7 @@ def _load(path):
                 % path.name
             ),
         )
-    text = path.read_text("utf-8")
+    text = path.read_text("utf-8-sig")
     loader = None
     try:
         # The reader refuses a control character as it is built, so it is
@@ -553,7 +553,7 @@ _FROM = {
 
 
 def _lines(path):
-    return Path(path).read_text("utf-8").splitlines()
+    return Path(path).read_text("utf-8-sig").splitlines()
 
 
 def judged(root):

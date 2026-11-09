@@ -26,6 +26,30 @@ def test_every_adapter_present_runs_the_configured_steps_in_order():
     assert faults == [], "\n".join(faults)
 
 
+@pytest.mark.parametrize("name", ["github", "gitlab"])
+def test_bom_adapter_preserves_marker_and_steps(tmp_path, name):
+    root = _copy(tmp_path, gitlab=True)
+    path = ci_adapters.present(root)[name]
+    steps = ci_adapters.adapter_steps(path, name)
+    path.write_text(path.read_text("utf-8"), encoding="utf-8-sig")
+    assert ci_adapters.adapter_steps(path, name) == steps
+    assert ci_adapters.parity_faults(root) == []
+    (root / ci_adapters.ANSWERS).write_text("ci_pipeline: both\n", encoding="utf-8-sig")
+    assert ci_adapters.chosen(root) == (["github", "gitlab"], None)
+    assert ci_adapters.parity_faults(root) == []
+
+
+def test_bom_answers_diagnostic_has_the_written_line_without_bom(tmp_path):
+    root = _copy(tmp_path)
+    (root / ci_adapters.ANSWERS).write_text(
+        "ci_pipeline: invalid\n", encoding="utf-8-sig"
+    )
+    chosen, fault = ci_adapters.chosen(root)
+    assert chosen == []
+    assert "`ci_pipeline: invalid`" in fault
+    assert "\ufeff" not in fault
+
+
 def _copy(tmp_path, *, gitlab=False):
     """A tree with this config, ci.yml and, with *gitlab*, the GitLab twin
     rendered under the configured toolchain python."""

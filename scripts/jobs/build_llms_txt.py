@@ -3,7 +3,7 @@
 title: Build llms.txt job
 kind: script
 layer: n/a
-summary: Deterministically write wiki/llms.txt + wiki/llms-full.txt from the corpus; a refused manifest writes neither, exiting 2 for a hunk and 14 otherwise. An explicit absolute --out-dir authorizes that directory; relative outputs are confined to --root. Escapes exit USAGE before either file is written. Internal links and missing targets are allowed; checks judge paths at call time.
+summary: Deterministically write wiki/llms.txt + wiki/llms-full.txt from the corpus, each published atomically through a sibling temporary file; a refused manifest writes neither, exiting 2 for a hunk and 14 otherwise. An explicit absolute --out-dir authorizes that directory; relative outputs are confined to --root. Escapes exit USAGE before either file is written. Internal links and missing targets are allowed; checks judge paths at call time.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_idempotence.py
@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import config_loader  # noqa: E402
+from atomic_write import write_if_changed  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from git_tree import PathEscape, confined_path  # noqa: E402
 
@@ -99,8 +100,7 @@ def main(argv=None) -> int:
     index = sc.llms_index(args.base_url)
     full = sc.llms_full()
     for path, text in zip(outputs, (index, full), strict=True):
-        with open(path, "w", encoding="utf-8") as fh:
-            fh.write(text)
+        write_if_changed(path, text.encode("utf-8"))
     rel = os.path.relpath(out_dir, args.root)
     print(
         "wrote %s/llms.txt (%d bytes) + %s/llms-full.txt (%d bytes)"

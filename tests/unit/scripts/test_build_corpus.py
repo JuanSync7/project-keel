@@ -3,6 +3,8 @@ title: Confined build_corpus mutations
 summary: External sentinel preservation, usable internal links and explicit output policy.
 """
 
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -58,3 +60,42 @@ def test_explicit_outside_root(escaped, monkeypatch):
         job.main(["--root", str(root), "--out", str(outside / "corpus.json")])
         == ExitCode.SUCCESS
     )
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("interrupt", [False, True])
+def test_readers_see_only_complete_replacements(
+    tmp_path, monkeypatch, existing, interrupt
+):
+    path = tmp_path / "wiki" / "corpus.json"
+    path.parent.mkdir()
+    before = b'{"nodes": [], "generation": "old"}\n'
+    if existing:
+        path.write_bytes(before)
+    corpus = {"nodes": [], "generation": "new"}
+    monkeypatch.setattr(job, "build_corpus", lambda root: corpus)
+    replace = os.replace
+    seen = []
+
+    def publish(source, destination):
+        source, destination = Path(source), Path(destination)
+        assert destination == path
+        assert source.parent == destination.parent and source != destination
+        assert json.loads(source.read_text("utf-8")) == corpus
+        assert path.read_bytes() == before if existing else not path.exists()
+        seen.append(source)
+        if interrupt:
+            raise InterruptedError("interrupted before publication")
+        replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", publish)
+    args = ["--root", str(tmp_path)]
+    if interrupt:
+        with pytest.raises(InterruptedError, match="before publication"):
+            job.main(args)
+        assert path.read_bytes() == before if existing else not path.exists()
+    else:
+        assert job.main(args) == ExitCode.SUCCESS
+        assert json.loads(path.read_text("utf-8")) == corpus
+    assert len(seen) == 1
+    assert list(path.parent.iterdir()) == ([path] if path.exists() else [])
