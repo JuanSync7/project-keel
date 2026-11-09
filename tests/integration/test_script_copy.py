@@ -261,6 +261,16 @@ _COPY_EXEMPTIONS = {
         "str(_ROOT / 'scripts')",
     ): "Interpreter-floor checks exercise every needy recipe, including optional jobs.",
     (
+        "integration/test_ci_pipeline_gate.py",
+        "_copy",
+        "str(source)",
+    ): "Copies the judged CI adapter files, YAML that imports nothing, to their configured paths; the adapter set is read from the project, so no static roster names it.",
+    (
+        "integration/test_ci_pipeline_gate.py",
+        "test_gitlab_cases_run_in_a_gitlab_only_project",
+        "source",
+    ): "The child pytest imports from the repository through PYTHONPATH (src, the root, tests); the copy supplies only the module location its _ROOT derives from and the two docs its wording check reads.",
+    (
         "integration/test_install_sources_gate.py",
         "_copy",
         "str(_ROOT / 'scripts')",
