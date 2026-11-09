@@ -133,7 +133,7 @@ extend-select = [
 external = [
   "DROP001",  # a narrow `except` that only drops the error or puts a fixed value in its place
   "DROP002",  # a `contextlib.suppress(...)` call
-  "DROP003",  # an `ignore_errors=True` argument
+  "DROP003",  # a truthy ignore-errors keyword or an error callback that only drops
 ]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]

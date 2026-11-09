@@ -182,7 +182,7 @@ def resolve_stamp_conflict(data):
     REFUSALS. Pure: no I/O."""
     try:
         text = data.decode("utf-8")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError:  # noqa: DROP001 -- NOT_UTF8 is a refusal the caller reports while leaving the conflict untouched
         return None, NOT_UTF8
     parsed = _hunks(text)
     if not isinstance(parsed, tuple):

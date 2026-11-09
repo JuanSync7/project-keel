@@ -31,7 +31,7 @@ def required_min(root):
     try:
         with open(os.path.join(root, "pyproject.toml")) as fh:
             text = fh.read()
-    except OSError:
+    except OSError:  # noqa: DROP001 -- this best-effort version guard uses the documented floor when project metadata cannot be read
         return _FALLBACK
     m = re.search(r'requires-python\s*=\s*["\'][^0-9]*([0-9]+)\.([0-9]+)', text)
     if not m:
