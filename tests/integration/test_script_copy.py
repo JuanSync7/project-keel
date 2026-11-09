@@ -547,6 +547,8 @@ def _relative_operand(expr, definitions):
     result. Wrappers and unknown values retain their provenance. A name declared
     `global` or `nonlocal` anywhere in the module is never proven relative,
     whether it is the value or the helper called.
+    A no-argument `globals()` or `vars()` call anywhere in the module also
+    voids the proof for every module-level name and helper.
     """
     name = expr.func if isinstance(expr, ast.Call) else expr
     if isinstance(name, ast.Name) and any(
@@ -829,6 +831,19 @@ def _definitions(scope):
         if value is not None:
             for target in targets:
                 bind(target, value)
+    if isinstance(scope, ast.Module) and any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in {"globals", "vars"}
+        and not node.args
+        and not node.keywords
+        for node in ast.walk(scope)
+    ):
+        # Namespace access can rebind any module name without a declaration;
+        # the shared guard also prevents shadowing from restoring that proof.
+        out["<shared>"].append(
+            ast.Global(names=[name for name in out if name != "<shared>"])
+        )
     return out
 
 
@@ -1531,6 +1546,81 @@ def test_scratch_join_requires_proven_relative_operands(tmp_path, binding, sourc
             "part",
             1,
             id="global-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "def rebind():\n"
+            "    globals()['part'] = str(BASE)\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    rebind()\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="globals-subscript-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "def rebind():\n"
+            "    globals().update(part=str(BASE))\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    rebind()\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="globals-update-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "rebind = lambda: globals().update(part=str(BASE))\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    rebind()\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="globals-lambda-update-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "vars()['part'] = str(BASE)\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="vars-module-rebind",
+        ),
+        pytest.param(
+            "part = 'r'\n"
+            "globals()\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    def load_cfg(root):\n"
+            "        return 'configured'\n"
+            "    COPY\n",
+            "part",
+            1,
+            id="globals-voids-module-name-with-local-helper",
+        ),
+        pytest.param(
+            "globals()\ndef test_copy(tmp_path, dest):\n    COPY\n",
+            "'r'",
+            1,
+            id="globals-voids-module-helper",
+        ),
+        pytest.param(
+            "class Container:\n"
+            "    async def outer(self):\n"
+            "        def inner():\n"
+            "            vars()\n"
+            "def test_copy(tmp_path, dest):\n"
+            "    COPY\n",
+            "'r'",
+            1,
+            id="deep-vars-voids-module-helper",
+        ),
+        pytest.param(
+            "part = 'r'\ndef test_copy(tmp_path, dest):\n    COPY\n",
+            "part",
+            0,
+            id="module-name-without-namespace-access-control",
         ),
         pytest.param(
             "class Container:\n"
