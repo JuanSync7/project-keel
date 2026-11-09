@@ -43,6 +43,17 @@ def test_an_absent_manifest_declares_no_frontend(tmp_path):
 # wrapper has no CLI: its public caller, run_evals, reports its refusal.
 _READERS = (
     (
+        "scripts/changed_tests.py",
+        "cache",
+        (),
+        (
+            14,
+            "",
+            "test-changed: tests.cache_dir cannot be used: config/project.json does not exist; "
+            "set tests.cache_dir to an ignored directory inside the checkout\n",
+        ),
+    ),
+    (
         "scripts/apply_refactor.py",
         "edits",
         ("--dry-run",),

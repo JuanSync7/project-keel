@@ -36,7 +36,8 @@ Checks:
      carries a `- NOT` bullet (the negative-scope line)
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR), and an
-     absent manifest or an escaping layers.frontend.root is an ERR;
+     absent manifest, an escaping layers.frontend.root or an unsafe
+     tests.cache_dir is an ERR; structural walks exclude the validated cache;
      an undeclared leftover stack/transport dir
      WARNs (CONVENTIONS section 15).
      An optional 'runtimes' block is validated the same way (section 16)
@@ -192,6 +193,7 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+import changed_cache  # noqa: E402
 import child_env  # noqa: E402
 import child_exec  # noqa: E402
 import config_loader  # noqa: E402
@@ -396,9 +398,41 @@ def rel(p: str) -> str:
 
 
 def walk(root):
+    cache = _loop_cache_path()
+    if cache and os.path.realpath(root) == cache:
+        return
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        dirnames[:] = [
+            d
+            for d in dirnames
+            if d not in IGNORE_DIRS
+            and not (
+                cache
+                and d == os.path.basename(cache)
+                and os.path.realpath(os.path.join(dirpath, d)) == cache
+            )
+        ]
         yield dirpath, dirnames, filenames
+
+
+def _loop_cache_path():
+    """The validated loop cache to leave outside structural walks, if declared."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if (
+        not isinstance(manifest, dict)
+        or not isinstance(manifest.get("tests"), dict)
+        or "cache_dir" not in manifest["tests"]
+    ):
+        return None
+    try:
+        return changed_cache.cache_path(ROOT, manifest)
+    except (
+        config_loader.ConfigError,
+        ValueError,
+        git_tree.NoGitError,
+        git_tree.GitFailedError,
+    ):  # noqa: DROP001 -- check_H reports the refusal; invalid paths must stay visible to walkers
+        return None
 
 
 # --- reading the files the gate is KEYED ON -----------------------------------
@@ -693,8 +727,8 @@ def sorted_walk(root):
     """os.walk of *root* outside IGNORE_DIRS, directories and file names
     sorted, so every reader that keeps the first path to a file keeps the
     same one on every host and filesystem."""
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in IGNORE_DIRS)
+    for dirpath, dirnames, filenames in walk(root):
+        dirnames.sort()
         yield dirpath, dirnames, sorted(filenames)
 
 
@@ -833,7 +867,9 @@ def check_A():
                     if fm.get("visibility"):
                         stated[served(full)] = fm["visibility"]
 
-    if os.path.isdir(os.path.join(ROOT, "docs")) and doc_count == 0:
+    # With no walked files there is no document population to judge; callers
+    # such as audit_project report that empty scan separately.
+    if walked and os.path.isdir(os.path.join(ROOT, "docs")) and doc_count == 0:
         err(
             "docs/:1: form check judged zero kind: doc documents; allowed form values: %s"
             % ", ".join(sorted(FORMS))
@@ -1716,6 +1752,8 @@ def check_H():
     it is one whose every declared fact goes unjudged.
     Frontend confinement judges the path when this check runs; a link swapped
     later is not caught.
+    A declared tests.cache_dir must be checkout-relative, confined and ignored
+    by git, with no tracked files; structural walks exclude the validated cache.
     Stdlib JSON, so it runs under the old pre-commit interpreter (no tomllib).
     See CONVENTIONS section 15.
     """
@@ -1730,6 +1768,22 @@ def check_H():
         )
         return
     layers = _expect(manifest.get("layers"), dict, "layers", {})
+
+    # Older manifests have no loop declaration; once declared, its local
+    # effect must hold even when the cache directory has not been created yet.
+    if isinstance(manifest.get("tests"), dict) and "cache_dir" in manifest["tests"]:
+        try:
+            changed_cache.cache_path(ROOT, manifest)
+        except (
+            config_loader.ConfigError,
+            ValueError,
+            git_tree.NoGitError,
+            git_tree.GitFailedError,
+        ) as exc:
+            err(
+                "config/project.json: tests.cache_dir refused (%s) -- choose a checkout-relative ignored directory"
+                % _shown(str(exc))
+            )
 
     backend = _expect(layers.get("backend"), dict, "layers.backend", {})
     bpath = backend.get("path")

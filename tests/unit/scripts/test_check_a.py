@@ -116,6 +116,14 @@ def test_a_non_doc_with_form_errors(repo, relative):
     _assert_form_error(relative, 4)
 
 
+def test_a_walk_over_zero_files_has_no_document_finding(repo, monkeypatch):
+    _form_doc(repo, "docs/control.md", "doc", "guide")
+    monkeypatch.setattr(cs, "walk", lambda root: iter(()))
+    cs.check_A()
+    assert cs.errors == []
+    assert cs.GOVERNED == []
+
+
 def test_a_docs_tree_with_zero_docs_errors(repo):
     _form_doc(repo, "docs/README.md", "readme", None)
     cs.check_A()

@@ -51,7 +51,7 @@ PY_ROOTS := $(wildcard $(CODE_ROOTS))
 # the guard.
 WRITE_GUARD = $(if $(findstring i,$(firstword -$(MAKEFLAGS))),$(error refusing '$@': make is ignoring recipe errors (-i, --ignore-errors or .IGNORE), so a failing guard could not stop this [write] target; run it without that flag (docs/adr/keel/K-0011-make-target-effect-labels.md)))@if [ -n "$(CI)$(RALPH)" ]; then echo "refusing '$@': a [write] target never runs under CI or a Ralph loop (docs/adr/keel/K-0011-make-target-effect-labels.md)" >&2; exit 1; fi
 
-.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts preflight verify test test-ship trace eval eval-live unit integration e2e smoke \
+.PHONY: help new audit-project canary check-python check-venv check check-all check-corpus check-openapi check-aad check-cdmon check-exit-codes exit-codes exit-codes-sh advise check-generic long-scripts preflight verify test test-ship test-changed trace eval eval-live unit integration e2e smoke \
         lint lint-py lint-fe fmt fmt-check typecheck typecheck-py typecheck-fe \
         test-fe test-fe-unit test-fe-e2e lint-sh fmt-sh fmt-check-sh test-sh \
         fe-install fe-browsers fe-audit secrets-install secret-scan run run-api run-web site-data site-static demo openapi agent-surface-schema check-docs restamp-docs doc-review doc-review-apply
@@ -196,7 +196,7 @@ verify: ## [local] Check local installs first, then run all gates (all checks + 
 # the CLI flag also checks the actual invocation, without leaking to children.
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
 	$(PY) tests/selection_guard.py
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest --keel-full-gate -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider --keel-full-gate -n auto $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 # Paths come only from the loader. An empty downstream declaration refuses
 # instead of letting pytest's default selection run the whole suite.
@@ -204,7 +204,10 @@ test-ship: check-python ## [local] Run exactly config/project.json tests.ship_se
 	@ship_set="$$($(PY) scripts/config_get.py tests.ship_set)" && \
 	ship_paths="$$(printf '%s\n' "$$ship_set" | $(PY) -c 'import json, sys; print(" ".join(json.load(sys.stdin)))')" && \
 	{ test -n "$$ship_paths" || { echo "test-ship: tests.ship_set is empty; configure renderer test modules" >&2; exit 2; }; } && \
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest $$ship_paths
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider $$ship_paths
+
+test-changed: check-python ## [local] Rerun only recorded failures (--lf keeps the loop small; cold cache runs all); never the gate
+	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/changed_tests.py
 
 # The traceability gate reads specs and test files and runs no test, so it is
 # [local]. Its matrix lands on a git-ignored path, which is why it is not [tree].
@@ -223,13 +226,13 @@ eval-live: check-python ## [read,cost] Run every eval case through the model nam
 	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/run_evals.py --mode live
 
 unit: check-python ## [local] Run unit tests only
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m unit
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m unit
 integration: check-python ## [local] Run integration tests
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m integration
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m integration
 e2e: check-python ## [local] Run end-to-end tests
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m e2e
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m e2e
 smoke: check-python ## [local] Run smoke tests
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -m smoke
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -m smoke
 
 lint: lint-py fmt-check lint-fe lint-sh fmt-check-sh ## [local] Lint everything (Python + frontend + shell + formatting)
 lint-py: check-python ## [local] Lint Python (ruff, via the selected interpreter)

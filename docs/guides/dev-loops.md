@@ -44,6 +44,26 @@ the count with config/project.json `tests.workers` (0 is one process); a tier
 target such as `make unit` and a direct `pytest` stay in one process, so pass
 `-n auto` yourself to run a narrowed selection on workers.
 
+For the inner loop, `make test-changed` uses pytest's `--lf`: it reruns only
+recorded failures, keeping feedback smaller than `--ff`, which runs every test
+with failures first. On a cold cache, or after all recorded failures pass, it
+runs the selected suite. This is never the gate; finish with `make verify`.
+There is no coverage-based changed-file selection.
+
+The loop keeps pytest's cache in config/project.json `tests.cache_dir`,
+default `.pytest_cache` under the checkout root. The runner passes the resolved
+path to pytest as `-o cache_dir=...`; no recipe embeds the path. Both gitignore
+files ignore the default. A custom path must also be ignored in `.gitignore`
+and its copier twin. `check_H` and the runner refuse absolute paths, parent
+parts, symlink escapes, tracked paths and unignored paths. Removing the checkout
+removes its cache; there is no separate cleanup step. Structural walks skip the
+validated cache directory. The runner refuses by
+name before collection when `addopts` or `PYTEST_ADDOPTS` disables
+`cacheprovider`; remove `-p no:cacheprovider` to use the loop.
+Every other pytest recipe explicitly passes `-p no:cacheprovider`, so
+`make test`, `make verify`, `make test-ship` and the tier targets never read
+the loop's cache. The loop writes no gate evidence.
+
 `make verify` also writes its verdict to `.evidence/verify.json` (config/project.json
 `evidence.dir`), and the record's `source.commit` names the commit that verdict
 belongs to (`docs/guides/deterministic-checks.md`, "The gate's evidence record").

@@ -1719,6 +1719,13 @@ KEYS = tuple(
                 ),
             ),
             _row(
+                ("tests", "cache_dir"),
+                "nonempty_str",
+                ".pytest_cache",
+                "the checkout-relative, git-ignored pytest cache used only by "
+                "make test-changed; check_H refuses an escaping or tracked path",
+            ),
+            _row(
                 ("tests", "cache_max_entries"),
                 "int",
                 # The fullest cache measured holds 51 entries, one per copier.yml
