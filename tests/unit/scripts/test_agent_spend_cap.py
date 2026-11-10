@@ -340,7 +340,14 @@ def test_a_root_whose_gate_outlasts_the_tool_limit_stops_a_dry_run_as_config(
         result = refactor_practice.main([_practice_name(), "--root", str(tmp_path)])
     assert result is ExitCode.CONFIG
     err = capsys.readouterr().err
-    assert "agents.tool_timeout_seconds" in err and "at least 20090" in err, err
+    # Derived from the fixture's own keys, so a retuned margin or grace moves
+    # the expected floor with it instead of leaving a stale literal.
+    least = (
+        manifest["make_targets"]["gate_timeout_seconds"]
+        + 2 * manifest["make_targets"]["gate_stop_grace_seconds"]
+        + manifest["agents"]["tool_gate_margin_seconds"]
+    )
+    assert "agents.tool_timeout_seconds" in err and f"at least {least}" in err, err
 
 
 # Each entry point that builds a model or a runtime, and the test that holds
