@@ -94,9 +94,13 @@ _PYTEST_ENVIRONMENT = frozenset({"PYTHONPATH"})
 # pytest's reference/environment-variables and how-to/tmp_path document these
 # inputs: https://docs.pytest.org/en/stable/reference/reference.html#environment-variables
 # CI/BUILD_NUMBER also select CI output. PYTEST_CURRENT_TEST is output, not input.
+# xdist reads PYTEST_XDIST_AUTO_NUM_WORKERS for -n auto. TERM and COLUMNS only
+# affect terminal presentation; PYTHONWARNINGS is Python's warning policy, not
+# a pytest option/plugin/worker input. These three are deliberately left out.
 _PYTEST_INPUT_VARIABLES = (
     "PYTEST_ADDOPTS",
     "PYTEST_PLUGINS",
+    "PYTEST_XDIST_AUTO_NUM_WORKERS",
     "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
     "PYTEST_DEBUG",
     "PYTEST_DEBUG_TEMPROOT",
@@ -117,12 +121,20 @@ def _require(condition: object, cause: str, source: object, fix: str) -> None:
     assert condition, f"{cause} on {source!r}. Fix: {fix}."
 
 
-def _guard_pytest_environment(text: str, source: str) -> None:
+def _guard_pytest_environment(
+    text: str, source: str, *, check_references: bool = True
+) -> None:
     # Refuse assignments/exports conservatively: their state can cross
     # statement, recipe and recursive-make boundaries without a local prefix.
+    # References also import caller state that our empty expansion env loses.
+    # Prose merely naming a variable (for example @echo help) is harmless.
     for name in _PYTEST_INPUT_VARIABLES:
         _require(
             not re.search(rf"\b{name}[ \t]*[:?+]?=", text)
+            and not (
+                check_references
+                and re.search(rf"\$\$?(?:\({name}\)|\{{{name}\}}|{name}\b)", text)
+            )
             and not re.search(
                 rf"\b(?:export|declare[ \t]+-x)\b[^;\n&|]*\b{name}\b", text
             ),
@@ -167,7 +179,8 @@ def guard_makefile(text: str, source: str | Path) -> None:
             continue
         where = f"{source}:{number}: {line}"
         _guard_expansions(line, where, macros)
-        _guard_pytest_environment(line, where)
+        lazy = re.match(r"^([\w.-]+)[ \t]*\??=", line)
+        _guard_pytest_environment(line, where, check_references=not lazy)
         definition = re.fullmatch(r"define ([A-Z_][A-Z0-9_]*)[ \t]*", line)
         if definition:
             _require(not in_define, "Nested make definition", where, "use flat macros")
@@ -314,6 +327,7 @@ def _expanded_recipes(
     # reaches an original recipe, even one containing $(MAKE). info expands
     # recipe text as data after loading the real variables; it runs no shell.
     probe = "__keel_slowtest_probe"
+    _guard_recipe_references(root, rule)
     source = [f"{probe}: ;"]
     for i, command in enumerate(rule.recipe):
         source.extend(
@@ -370,11 +384,39 @@ def _expanded_recipes(
         (line,) = matches
         command = line.removeprefix(prefix)
         _guard_pytest_environment(command, f"{root}/Makefile: {rule.target}: {command}")
-        _guard_computed_environment_names(
-            command, f"{root}/Makefile: {rule.target}: {command}"
-        )
+        _guard_shell_environment(command, f"{root}/Makefile: {rule.target}: {command}")
         commands.append(command)
     return commands
+
+
+def _guard_recipe_references(root: Path, rule: cs.MakeRule) -> None:
+    # Unexported recursive data is inert until a reached recipe uses it. Follow
+    # raw aliases/macros before make can erase caller values under an empty env.
+    # Keep every definition so reassignment cannot hide a caller reference.
+    text = (root / "Makefile").read_text(encoding="utf-8")
+    deferred: dict[str, list[str]] = {}
+    macro = ""
+    for line in re.sub(r"\\\n[ \t]*", " ", text).splitlines():
+        definition = re.fullmatch(r"define ([A-Z_][A-Z0-9_]*)[ \t]*", line)
+        if definition:
+            macro = definition[1]
+        elif line == "endef":
+            macro = ""
+        elif macro:
+            deferred.setdefault(macro, []).append(line)
+        else:
+            data = re.match(r"^([\w.-]+)[ \t]*\??=[ \t]*(.*)$", line)
+            if data:
+                deferred.setdefault(data[1], []).append(data[2])
+    pending, seen = list(rule.recipe), set()
+    while pending:
+        value = pending.pop()
+        _guard_pytest_environment(value, f"{root}/Makefile: {rule.target}: {value}")
+        names = re.findall(r"\$[({](?:call[ \t]+)?([\w.-]+)(?=[)}, \t])", value)
+        for name in names:
+            if name in deferred and name not in seen:
+                seen.add(name)
+                pending.extend(deferred[name])
 
 
 def _shell_words(command: str) -> list[str]:
@@ -391,29 +433,94 @@ def _shell_words(command: str) -> list[str]:
         ) from error
 
 
-def _guard_computed_environment_names(command: str, source: str) -> None:
-    # Values may expand, but names cannot be resolved without running a shell.
-    # Inspect each statement, including exports on lines without pytest.
+def _guard_shell_environment(command: str, source: str) -> None:
+    # Literal environment-name rule: refuse every statement that lets the shell
+    # decide which names reach pytest. Values may expand; names must be literal.
+    # Inspect all statements, including lines without pytest, in this one guard.
     words = _shell_words(command)
     # Shell quoting can split a literal name in the original text.
     _guard_pytest_environment(" ".join(words), source)
+    command_position = True
     for i, word in enumerate(words):
-        if word not in {"export", "declare", "env"}:
+        if word and all(char in ";&|()\n" for char in word):
+            command_position = True
             continue
-        if word == "declare" and (i + 1 == len(words) or words[i + 1] != "-x"):
+        if not command_position:
             continue
+        word = word.removeprefix("@")
+        if (
+            word in {"if", "then", "elif", "else", "while", "until", "do", "!", "{"}
+            or re.match(r"^[A-Za-z_]\w*=", word)
+            or word.startswith("-")
+        ):
+            continue
+        # Arguments (including make goals such as eval) are data. Transparent
+        # shell wrappers leave the next executable in command position.
+        command_position = word in {"env", "command", "builtin", "exec"}
+        arguments = []
         for argument in words[i + 1 :]:
             if argument and all(char in ";&|()\n" for char in argument):
                 break
+            arguments.append(argument)
+        _require(
+            word not in {"eval", ".", "source"}
+            and not (
+                word == "set"
+                and (
+                    any(re.fullmatch(r"-[A-Za-z]*a[A-Za-z]*", arg) for arg in arguments)
+                    or any(
+                        arguments[j : j + 2] == ["-o", "allexport"]
+                        for j in range(len(arguments))
+                    )
+                )
+            ),
+            "Cannot judge implicit shell environment",
+            source,
+            "replace eval, sourcing and allexport with literal environment names",
+        )
+        if word.rsplit("/", 1)[-1] in {"sh", "bash"}:
+            for j, argument in enumerate(arguments[:-1]):
+                if not re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", argument):
+                    continue
+                body = arguments[j + 1]
+                _require(
+                    not re.search(
+                        r"[$`]|\b(?:export|declare|typeset|local|env|eval|source|allexport)\b"
+                        r"|(?:^|[;&|])[ \t]*\.[ \t]",
+                        body,
+                    ),
+                    "Cannot judge indirect shell environment",
+                    source,
+                    "replace shell -c environment construction with literal names",
+                )
+                break
+        if word not in {"export", "declare", "typeset", "local", "env"}:
+            continue
+        options = []
+        while arguments and arguments[0].startswith("-"):
+            options.append(arguments.pop(0))
+        if word in {"declare", "typeset", "local"} and not any(
+            re.fullmatch(r"-[A-Za-z]*x[A-Za-z]*", option) for option in options
+        ):
+            continue
+        for argument in arguments:
+            if word == "env" and "=" not in argument and not argument.startswith("-"):
+                # env's remaining words are the command, not exported names.
+                _require(
+                    "$" not in argument and "`" not in argument,
+                    "Cannot judge a computed environment name without a shell",
+                    source,
+                    "write the exported or env variable name literally",
+                )
+                break
             name = argument.split("=", 1)[0]
             _require(
-                "$" not in name and "`" not in name,
+                re.fullmatch(r"[A-Za-z_]\w*", name),
                 "Cannot judge a computed environment name without a shell",
                 source,
                 "write the exported or env variable name literally",
             )
-            if word == "env" and "=" not in argument and not argument.startswith("-"):
-                break
+            _guard_pytest_environment(f"{name}=", source)
 
 
 def make_hop(command: str) -> tuple[list[str], list[str]]:
@@ -442,11 +549,11 @@ def make_hop(command: str) -> tuple[list[str], list[str]]:
         if re.match(r"^[A-Za-z_]\w*=", word):
             _require(
                 word.split("=", 1)[0]
-                not in _MAKE_CONTROL_VARIABLES | set(_PYTEST_INPUT_VARIABLES)
+                not in _MAKE_CONTROL_VARIABLES | {"PYTEST_ADDOPTS"}
                 and "$" not in word,
                 "Unjudged make assignment",
                 command,
-                "pass literal data assignments without make controls or pytest inputs",
+                "pass literal data assignments without make controls or PYTEST_ADDOPTS",
             )
             assignments.append(word)
         else:

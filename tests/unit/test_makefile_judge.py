@@ -88,6 +88,7 @@ _FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\
     [
         "PYTEST_ADDOPTS",
         "PYTEST_PLUGINS",
+        "PYTEST_XDIST_AUTO_NUM_WORKERS",
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
         "PYTEST_DEBUG",
         "PYTEST_DEBUG_TEMPROOT",
@@ -182,6 +183,137 @@ def test_quoted_pytest_input_names_are_refused(tmp_path: Path, operation: str) -
     with pytest.raises(
         AssertionError, match="pytest environment PYTEST_PLUGINS"
     ) as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize("builtin", ["declare", "typeset", "local"])
+@pytest.mark.parametrize("options", ["-gx", "-xg", "-g -x"])
+@pytest.mark.parametrize("name", ["$$n", "$${n}", "PYTEST_'PLUGINS'"])
+def test_export_option_clusters_are_refused(
+    tmp_path: Path, builtin: str, options: str, name: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace(
+            "\t$(PY)", f"\tn=PYTEST_PLUGINS; {builtin} {options} {name}; $(PY)"
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="environment|computed.*name") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    ["eval 'true'"]
+    + [
+        f"{path}{shell} -c '{body}'"
+        for path in ("", "/bin/", "/custom/")
+        for shell in ("sh", "bash")
+        for body in (
+            "$$n",
+            "`printf true`",
+            "export OTHER=value",
+            "declare -x OTHER=value",
+            "typeset -x OTHER=value",
+            "local -x OTHER=value",
+            "env OTHER=value true",
+        )
+    ],
+)
+def test_indirect_shell_environment_is_refused(tmp_path: Path, shape: str) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize("name", judge._PYTEST_INPUT_VARIABLES)
+@pytest.mark.parametrize("reference", ["$({})", "${{{}}}", "$${}", "$${{{}}}"])
+@pytest.mark.parametrize("expanded", [False, True], ids=["raw", "expanded"])
+def test_pytest_input_references_are_refused(
+    tmp_path: Path, name: str, reference: str, *, expanded: bool
+) -> None:
+    reference = reference.format(name)
+    if expanded:
+        reference = reference.replace("$", "$(D)")
+    text = ("D = $$\n" if expanded else "") + _FULL_CHAIN
+    path = tmp_path / "Makefile"
+    path.write_text(text + f"\t@echo {reference}\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=f"pytest environment {name}") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "shape", ["set -a", "set -o allexport", ". file", "source file"]
+)
+def test_implicit_shell_exports_are_refused(tmp_path: Path, shape: str) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+def test_make_variable_override_is_refused_before_make_hop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_hop(command: str) -> tuple[list[str], list[str]]:
+        pytest.fail(f"override reached make_hop: {command}")
+
+    monkeypatch.setattr(judge, "make_hop", unexpected_hop)
+    path = tmp_path / "Makefile"
+    path.write_text(
+        "OVR = CI=1\n" + _FULL_CHAIN.replace("$(MAKE) test", "$(MAKE) test $(OVR)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="pytest environment CI") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert "OVR = CI=1" in str(failure.value)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+def test_pytest_variable_help_prose_is_accepted(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text(
+        _FULL_CHAIN + "\t@echo 'PYTEST_PLUGINS configures plugins'\n", encoding="utf-8"
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+
+
+def test_unused_deferred_data_does_not_import_pytest_inputs(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text(
+        "UNUSED = $(CI)\n" + _FULL_CHAIN, encoding="utf-8"
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize("reference", ["$(CI)", "${CI}", "$$CI", "$${CI}"])
+def test_used_deferred_data_refuses_pytest_input_references(
+    tmp_path: Path, reference: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        f"DATA = {reference}\nALIAS = $(DATA)\n"
+        + _FULL_CHAIN.replace("--durations 10", "--durations 10 $(ALIAS)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="pytest environment CI") as failure:
         judge.assert_verify_keeps_slow(tmp_path)
     assert str(path) in str(failure.value)
     assert "Fix:" in str(failure.value)
