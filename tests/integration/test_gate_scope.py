@@ -750,7 +750,7 @@ def _precommit_python3_entries():
     return re.findall(r"^\s*entry:\s*python3\s+(\S+)", text, re.MULTILINE)
 
 
-def _too_new_syntax(path):
+def _too_new_syntax(path: Path) -> list[str]:
     """Constructs in `path` that a `python3` at PRECOMMIT_PYTHON_FLOOR cannot run.
 
     Note `ast.parse(..., feature_version=(3, 6))` accepts BOTH hazards below, so it
@@ -801,8 +801,8 @@ def _too_new_syntax(path):
     return bad
 
 
-def _local_imports(path):
-    """Keel modules `path` imports by bare name from scripts/ — the `import
+def _local_imports(path: Path) -> list[Path]:
+    """Keel modules `path` imports by sibling name from scripts/ — the `import
     child_env` a script reaches through scripts/ on sys.path. An entry in scripts/
     resolves against its own directory and scripts/; one elsewhere (api/) reaches
     no scripts/ module by bare name. An entry that parses at 3.6 but imports one
@@ -819,12 +819,17 @@ def _local_imports(path):
         names = []
         if isinstance(node, ast.Import):
             names = [a.name for a in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+        elif isinstance(node, ast.ImportFrom) and node.level <= 1 and node.module:
             names = [node.module]
+        search_dirs = (
+            [path.parent]
+            if isinstance(node, ast.ImportFrom) and node.level == 1
+            else dirs
+        )
         for name in names:
             if "." in name:
                 continue
-            for d in dirs:
+            for d in search_dirs:
                 sibling = d / (name + ".py")
                 if sibling.is_file() and sibling != path:
                     found.append(sibling)
@@ -1018,7 +1023,7 @@ def _precommit_python3_commands():
     ]
 
 
-def _imported_names(path):
+def _imported_names(path: Path) -> list[tuple[str, bool]]:
     """(top-level name, is relative) for every import anywhere in *path*."""
     tree = ast.parse(path.read_text(), str(path))
     out = []
@@ -1030,7 +1035,7 @@ def _imported_names(path):
     return out
 
 
-def _old_python_safe(path, seen=None):
+def _old_python_safe(path: Path, seen: set[Path] | None = None) -> bool:
     """True when *path* and every keel module it imports by bare name parse under
     PRECOMMIT_PYTHON_FLOOR and import nothing but the standard library and each
     other: a script the floor would only delay, never protect."""
@@ -1042,7 +1047,7 @@ def _old_python_safe(path, seen=None):
         return False
     local = {p.stem: p for p in _local_imports(path)}
     for name, relative in _imported_names(path):
-        if relative:
+        if relative and name not in local:
             return False
         if name in local:
             if not _old_python_safe(local[name], seen):
@@ -1050,6 +1055,26 @@ def _old_python_safe(path, seen=None):
         elif name not in sys.stdlib_module_names and name != "__future__":
             return False
     return True
+
+
+@pytest.mark.parametrize(
+    "dependency, expected",
+    [
+        ("value = 1\n", True),
+        ("from __future__ import annotations\nvalue = 1\n", False),
+        ("import unavailable_backend\nvalue = 1\n", False),
+    ],
+)
+def test_old_python_safety_follows_relative_siblings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dependency: str, *, expected: bool
+) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    entry = scripts / "entry.py"
+    entry.write_text("from .dependency import value\n", encoding="utf-8")
+    (scripts / "dependency.py").write_text(dependency, encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "_ROOT", tmp_path)
+    assert _old_python_safe(entry) is expected
 
 
 def _py_commands(rule):

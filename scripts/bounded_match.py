@@ -7,7 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, cast
+from typing import TYPE_CHECKING, List, Optional, cast
 
 # Hook callers use bare sibling imports; package callers need the same path
 # without relying on the working directory. The floor gate follows these imports.
@@ -18,6 +18,11 @@ if _SCRIPTS not in sys.path:
 # Mypy cannot resolve the runtime scripts/ path used by hook sibling imports.
 import config_loader  # type: ignore[import-not-found]  # noqa: E402
 from child_env import build_child_env  # type: ignore[import-not-found]  # noqa: E402
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 __all__ = ["match_values"]
 
@@ -101,3 +106,6 @@ def match_values(
     ):
         raise refusal("regex child output is not one bool per value")
     return cast(List[bool], result)
+
+
+register_module(__name__, __file__)

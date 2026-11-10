@@ -12,6 +12,7 @@ import argparse
 import json
 import os
 import sys
+from typing import TYPE_CHECKING
 
 # A *doer* invoked by some trigger (the practice-refactor skill, a CI step, a
 # hook). The trigger is a thin adapter that only says "run this"; the reasoning
@@ -33,6 +34,11 @@ from scripts.resource_limits import (  # noqa: E402
     ChildOutputTooLarge,
     ChildTimedOut,
 )
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 
 def _as_dict(report):
@@ -202,6 +208,8 @@ def main(argv=None):
             )
     return exit_codes.ExitCode.SUCCESS
 
+
+register_module(__name__, __file__)
 
 if __name__ == "__main__":
     exit_codes.finish(main())

@@ -13,7 +13,12 @@ effect: read-only
 
 import ast
 import os
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 __all__ = [
     "CORPUS_PATH",
@@ -265,3 +270,6 @@ def stated_now(root: str, relpath: Optional[str]) -> Optional[List[Optional[str]
         if fm is not None:
             levels.append(fm.get("visibility"))
     return levels
+
+
+register_module(__name__, __file__)

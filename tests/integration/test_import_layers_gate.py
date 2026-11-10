@@ -5,6 +5,7 @@ layer: n/a
 summary: A tree-wide gate over every Python file tests/source_tree.py `python_files` lists (the walk check_structure uses, so vendored and installed code stay out). config/project.json `import_layers.order` lists the layers bottom to top, each a list of path prefixes; a file sits in the layer of its longest prefix, matched by whole path segments (`models` never matches `models_extra/`). Every import `import_edges` resolves through `import_layers.search_roots` must point at the same or a lower layer: an edge into a higher layer is a finding naming the file, the line, both layers and the fix. A file no prefix places, a prefix that is on disk but places no file (stale; a prefix whose path is absent, such as a transport copier pruned, is skipped), a malformed block and a walk that resolved no edge are each red, never a pass. It cannot see an import made through importlib, `__import__`, or a `sys.path` entry no search root names: such a name is external to it. An import under `TYPE_CHECKING` or inside `try/except ImportError` still counts as an edge. Not a check_* letter: the letters A to Z are taken. docs/adr/keel/K-0021-imports-flow-up-a-configured-layer-order.md is the decision.
 """
 
+import ast
 import json
 import sys
 from pathlib import Path
@@ -120,10 +121,99 @@ def test_every_layer_entry_matches_a_file():
     assert not findings, "\n".join(findings)
 
 
+def _import_names(node: ast.AST, importer: str) -> list[str]:
+    """Absolute module spellings an import statement can load."""
+    if isinstance(node, ast.Import):
+        return [alias.name for alias in node.names]
+    if not isinstance(node, ast.ImportFrom):
+        return []
+    parts = (node.module or "").split(".") if node.module else []
+    if node.level:
+        parts = importer.split("/")[: -node.level] + parts
+    module = ".".join(parts)
+    return [module] + [module + "." + alias.name for alias in node.names]
+
+
+def _calls_registration(tree: ast.Module, *, is_helper: bool = False) -> bool:
+    """Recognize the helper's imported binding, including aliases."""
+    functions = {"register_module"} if is_helper else set()
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in (
+            "module_identity",
+            "scripts.module_identity",
+        ):
+            functions.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "register_module"
+            )
+        if isinstance(node, ast.Import):
+            modules.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name in ("module_identity", "scripts.module_identity")
+            )
+    # Definitions do not register the module until called at module scope.
+    for node in st.scope_nodes(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = ast.unparse(node.func)
+        if name in functions or name in {m + ".register_module" for m in modules}:
+            return [ast.unparse(arg) for arg in node.args] == ["__name__", "__file__"]
+    return False
+
+
+def dual_import_findings(root: Path) -> list[str]:
+    """Find dual-imported scripts without registration, naming both sites."""
+    trees: dict[str, ast.Module] = {
+        path: st.parse(root, path) for path in st.python_files(root)
+    }
+    scripts = {
+        path[8:-3].replace("/", "."): path
+        for path in trees
+        if path.startswith("scripts/") and not path.endswith("/__init__.py")
+    }
+    sites: dict[str, str] = {}
+    for path, tree in trees.items():
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            for name in _import_names(node, path):
+                sites.setdefault(name, "%s:%d" % (path, node.lineno))
+    findings = []
+    for name, path in scripts.items():
+        dotted = "scripts." + name
+        if (
+            name in sites
+            and dotted in sites
+            and not _calls_registration(
+                trees[path], is_helper=path == "scripts/module_identity.py"
+            )
+        ):
+            findings.append(
+                "%s: call module_identity.register_module(__name__, __file__); "
+                "%s imported at %s; %s imported at %s"
+                % (path, name, sites[name], dotted, sites[dotted])
+            )
+    return sorted(findings)
+
+
+def test_dual_imported_scripts_register_one_module() -> None:
+    # This belongs beside import layers because both judge the same source walk.
+    findings = dual_import_findings(_ROOT)
+    assert not findings, "\n".join(findings)
+
+
 # --- fixtures: each rule can fail ---------------------------------------------------
 
 
-def _project(tmp_path, files, order=None, roots=None):
+def _project(
+    tmp_path: Path,
+    files: dict[str, str],
+    order: list[list[str]] | None = None,
+    roots: list[str] | None = None,
+) -> Path:
     root = tmp_path / "proj"
     (root / "config").mkdir(parents=True)
     policy = {
@@ -135,6 +225,67 @@ def _project(tmp_path, files, order=None, roots=None):
         (root / relpath).parent.mkdir(parents=True, exist_ok=True)
         (root / relpath).write_text(text, encoding="utf-8")
     return root
+
+
+@pytest.mark.parametrize(
+    "imports",
+    [
+        "import fresh\nimport scripts.fresh\n",
+        "from fresh import Value\nfrom scripts.fresh import Value\n",
+        "import fresh as f\nfrom scripts import fresh as g\n",
+    ],
+)
+def test_dual_import_gate_names_both_sites(tmp_path: Path, imports: str) -> None:
+    root = _project(
+        tmp_path, {"scripts/fresh.py": "class Value: pass\n", "caller.py": imports}
+    )
+    assert dual_import_findings(root) == [
+        "scripts/fresh.py: call module_identity.register_module(__name__, __file__); "
+        "fresh imported at caller.py:1; scripts.fresh imported at caller.py:2"
+    ]
+
+
+@pytest.mark.parametrize(
+    "registration",
+    [
+        "from module_identity import register_module\nregister_module(__name__, __file__)\n",
+        "from .module_identity import register_module as share\nshare(__name__, __file__)\n",
+        "import scripts.module_identity as identity\nidentity.register_module(__name__, __file__)\n",
+    ],
+)
+def test_dual_import_gate_accepts_the_shared_helper(
+    tmp_path: Path, registration: str
+) -> None:
+    root = _project(
+        tmp_path,
+        {
+            "scripts/fresh.py": registration,
+            "caller.py": "import fresh\nfrom scripts import fresh\n",
+        },
+    )
+    assert dual_import_findings(root) == []
+
+
+@pytest.mark.parametrize(
+    "registration",
+    [
+        "from module_identity import register_module\n",
+        "from unrelated import register_module\nregister_module(__name__, __file__)\n",
+        "from module_identity import register_module\ndef later():\n    register_module(__name__, __file__)\n",
+    ],
+)
+def test_dual_import_gate_requires_a_module_scope_call(
+    tmp_path: Path, registration: str
+) -> None:
+    root = _project(
+        tmp_path,
+        {
+            "scripts/fresh.py": registration,
+            "caller.py": "import fresh\nimport scripts.fresh\n",
+        },
+    )
+    findings = dual_import_findings(root)
+    assert len(findings) == 1 and findings[0].startswith("scripts/fresh.py:"), findings
 
 
 _UPWARD = {

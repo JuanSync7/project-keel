@@ -12,7 +12,12 @@ import contextlib
 import fnmatch
 import io
 import os
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 __all__ = [
     "CollectionRule",
@@ -405,3 +410,6 @@ def collection_rule_from_ini(root, tests_root):
                 "project its own [tool.pytest.ini_options]" % os.path.basename(ini)
             )
     return probe.rule
+
+
+register_module(__name__, __file__)

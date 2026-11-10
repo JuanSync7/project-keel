@@ -13,7 +13,6 @@ effect: read-only
 
 import copy
 import datetime
-import importlib
 import importlib.util
 import json
 import keyword
@@ -24,9 +23,9 @@ import re
 import sys
 import threading
 import urllib.parse
-from types import ModuleType
 from typing import (
     IO,
+    TYPE_CHECKING,
     Any,
     Callable,
     Collection,
@@ -41,6 +40,11 @@ from typing import (
     Set,
     Tuple,
 )
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 __all__ = [
     "AUDIT_SEVERITIES",
@@ -2620,40 +2624,4 @@ def env(
     return value or None
 
 
-# One module object under both import names: scripts/ is a namespace package,
-# so `import config_loader` (scripts/ on sys.path) and `scripts.config_loader`
-# would otherwise be two modules, with two announced sets and two ConfigError
-# classes, and a caller's except clause would miss the other's raise.
-_SELF = sys.modules.get(__name__)
-if _SELF is None:
-    raise ImportError(
-        "config_loader was executed without being registered in sys.modules; "
-        "import it, or register the module before exec_module"
-    )
-sys.modules.setdefault("config_loader", _SELF)
-sys.modules.setdefault("scripts.config_loader", _SELF)
-
-
-def _bind_to_package(module: ModuleType) -> None:
-    """Set *module* as the `config_loader` attribute of the `scripts`
-    package that holds this file. `import scripts.config_loader` finds the
-    name in sys.modules and never loads it, so the package never gets the
-    attribute and `scripts.config_loader` would raise AttributeError. The
-    package is imported here when the name resolves to this file's
-    directory; find_spec runs no package code, so a `scripts` elsewhere on
-    the path is left alone, and a path where no `scripts` resolves leaves
-    nothing to bind."""
-    here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
-    # Any: a namespace package carries no declared attributes to type against.
-    package: Any = sys.modules.get("scripts")
-    if package is None:
-        spec = importlib.util.find_spec("scripts")
-        locations = [] if spec is None else spec.submodule_search_locations or []
-        if here not in [os.path.realpath(p) for p in locations]:
-            return
-        package = importlib.import_module("scripts")
-    if here in [os.path.realpath(p) for p in getattr(package, "__path__", [])]:
-        package.config_loader = module
-
-
-_bind_to_package(_SELF)
+register_module(__name__, __file__)
