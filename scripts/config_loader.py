@@ -37,6 +37,7 @@ from typing import (
     Mapping,
     NamedTuple,
     Optional,
+    Pattern,
     Set,
     Tuple,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "WrongValue",
     "chain_level",
     "checkout_name",
+    "compile_pattern",
     "cut_hidden",
     "declared_variables",
     "env",
@@ -161,6 +163,45 @@ class ConfigUnreadable(ConfigError):
 
 class WrongValue(ConfigError):
     """A set key holds a value its row does not accept."""
+
+
+# Bound the compiler's input allocation before it builds a parse tree. This
+# ceiling does not bound matching time; callers need a separate execution bound.
+_PATTERN_MAX_CHARS = 65536
+
+
+def compile_pattern(pattern: str, key: str, where: str, flags: int = 0) -> Pattern[str]:
+    """Compile configured *pattern*, or raise WrongValue naming source, key
+    and repair without the pattern or compiler message. Refuse inputs longer
+    than 65536 characters before compilation, syntax, depth and size faults.
+    Matching time is not bounded here."""
+
+    def refusal(fault: str) -> WrongValue:
+        return WrongValue(
+            where,
+            [
+                "%s: %s %s; correct %s to a valid, smaller regular expression"
+                % (shown(where, bare=True), key, fault, key)
+            ],
+        )
+
+    if len(pattern) > _PATTERN_MAX_CHARS:
+        raise refusal(
+            "exceeds the regular expression compiler's %d character limit"
+            % _PATTERN_MAX_CHARS
+        )
+    try:
+        return re.compile(pattern, flags)
+    except re.error:
+        raise refusal("has invalid regular expression syntax") from None
+    except RecursionError:
+        raise refusal("is nested too deep to compile") from None
+    except OverflowError:
+        raise refusal("has a repetition or size too large to compile") from None
+    except ValueError:
+        # Python's decimal conversion limit can reject a repetition count
+        # before the regex parser reaches its own overflow check.
+        raise refusal("has a repetition or flags that cannot be compiled") from None
 
 
 class NotSet(ConfigError):

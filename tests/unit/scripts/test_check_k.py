@@ -21,6 +21,24 @@ pytestmark = pytest.mark.unit
 _MARKER = "practice: frozen-config"
 
 
+@pytest.mark.parametrize("tokens", [None, False, 0, "HOSTILE", [], ["HOSTILE"]])
+def test_nonobject_tokens_refuse_without_echoing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tokens: object
+) -> None:
+    monkeypatch.setattr(cs, "_load_practices", lambda: {"tokens": tokens})
+    with pytest.raises(cs.config_loader.ConfigError) as exc:
+        cs.check_K()
+    message = str(exc.value)
+    assert "config/practices.json" in message and "tokens" in message
+    assert "object" in message and "correct" in message
+    assert "HOSTILE" not in message
+    monkeypatch.setattr(cs, "CHECKS", [("K", cs.check_K)])
+    assert cs.main() == cs.exit_codes.ExitCode.CONFIG
+    refusal = capsys.readouterr().err
+    assert "tokens" in refusal and "repair" in refusal
+    assert "HOSTILE" not in refusal and "Traceback" not in refusal
+
+
 def _viol(src, marker=_MARKER):
     """Class-kw lines flagged for `src` (marked-but-not-provably-immutable)."""
     tree = ast.parse(src)

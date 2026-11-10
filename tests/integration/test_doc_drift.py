@@ -15,6 +15,7 @@ import subprocess
 import sys
 import unicodedata
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -112,7 +113,7 @@ def load_manifest(root):
     return manifest
 
 
-def drift_policy(manifest):
+def drift_policy(manifest: dict[str, Any]) -> dict[str, Any]:
     """The `doc_drift` keys this file reads, validated. Raises
     DocDriftConfigError naming the key, so a typo cannot fall back to nothing."""
     block = manifest.get(_BLOCK)
@@ -140,16 +141,16 @@ def drift_policy(manifest):
     for pattern, reason in sorted(phrases.items()):
         if not isinstance(reason, str) or not reason.strip():
             raise DocDriftConfigError(
-                "config/project.json: `%s.forbidden_phrases` %r has no reason"
-                % (_BLOCK, pattern)
+                "config/project.json: `%s.forbidden_phrases` has an entry without "
+                "a reason; correct each reason to a non-empty string" % _BLOCK
             )
         try:
-            compiled.append((re.compile(pattern), reason))
-        except re.error as e:
-            raise DocDriftConfigError(
-                "config/project.json: `%s.forbidden_phrases` %r is not a regex (%s)"
-                % (_BLOCK, pattern, e)
-            ) from e
+            regex = config_loader.compile_pattern(
+                pattern, "%s.forbidden_phrases" % _BLOCK, "config/project.json"
+            )
+        except config_loader.ConfigError as exc:
+            raise DocDriftConfigError(str(exc)) from None
+        compiled.append((regex, reason))
     return {_HISTORY_KEY: tuple(history), "forbidden_phrases": compiled}
 
 
@@ -1804,6 +1805,43 @@ def test_a_present_claim_at_an_opener_reds_no_gate_scan_and_review_reports_it(
     phrases, _history = review_docs.opener_policy(str(_ROOT))
     reported = review_docs.change_openers(found, phrases)
     assert [path for path, _line, _phrase in reported] == ["CONTRIBUTING.md"]
+
+
+@pytest.mark.parametrize(
+    "pattern,reason",
+    [
+        ("HOSTILE[", "a reason"),
+        ("(" * 600 + "HOSTILE" + ")" * 600, "a reason"),
+        ("HOSTILE{4294967296}", "a reason"),
+        ("HOSTILE{" + "9" * 5000 + "}", "a reason"),
+        ("HOSTILE" + "x" * 65536, "a reason"),
+        ("HOSTILE", ""),
+        ("HOSTILE", ["HOSTILE"]),
+    ],
+    ids=[
+        "syntax",
+        "depth",
+        "overflow",
+        "decimal-limit",
+        "size",
+        "empty-reason",
+        "wrong-reason",
+    ],
+)
+def test_forbidden_pattern_faults_refuse_without_echoing(
+    pattern: str, reason: object
+) -> None:
+    manifest = {
+        "doc_drift": {
+            "history_paths": ["history/"],
+            "forbidden_phrases": {pattern: reason},
+        }
+    }
+    with pytest.raises(DocDriftConfigError) as exc:
+        drift_policy(manifest)
+    message = str(exc.value)
+    assert "config/project.json" in message and "doc_drift.forbidden_phrases" in message
+    assert "correct" in message and "HOSTILE" not in message
 
 
 def test_a_missing_or_malformed_doc_drift_block_fails_closed(manifest):

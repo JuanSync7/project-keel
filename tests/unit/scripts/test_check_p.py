@@ -7,6 +7,7 @@ summary: check_P errors when a Makefile target carries a `## ` help annotation t
 
 import sys
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -28,10 +29,10 @@ _HELP_NARROW = (
 _HELP_WIDE = _HELP_NARROW.replace("[a-zA-Z_-]", "[a-zA-Z0-9_-]")
 
 
-def _find(text, **more):
+def _find(text: str, **more: str) -> tuple[list[str], list[str]]:
     """One root Makefile (plus optional includes) -> (errs, warns)."""
     makefiles = [("Makefile", text)] + sorted(more.items())
-    return cs._help_parity_findings(makefiles)
+    return cast(tuple[list[str], list[str]], cs._help_parity_findings(makefiles))
 
 
 # --- the regression, exactly ---------------------------------------------------
@@ -44,7 +45,7 @@ def test_a_digit_named_target_hidden_by_a_digitless_pattern_errors():
         _HELP_NARROW + "e2e: ## Run end-to-end tests\n\tpytest -m e2e\n"
     )
     assert len(errs) == 1, errs
-    assert "e2e" in errs[0] and "[a-zA-Z_-]" in errs[0] and "make help" in errs[0]
+    assert "e2e" in errs[0] and "grep pattern" in errs[0] and "make help" in errs[0]
     assert warns == []
 
 
@@ -108,11 +109,55 @@ def test_a_help_recipe_without_a_readable_pattern_warns_and_gates_nothing():
     assert len(warns) == 1 and "unverified" in warns[0], warns
 
 
-def test_a_pattern_this_check_cannot_apply_warns_naming_it():
+def test_a_pattern_this_check_cannot_compile_is_refused_naming_the_fix():
     bad = _HELP_NARROW.replace("^[a-zA-Z_-]+", "^[a-zA-Z_-]++(?<")
-    errs, warns = _find(bad + "e2e: ## a\n\tx\n")
-    assert errs == []
-    assert len(warns) == 1 and "unverified" in warns[0] and "++(?<" in warns[0], warns
+    with pytest.raises(cs.config_loader.ConfigError) as exc:
+        _find(bad + "e2e: ## a\n\tx\n")
+    message = str(exc.value)
+    assert "help recipe grep pattern" in message and "correct" in message
+    assert "++(?<" not in message
+
+
+@pytest.mark.parametrize("excluded", [False, True], ids=["select", "exclude"])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "HOSTILE[",
+        "(" * 600 + "HOSTILE" + ")" * 600,
+        "HOSTILE{4294967296}",
+        "HOSTILE{" + "9" * 5000 + "}",
+        "HOSTILE" + "x" * 65536,
+    ],
+    ids=["syntax", "depth", "overflow", "decimal-limit", "size"],
+)
+def test_help_pattern_faults_refuse_without_echoing(
+    pattern: str, *, excluded: bool
+) -> None:
+    if excluded:
+        text = _HELP_WIDE.replace(
+            "$(MAKEFILE_LIST) |", "$(MAKEFILE_LIST) | grep -v '%s' |" % pattern
+        )
+    else:
+        text = _HELP_WIDE.replace("^[a-zA-Z0-9_-]+:.*?## ", pattern)
+    with pytest.raises(cs.config_loader.ConfigError) as exc:
+        _find(text)
+    message = str(exc.value)
+    assert "Makefile" in message and "help" in message and "pattern" in message
+    assert "correct" in message and "HOSTILE" not in message
+
+
+def test_help_pattern_fault_is_a_config_exit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pattern = "HOSTILE{4294967296}"
+    (repo / "Makefile").write_text(
+        _HELP_WIDE.replace("^[a-zA-Z0-9_-]+:.*?## ", pattern), encoding="utf-8"
+    )
+    monkeypatch.setattr(cs, "CHECKS", [("P", cs.check_P)])
+    assert cs.main(["--root", str(repo)]) == cs.exit_codes.ExitCode.CONFIG
+    message = capsys.readouterr().err
+    assert "Makefile" in message and "help" in message and "pattern" in message
+    assert "repair" in message and "HOSTILE" not in message
 
 
 def test_posix_character_classes_in_the_recipe_are_understood():
@@ -180,7 +225,7 @@ def test_a_pattern_variable_this_check_cannot_expand_is_unverified():
     assert (
         errs == []
         and len(warns) == 1
-        and "HELP_RE" in warns[0]
+        and "help recipe grep pattern" in warns[0]
         and "unverified" in warns[0]
     ), warns
 

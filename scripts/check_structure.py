@@ -186,7 +186,7 @@ import re
 import shlex
 import sys
 import tokenize
-from typing import Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote
 
 # The allowlist's owner is scripts/child_env.py, beside this file; reading its
@@ -2226,6 +2226,27 @@ def _profiles_on():
     return {k for k in prof if prof[k] is True and not str(k).startswith("_")}
 
 
+def _practice_tokens(
+    practices: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """The declared token object, {} if absent, None if its file was refused.
+    A non-object raises a named refusal before any consumer reads a token."""
+    if practices is None:
+        return None
+    if "tokens" not in practices:
+        return {}
+    tokens = practices["tokens"]
+    if not isinstance(tokens, dict):
+        raise config_loader.WrongValue(
+            config_loader.PRACTICES_FILE,
+            [
+                "config/practices.json: tokens is not an object; "
+                "correct tokens to an object holding the declared practice tokens"
+            ],
+        )
+    return tokens
+
+
 # --- check_K: frozen-config gate ----------------------------------------------
 #
 # A class carrying the DECLARED marker (tokens.config_marker) must be provably
@@ -2420,10 +2441,10 @@ def check_K():
     author-written marker (declared intent), never a *Config name suffix (§18).
     A construct the recognizer can't prove (a frozen base class, a functional
     namedtuple) is waived with `# practice-ok: <reason>`."""
-    practices = _load_practices()
-    if practices is None:
+    tokens = _practice_tokens(_load_practices())
+    if tokens is None:
         return
-    marker = (practices.get("tokens") or {}).get("config_marker")
+    marker = tokens.get("config_marker")
     if not isinstance(marker, str) or not marker:
         return  # no declared marker -> nothing to gate
     for croot in J_ROOTS:
@@ -2545,14 +2566,23 @@ def check_L():
     """Naked-tensor domain gate (WARN): only when the cuda profile is enabled, a
     parameter annotated with a bare tensor base type (tokens.tensor_base_types)
     and no shape comment WARNs. Never errs: a token like `Array` may name a local
-    non-tensor class, so this is an advisory heuristic, off by default."""
+    non-tensor class, so this is an advisory heuristic, off by default.
+    Malformed configured tokens raise a refusal before source is judged."""
     profiles = _profiles_on()
     if profiles is None or "cuda" not in profiles:
         return
-    practices = _load_practices()
-    if practices is None:
+    tokens = _practice_tokens(_load_practices())
+    if tokens is None:
         return
-    bt = (practices.get("tokens") or {}).get("tensor_base_types")
+    bt = tokens.get("tensor_base_types")
+    if isinstance(bt, list) and not all(isinstance(member, str) for member in bt):
+        raise config_loader.WrongValue(
+            config_loader.PRACTICES_FILE,
+            [
+                "config/practices.json: tokens.tensor_base_types has a non-string "
+                "member; correct tokens.tensor_base_types to a list of strings"
+            ],
+        )
     base_types = set(bt) if isinstance(bt, list) and bt else set()
     if not base_types:  # no declared tokens -> silence (no fallback)
         return
@@ -3584,11 +3614,14 @@ def _expand_make_vars(pattern, makefiles):
     return _MAKE_VAR.sub(lambda m: assigned.get(m.group(1), m.group(0)), pattern)
 
 
-def _compile_grep(pattern, flags):
-    """A grep -E pattern as a Python regex, honouring -i; raises re.error."""
+def _compile_grep(pattern, flags, where):
+    """A grep -E pattern as a Python regex, honouring -i; refuses compiler faults
+    through the shared configured-pattern guard without echoing its input."""
     for posix, python in _POSIX_CLASSES:
         pattern = pattern.replace(posix, python)
-    return re.compile(pattern, re.IGNORECASE if "i" in flags else 0)
+    return config_loader.compile_pattern(
+        pattern, "help recipe grep pattern", where, re.IGNORECASE if "i" in flags else 0
+    )
 
 
 def _help_parity_findings(makefiles):
@@ -3599,7 +3632,8 @@ def _help_parity_findings(makefiles):
     Silent when no makefile declares a `help` target (nothing lists the
     annotations, so nothing can hide one). WARNs, never errs, for every shape
     it cannot model — parity is then unverified and says so, rather than
-    reporting a green it did not earn.
+    reporting a green it did not earn. A malformed grep pattern raises a
+    ConfigError naming the makefile and the repair without echoing the pattern.
     """
     errs, warns = [], []
     if not makefiles:
@@ -3653,29 +3687,22 @@ def _help_parity_findings(makefiles):
     pattern = _expand_make_vars(raw, makefiles)
     if _MAKE_VAR.search(pattern):
         warns.append(
-            unverified + "the help recipe's pattern '%s' holds a make variable this "
-            "check cannot expand (%s)"
-            % (raw, ", ".join(sorted(set(_MAKE_VAR.findall(pattern)))))
+            unverified + "the help recipe grep pattern holds a make variable this "
+            "check cannot expand; correct the pattern to use a plain assignment"
         )
         return errs, warns
     excluded = []
     for later_cmd, later_flags, later_raw, _ in greps[1:]:
         if "v" not in later_flags:
             warns.append(
-                unverified + "the help recipe pipes through a second selecting %s "
-                "('%s'), a pipeline this check does not model" % (later_cmd, later_raw)
+                unverified + "the help recipe pipes through a second selecting %s, "
+                "a pipeline this check does not model; simplify the help recipe"
+                % later_cmd
             )
             return errs, warns
         excluded.append((later_raw, later_flags))
-    try:
-        listed = _compile_grep(pattern, flags)
-        hidden_on_purpose = [_compile_grep(p, f) for p, f in excluded]
-    except re.error as e:
-        warns.append(
-            unverified + "the help recipe's pattern '%s' is not one this check can "
-            "apply (%s)" % (raw, e)
-        )
-        return errs, warns
+    listed = _compile_grep(pattern, flags, help_in)
+    hidden_on_purpose = [_compile_grep(p, f, help_in) for p, f in excluded]
     for relpath, text in makefiles:
         where = "" if relpath == help_in else " (in %s)" % help_in
         for lineno, line in enumerate(text.split("\n"), 1):
@@ -3686,9 +3713,9 @@ def _help_parity_findings(makefiles):
                 continue  # the author's own `grep -v` hides it; that is a choice
             errs.append(
                 "%s:%d: target '%s' carries a '## ' help annotation but the help "
-                "recipe's pattern '%s'%s does not match it, so 'make help' hides "
+                "recipe's grep pattern%s does not match it, so 'make help' hides "
                 "it -- widen the pattern%s (or drop the annotation)"
-                % (relpath, lineno, m.group(1), raw, where, where and " in " + help_in)
+                % (relpath, lineno, m.group(1), where, where and " in " + help_in)
             )
     return errs, warns
 
@@ -8719,7 +8746,15 @@ def main(argv=None):
             "; ".join(exc.lines),
             "repair config/project.json, resolving any hunk, then rerun",
         )
-    found = run_checks(args.root)
+    try:
+        found = run_checks(args.root)
+    except config_loader.ConfigError as exc:
+        return exit_codes.report(
+            exit_codes.ExitCode.CONFIG,
+            "check_structure: configured input cannot be used",
+            "; ".join(exc.lines),
+            "repair the named input and key, then rerun",
+        )
     for _letter, tier, m in found:
         if tier == "warning":
             print("WARN  " + m)

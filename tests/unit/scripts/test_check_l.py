@@ -21,6 +21,46 @@ pytestmark = pytest.mark.unit
 _BT = {"Tensor", "FloatTensor", "ndarray", "Array"}
 
 
+@pytest.mark.parametrize("tokens", [None, False, 0, "HOSTILE", [], ["HOSTILE"]])
+def test_nonobject_tokens_refuse_without_echoing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tokens: object
+) -> None:
+    monkeypatch.setattr(cs, "_profiles_on", lambda: {"cuda"})
+    monkeypatch.setattr(cs, "_load_practices", lambda: {"tokens": tokens})
+    with pytest.raises(cs.config_loader.ConfigError) as exc:
+        cs.check_L()
+    message = str(exc.value)
+    assert "config/practices.json" in message and "tokens" in message
+    assert "object" in message and "correct" in message
+    assert "HOSTILE" not in message
+    monkeypatch.setattr(cs, "CHECKS", [("L", cs.check_L)])
+    assert cs.main() == cs.exit_codes.ExitCode.CONFIG
+    refusal = capsys.readouterr().err
+    assert "tokens" in refusal and "repair" in refusal
+    assert "HOSTILE" not in refusal and "Traceback" not in refusal
+
+
+@pytest.mark.parametrize("member", [["HOSTILE"], {"HOSTILE": "value"}])
+def test_unhashable_tensor_types_refuse_without_echoing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], member: object
+) -> None:
+    monkeypatch.setattr(cs, "_profiles_on", lambda: {"cuda"})
+    monkeypatch.setattr(
+        cs, "_load_practices", lambda: {"tokens": {"tensor_base_types": [member]}}
+    )
+    with pytest.raises(cs.config_loader.ConfigError) as exc:
+        cs.check_L()
+    message = str(exc.value)
+    assert "config/practices.json" in message and "tokens.tensor_base_types" in message
+    assert "strings" in message and "correct" in message
+    assert "HOSTILE" not in message
+    monkeypatch.setattr(cs, "CHECKS", [("L", cs.check_L)])
+    assert cs.main() == cs.exit_codes.ExitCode.CONFIG
+    refusal = capsys.readouterr().err
+    assert "tokens.tensor_base_types" in refusal and "repair" in refusal
+    assert "HOSTILE" not in refusal and "Traceback" not in refusal
+
+
 def _naked(src, base=None):
     tree = ast.parse(src)
     return cs._naked_tensor_params(tree, src, base if base is not None else _BT)
