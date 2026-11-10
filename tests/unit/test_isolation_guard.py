@@ -2,7 +2,7 @@
 title: Unit — the isolation guard judges each reach by the test's tier
 kind: tests
 layer: n/a
-summary: tests/isolation_guard.py's pure parts. `classify` returns no violation for a reach inside the roots and one naming its axis, event and resolved target outside them, for every judged event: an open for writing (by mode or by flags; a read is allowed, a file descriptor skipped), a rename's source and destination, a remove, rmdir, mkdir, truncate and rmtree, a symlink's or link's destination only, an entry removed through a directory file descriptor (resolved through /proc, skipped when /proc is absent), a change of mode, times, owner or an extended attribute (at the link and through it, or at the link alone when the caller stays on it, so a tree copied with a link that points outside reaches nothing), a bytecode write in a `__pycache__` allowed and any other write there refused, a socket connect, sendto or sendmsg (loopback v4, v6, v4-mapped and the literal `localhost` allowed under `loopback`, a hostname refused, an AF_UNIX path judged by the roots, an abstract one refused, a sendmsg with no address allowed), an AF_UNIX bind to a path, a sqlite connect (`:memory:`, an empty name and a memory URI allowed, a `file:` name judged as a URI and as a file in the working directory, bytes decoded), and an open in any mode of a listed store. A root that holds the checkout leaves the checkout outside it, and one inside the checkout is scratch again. The closest tier marker wins, an unmarked test gets the strictest rule, this project's policy loads one rule per configured tier, each a declared marker, an empty scratch variable leaves the configured root, `choose_scratch` takes the variable, else the memory root with `-<uid>` appended and mode 0700, made 0700 under a umask that narrows mkdir, never through a link at the configured name, and with a trailing separator dropped, else the disk root with a note when memory is null, absent, missing, under its free-space floor, in a parent others may write without the sticky bit, or not this user's directory with mode 0700 (an open mode, a link, a file, another owner, no owner write), and refuses an unsafe memory root or a negative floor naming its key, and `load_policy` refuses an unknown value, an unknown axis, a tier missing an axis and a blank reason, naming the key. The message has its fixed shape, and a second store copy changes nothing.
+summary: Exercises the isolation guard's policy, event classification, store copies, usage records and scratch selection. Refused reaches name their axis and target. Unsafe scratch settings name their key. Child scratch roots differ by worker and use a fixed name without xdist. Redirecting child environments preserves tempfile at the session root. Repeating a child redirect preserves the environment and existing files.
 """
 
 import dataclasses
@@ -12,6 +12,7 @@ import os
 import shutil
 import socket
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1199,8 +1200,6 @@ def test_a_negative_free_space_floor_is_refused_naming_the_key(tmp_path):
 
 
 def test_pointing_temp_at_the_root_twice_changes_nothing_more(tmp_path, monkeypatch):
-    import tempfile
-
     monkeypatch.setattr(tempfile, "tempdir", tempfile.tempdir)
     root = str((tmp_path / "scratch").resolve())
     environ = {"GIT_CEILING_DIRECTORIES": "/an/outer/ceiling"}
@@ -1209,7 +1208,6 @@ def test_pointing_temp_at_the_root_twice_changes_nothing_more(tmp_path, monkeypa
     assert os.path.isdir(root)
     assert tempfile.tempdir == root
     assert first["TMPDIR"] == root
-    # A nested session inherits the root rather than reading its own config.
     assert first[_SCRATCH_VAR] == root
     assert first["GIT_CEILING_DIRECTORIES"] == os.pathsep.join(
         ["/an/outer/ceiling", root]
@@ -1217,3 +1215,48 @@ def test_pointing_temp_at_the_root_twice_changes_nothing_more(tmp_path, monkeypa
     ig.point_temp_at(root, environ)
     assert environ == first
     assert sorted(os.listdir(str(tmp_path))) == ["scratch"]
+
+
+def test_child_scratch_roots_are_distinct_per_worker(tmp_path):
+    roots = [
+        ig.child_scratch_root(str(tmp_path), {"PYTEST_XDIST_WORKER": worker})
+        for worker in ("gw0", "gw1", "gw12")
+    ]
+    assert len(set(roots)) == 3
+    assert [Path(root).name for root in roots] == [
+        "children-gw0",
+        "children-gw1",
+        "children-gw12",
+    ]
+    assert all(Path(root).parent == tmp_path for root in roots)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_process_without_a_worker_has_a_fixed_child_root(tmp_path):
+    root = ig.child_scratch_root(str(tmp_path), {})
+    assert root == str(tmp_path / "children-main")
+    assert root != ig.child_scratch_root(str(tmp_path), {"PYTEST_XDIST_WORKER": "gw0"})
+
+
+@pytest.mark.parametrize("worker", [None, "gw0", "gw3"])
+def test_pointing_children_at_the_root_twice_leaves_tempfile_untouched(
+    tmp_path, monkeypatch, worker
+):
+    session = str(tmp_path / "session")
+    monkeypatch.setattr(tempfile, "tempdir", session)
+    environ = {"GIT_CEILING_DIRECTORIES": "/kept", "UNRELATED": "kept"}
+    if worker is not None:
+        environ["PYTEST_XDIST_WORKER"] = worker
+    before = dict(environ)
+    child = ig.child_scratch_root(session, environ)
+    ig.point_children_at(session, environ)
+    assert Path(child).is_dir()
+    assert tempfile.gettempdir() == session
+    assert environ == {**before, "TMPDIR": child, _SCRATCH_VAR: child}
+    first = dict(environ)
+    (Path(child) / "kept.txt").write_text("evidence", encoding="utf-8")
+    ig.point_children_at(session, environ)
+    assert environ == first
+    assert tempfile.gettempdir() == session
+    assert sorted(Path(session).iterdir()) == [Path(child)]
+    assert (Path(child) / "kept.txt").read_text(encoding="utf-8") == "evidence"

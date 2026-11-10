@@ -2,12 +2,12 @@
 title: Integration — MCP servers (Q&A + action)
 kind: tests
 layer: backend
-summary: The thin MCP servers expose schema'd tools that delegate to wiki_navigator and a jobs doer; the action tool defaults to dry-run. A refused corpus.served_visibilities value reaches the MCP client naming the read checkout's folder, config/project.json and key without an absolute host path, and makes no model call. All retrieval refusals, including a missing checkout through public answer, name the checkout folder without a host path and make no model call. Invalid corpus, config and selector cases exercise each diagnostic source. Another project's corpus is answered against that project's own files, never this checkout's: once its README.md states confidential, the node its corpus serves is neither cited nor sent. Each wiki_answer is held to the server's approved model-call count, config/project.json `agents.max_model_calls` read by configured_cap: a count of 0, the default and the shipped value, answers with a tool error naming the key and makes no model call, a FakeModel subclass in models.registry._REGISTRY counting the calls. The Q&A server's `main` reads that count from the root it is given: under a root that approves one call a question reaches the model once, which the 0 this checkout ships would refuse. Each server's entry `main` turns a refused setting (a serve limit out of its bound, a blank KEEL_MCP_MODEL) into exit CONFIG through the exit helper with the key on stderr, before it caps memory or serves. Each server's `main` refuses a tool limit (config/project.json `agents.tool_timeout_seconds`) as CONFIG the same way, and hands its root's tool limits to the child it starts: under a 64-byte `agents.tool_max_output_bytes` the action server's dry-run index build, and the Q&A server's corpus query for a question, are each a tool error naming that key, the question with no model call made.
+summary: Exercises the Q&A and action MCP servers through their tools and entry functions. Tools delegate to the configured retrieval and jobs implementations. The action tool defaults to dry-run. Retrieval uses the requested checkout's files and visibility rules. Diagnostic assertions reject the absolute session scratch root. Retrieval refusals make no model call. Approved model-call counts bound Q&A requests. Entry functions report refused settings as CONFIG before serving. Both servers enforce the selected root's tool limits.
 """
 
 import json
-import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -187,7 +187,7 @@ def test_qa_retrieval_refusals_name_the_checkout_without_a_host_path(
     if fault == "config-conflict":
         assert "rc=2" in text and "merge-conflict hunk" in text
     assert _Counted.prompts == []
-    assert os.environ["KEEL_TEST_SCRATCH"] not in text
+    assert tempfile.gettempdir() not in text
     assert str(tmp_path) not in text
     assert "read-checkout" in text
 
@@ -218,7 +218,7 @@ def test_public_answer_root_refusals_hold_no_host_path(
     text = str(caught.value)
     assert message in text
     assert _Counted.prompts == []
-    assert os.environ["KEEL_TEST_SCRATCH"] not in text
+    assert tempfile.gettempdir() not in text
     assert str(tmp_path) not in text
     assert str(_ROOT) not in text
     assert name in text
@@ -244,7 +244,7 @@ def test_qa_refused_served_levels_name_the_checkout_without_a_host_path(
     text = result["content"][0]["text"]
     assert "corpus.served_visibilities" in text
     assert "read-checkout/config/project.json" in text
-    assert os.environ["KEEL_TEST_SCRATCH"] not in text
+    assert tempfile.gettempdir() not in text
     assert str(tmp_path) not in text
     assert _Counted.prompts == []
 

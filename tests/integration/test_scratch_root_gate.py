@@ -2,7 +2,7 @@
 title: Integration — test scratch lives under the configured root, never the system temporary directory
 kind: tests
 layer: n/a
-summary: The session's basetemp is under config/project.json `tests.scratch_root` (or `KEEL_TEST_SCRATCH` over it), with `~` expanded, and not under the system temporary directory, which a child computes with TMPDIR, TEMP and TMP removed so the moved values cannot hide it. `tempfile.gettempdir()`, TMPDIR and the hermetic git config directory point there too, so a child and an import-time temporary directory follow. A nested session in a scratch project of its own leaves no per-test directory after a pass and keeps the failing test's directory, named after it, with the file it wrote; a nested session given no root inherits this one through KEEL_TEST_SCRATCH and never makes its own project's configured root; a root under the system temporary directory or inside the checkout stops pytest before any test runs (exit 4), naming the key, and is never created. A root that holds the checkout is accepted, and a test that writes into the checkout under it still fails, leaving nothing there. A session given no variable takes `tests.memory_scratch_root` with `-<uid>` appended when its parent exists, naming it `(memory)` in the `scratch:` header line and never making the disk root, and falls back to `tests.scratch_root` when the parent is missing, naming why.
+summary: Checks that session basetemp, tempfile and hermetic git scratch use the selected session root. TMPDIR and KEEL_TEST_SCRATCH name this test-running process's child root. Nested serial and xdist sessions place basetemp under that child root. A passing nested session removes its test directory. A failing nested session keeps its named directory and evidence. Unsafe roots stop pytest before tests run. A root containing the checkout leaves checkout writes refused. Memory scratch is preferred when usable. The scratch header explains a fallback to disk.
 """
 
 import glob
@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 from test_empty_selection import _SHIPPED
 
+import isolation_guard
 import script_copy
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +28,6 @@ from child_env import build_child_env  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
-_KEY = ("tests", "scratch_root")
 _TIMEOUT_KEY = ("tests", "child_timeout_seconds")
 # The variables tempfile reads before it falls back to the platform's own
 # directory; the outer session has moved them, so the child drops all three.
@@ -85,9 +85,8 @@ def child_timeout():
 
 
 def _configured_root():
-    """The real path config/project.json `tests.scratch_root` names, or the
-    variable over it, read through the loader."""
-    return os.path.realpath(os.path.expanduser(_setting(_KEY)))
+    """The session root selected before the child environment was redirected."""
+    return os.path.realpath(tempfile.gettempdir())
 
 
 def test_basetemp_is_under_the_scratch_root_and_not_the_system_temp(
@@ -103,8 +102,13 @@ def test_basetemp_is_under_the_scratch_root_and_not_the_system_temp(
 
 def test_tempfile_and_tmpdir_point_at_the_root():
     root = _configured_root()
-    assert os.path.realpath(tempfile.gettempdir()) == root
-    assert os.path.realpath(os.environ["TMPDIR"]) == root
+    child = isolation_guard.child_scratch_root(root, os.environ)
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main")
+    assert Path(child) == Path(root) / ("children-%s" % worker)
+    assert os.path.realpath(os.environ["TMPDIR"]) == child
+    assert os.path.realpath(os.environ["KEEL_TEST_SCRATCH"]) == child
+    with tempfile.TemporaryDirectory() as made:
+        assert Path(made).parent == Path(root)
 
 
 def test_the_hermetic_git_dir_is_under_the_root():
@@ -165,15 +169,27 @@ def test_a_passing_nested_session_leaves_no_test_dir_and_a_failing_one_keeps_its
     ], _numbered(scratch)
 
 
-def test_a_nested_session_given_no_root_inherits_this_one(tmp_path):
-    project = _project(tmp_path, {"test_green.py": _GREEN})
+@pytest.mark.parametrize("workers", [0, 2])
+def test_a_nested_session_given_no_root_uses_this_process_child_root(tmp_path, workers):
+    child = isolation_guard.child_scratch_root(_configured_root(), os.environ)
+    case = (
+        "import tempfile\nfrom pathlib import Path\nimport pytest\n\n"
+        "pytestmark = pytest.mark.unit\n\n"
+        "def test_child_root(tmp_path_factory):\n"
+        "    root = Path(tempfile.gettempdir()).resolve()\n"
+        "    assert root == Path(%r)\n"
+        "    basetemp = tmp_path_factory.getbasetemp().resolve()\n"
+        "    assert basetemp.relative_to(root).parts[0].startswith('pytest-of-')\n"
+        "    assert root != Path(%r)\n"
+    ) % (child, _configured_root())
+    project = _project(tmp_path, {"test_child_root.py": case})
     own = tmp_path / "own-configured-root"
     path = project / "config" / "project.json"
     manifest = json.loads(path.read_text(encoding="utf-8"))
     manifest["tests"]["scratch_root"] = str(own)
     path.write_text(json.dumps(manifest), encoding="utf-8")
     r = subprocess.run(
-        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider"],
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-n", str(workers)],
         cwd=str(project),
         env=build_child_env(extra={"PYTHONPATH": "src:."}),
         capture_output=True,

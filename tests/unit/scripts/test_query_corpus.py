@@ -2,13 +2,13 @@
 title: Unit — query_corpus retrieval (stems and excerpts)
 kind: tests
 layer: n/a
-summary: query_corpus scores a node by query-token overlap, and before this two things made it miss: tokens were compared verbatim, so `idempotency` found nothing while `idempotent` found eight nodes; and only tags, title and summary were read, so a term that lives in the body was invisible. Tokens are now lightly stemmed on both sides and the body excerpt counts, below the title and summary, so a body-only match never outranks a summary match. A node at a level outside config/project.json corpus.served_visibilities, or that states none, is cut before scoring, so it is neither a hit nor a neighbour, and the CLI reads the configured list. A served node the CLI prints names no hidden node in its links, children or parent: a public doc linking to a confidential one, built by the real build_corpus and link_corpus, prints neither the confidential doc's id nor its title. A node whose file under `--root` now states a stricter level is not printed either: in the reviewer's repro, `docs/pubguide.md` reclassified after the build in each of tests/reclassify.py's ways, neither its node nor its id in a served doc's links is printed, the script's own checkout set apart from `--root` so a CLI that ignores `--root` is red, and stderr counts the withheld nodes, never a node the corpus itself hides; the other tests write each node's file stating its corpus level. The root is derived from the corpus, never chosen beside it, in the reviewer's repros: checkout `a` made its guide confidential without rebuilding its corpus, `b` is a copy taken before, `c` holds only the guide and another folder only a README.md. a's corpus, named from inside b, is read with a's files and withholds the guide; b's corpus, named by a relative path from inside b, serves it; `c` and the README folder keep no corpus, so `--root` there prints `[]` and names where the corpus would be; `--root b` beside a's corpus, a copy of a's corpus outside some checkout's wiki/corpus.json, and the README folder's wiki/corpus.json named with `--corpus`, which does not exist, are refused with USAGE and nothing printed; a root that does not exist is refused with USAGE naming its folder. All diagnostic paths name the checkout folder and relative file without its absolute host path, including OS exception filenames and successful empty-corpus warnings. b's wiki/ made a symlink to a's is b's corpus, read with b's files, since the checkout is worked out from the path as written. A corpus that parses but is not the shape query_corpus reads (`nodes` not a list, a node not an object, a field it reads of the wrong type), or one nested too deeply to parse, is refused with USAGE as an unparseable one is, naming the fault, where each once ended in a traceback.
+summary: Exercises query_corpus scoring with stems and body excerpts. Visibility rules remove hidden nodes and references to them. Retrieval reads the corpus checkout's current files. Reclassified documents disappear from answers without rebuilding the corpus. Invalid corpus shapes and selectors are refused with USAGE. Diagnostic assertions reject the absolute session scratch root. Diagnostic paths identify the checkout folder and relative file.
 """
 
 import json
-import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -569,7 +569,7 @@ def test_config_read_refusal_names_the_checkout(tmp_path, capsys, fault):
     assert captured.out == ""
     assert tmp_path.name in captured.err and "config/project.json" in captured.err
     assert str(tmp_path) not in captured.err
-    assert os.environ["KEEL_TEST_SCRATCH"] not in captured.err
+    assert tempfile.gettempdir() not in captured.err
 
 
 def test_corpus_oserror_does_not_repeat_the_host_path(tmp_path, capsys):
@@ -583,4 +583,4 @@ def test_corpus_oserror_does_not_repeat_the_host_path(tmp_path, capsys):
     assert f"{tmp_path.name}/wiki/corpus.json" in captured.err
     assert "Is a directory" in captured.err
     assert str(tmp_path) not in captured.err
-    assert os.environ["KEEL_TEST_SCRATCH"] not in captured.err
+    assert tempfile.gettempdir() not in captured.err

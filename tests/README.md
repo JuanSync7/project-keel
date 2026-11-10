@@ -6,10 +6,10 @@ status: template
 owner: TBD
 public_api: none
 tags: []
-summary: Unit tests mirror src/; integration/e2e/smoke go by scenario.
+summary: Unit tests mirror src/. Integration, e2e and smoke tests go by scenario. Nested sessions inherit a scratch directory for each test-running process.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-11-07
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -62,9 +62,16 @@ changes directory to `tmp_path` first. `docs/adr/keel/K-0024-what-a-test-may-rea
 
 ## Where test scratch lives
 
-`conftest.py` points tempfile, `TMPDIR` and pytest's numbered basetemp at
-the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` mebibytes (MiB) free, and the directory is this user's with mode 0700; else `tests.scratch_root`. A nested pytest a test
-starts inherits the root through `KEEL_TEST_SCRATCH`. Memory comes first
+`conftest.py` points tempfile and pytest's numbered basetemp at
+the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` mebibytes (MiB) free, and the directory is this user's with mode 0700; else `tests.scratch_root`. A session-scoped autouse fixture gives each test-running
+process a child scratch directory under the session root. The directory is named
+`children-<worker-id>` for an xdist worker. It is named `children-main` without
+xdist. The fixture points `TMPDIR` and `KEEL_TEST_SCRATCH` at that directory for
+children to inherit. It restores both variables at teardown. Fixed names avoid
+accumulating directories across runs. Separate directories prevent sibling nested
+pytest sessions from racing over `pytest-current` cleanup in a shared
+`pytest-of-<user>` directory. In-process readers use `tempfile.gettempdir()` for
+the session root. Memory comes first
 because test scratch is thrown away within seconds and needs no durability. A
 host without the parent, with too little free, with a parent others may
 write without the sticky bit, or with a directory that is not this user's
@@ -81,9 +88,8 @@ named after the test, and removes a passed one's.
 
 `make test`, and so `make verify`, passes pytest-xdist `-n auto`, and
 `conftest.py` answers xdist's count with `tests.workers` (read by
-`isolation_guard.py` `worker_count`); 0 runs the suite in one process. A tier
-target, a direct `pytest` and a nested session pass no `-n`, so they stay in
-one process. Each worker judges its own tests' reaches. The unused-exemption
+`isolation_guard.py` `worker_count`); 0 runs the suite in one process. A tier target passes no `-n`, so it stays in one process. A direct
+`pytest` call or a nested session uses the caller's `-n` choice. Each worker judges its own tests' reaches. The unused-exemption
 check needs every test that ran, so a worker hands its record (`usage`) to the
 controller when it ends, the controller adds the records up (`merge_usage`)
 and judges once; a worker that ended without its record, such as one that

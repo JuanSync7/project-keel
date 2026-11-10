@@ -1,6 +1,6 @@
 """
 title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard + the expiring-tier recorder
-summary: Repo-wide fixtures; the `--expiring-tier-record PATH` option, which makes every scripts/expiring_tier.py `judge` of the session keep the finding lines it was handed and writes them to PATH as canonical JSON when the session ends, for scripts/record_gate_baseline.py; the test scratch root, KEEL_TEST_SCRATCH, else config/project.json `tests.memory_scratch_root` when the host's memory can hold it, else `tests.scratch_root`, which tempfile, TMPDIR, pytest's basetemp and the hermetic git directory are pointed at before anything else is made, and which the `scratch:` header line names with why memory was passed over (see tests/isolation_guard.py `choose_scratch` for the choice and what is refused); the one place the suite's git environment is neutralised and the parent's git repository context and injected git configuration removed (see tests/hermetic_git.py for what is neutralised and why); the isolation guard, which fails a test that reaches the network, the disk or a store outside its tier's rule in config/project.json `tests.isolation`, and the store_copy fixture that hands a test its own copy of a listed store (see tests/isolation_guard.py for the judgement); and the end-of-session guard that fails a run in which zero tests ran (see tests/selection_guard.py for the verdict).
+summary: Selects the session scratch root before test imports. tempfile, pytest basetemp and the hermetic git directory use that root. A session autouse fixture directs each test-running process's child environment to its own fixed scratch directory. The fixture restores the changed environment variables at teardown. The xdist controller keeps the session root in the environment it hands its workers. The isolation guard fails tests that reach outside their tier rules. store_copy supplies private copies of listed stores. The selection guard fails runs in which zero tests ran. The expiring-tier recorder writes requested findings as canonical JSON.
 
 Shared pytest fixtures live here.
 
@@ -34,7 +34,7 @@ from child_env import build_child_env  # noqa: E402
 # Test scratch, at import: before pytest makes its basetemp (from
 # tempfile.gettempdir()), before the hermetic git directory below and the
 # isolation guard's roots are taken from tempfile, and before plumbum
-# snapshots os.environ, so every one of them, and every child, sees the root.
+# snapshots os.environ, so every one of them sees the session root.
 # A refused root raises here and pytest stops before any test runs (exit 4).
 _SCRATCH = isolation_guard.choose_scratch(_ROOT)
 isolation_guard.point_temp_at(_SCRATCH.path, os.environ)
@@ -84,6 +84,22 @@ hermetic_git.drop_config_injection(os.environ, _ROOT)
 # is never a run in which the exemption silently holds.
 _ISOLATION = isolation_guard.load_policy(_ROOT)
 isolation_guard.install(_ISOLATION)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def child_scratch():
+    """Give this test-running process's children their own scratch root and
+    restore the environment when the session ends."""
+    # The controller imports conftest before spawning workers. Moving the
+    # child environment at import would make workers inherit its child root
+    # as their session root instead of sharing the intended session root.
+    environ = dict(os.environ)
+    isolation_guard.point_children_at(_SCRATCH.path, environ)
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environ.items():
+            if os.environ.get(name) != value:
+                patch.setenv(name, value)
+        yield
 
 
 def pytest_report_header(config):
