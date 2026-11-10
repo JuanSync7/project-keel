@@ -2,7 +2,7 @@
 title: Eval scorers — the closed registry of deterministic judges
 layer: n/a
 public_api: no
-summary: SCORERS maps each scorer name (exact, contains, regex, json_fields) to a Scorer whose check_params refuses an unknown, missing or ill-typed parameter with ValueError and whose score(response, params) returns (passed, detail) without raising on any response text. It is the only place a scorer name is written in code; the case schema's scorer branches are held equal to it by tests/integration/test_evals_schema.py.
+summary: SCORERS maps each scorer name (exact, contains, regex, json_fields) to a Scorer whose check_params refuses an unknown, missing or ill-typed parameter with ValueError and whose score(response, params) returns (passed, detail) with ValueError on regex execution refusal. It is the only place a scorer name is written in code; the case schema's scorer branches are held equal to it by tests/integration/test_evals_schema.py.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+
+from scripts.bounded_match import match_values
 
 __all__ = ["SCORERS", "Scorer"]
 
@@ -23,7 +25,7 @@ _QUOTE = 60
 @dataclass(frozen=True)
 class Scorer:
     """One deterministic judge: its required parameter names, a validator for
-    them, and a scoring function that never raises on response text."""
+    them, and a scoring function that refuses an unjudgeable regex with ValueError."""
 
     name: str
     params: frozenset[str]
@@ -96,7 +98,13 @@ def _check_regex(params: Mapping[str, object]) -> None:
 
 
 def _score_regex(response: str, params: Mapping[str, object]) -> tuple[bool, str]:
-    if re.search(str(params["pattern"]), response) is not None:
+    try:
+        matched = match_values(
+            str(params["pattern"]), "regex.pattern", [response], "search"
+        )
+    except AssertionError as exc:
+        raise ValueError(str(exc)) from None
+    if matched[0]:
         return True, "matched"
     return False, "no match in %s" % _quote(response)
 

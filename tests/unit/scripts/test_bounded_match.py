@@ -17,7 +17,7 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("mode", ["search", "fullmatch"])
 @pytest.mark.parametrize("pattern", [r"[A-Z]+-\d+", r"(?i)^a.*z$"])
 def test_ordinary_matches_agree_with_re(pattern: str, mode: str) -> None:
-    bounded_match = importlib.import_module("bounded_match")
+    bounded_match = importlib.import_module("scripts.bounded_match")
     values = ["", "KEEL-12", "prefix KEEL-12 suffix", "aZ", "a\nz", "KEEL-12\n"]
     expected = [getattr(re.compile(pattern), mode)(v) is not None for v in values]
     assert (
@@ -27,7 +27,7 @@ def test_ordinary_matches_agree_with_re(pattern: str, mode: str) -> None:
 
 
 def test_empty_values_start_no_child(monkeypatch: pytest.MonkeyPatch) -> None:
-    bounded_match = importlib.import_module("bounded_match")
+    bounded_match = importlib.import_module("scripts.bounded_match")
 
     def unexpected(*args: Any, **kwargs: Any) -> None:
         pytest.fail("an empty batch started a child")
@@ -37,7 +37,7 @@ def test_empty_values_start_no_child(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_backtracking_refuses_within_bound_without_inputs() -> None:
-    bounded_match = importlib.import_module("bounded_match")
+    bounded_match = importlib.import_module("scripts.bounded_match")
     pattern, value = "^(a+)+$", "a" * 100 + "!"
     started = time.monotonic()
     with pytest.raises(AssertionError) as caught:
@@ -58,7 +58,7 @@ def test_backtracking_refuses_within_bound_without_inputs() -> None:
 def test_broken_child_refuses_without_inputs(
     monkeypatch: pytest.MonkeyPatch, returncode: int, output: str
 ) -> None:
-    bounded_match = importlib.import_module("bounded_match")
+    bounded_match = importlib.import_module("scripts.bounded_match")
 
     def reply(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args[0], returncode, output, "private")
@@ -76,7 +76,7 @@ def test_broken_child_refuses_without_inputs(
 def test_batch_uses_one_isolated_child_and_stdin_json(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bounded_match = importlib.import_module("bounded_match")
+    bounded_match = importlib.import_module("scripts.bounded_match")
     calls = []
     run = subprocess.run
 

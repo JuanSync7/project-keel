@@ -23,8 +23,8 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 import check_structure as cs  # noqa: E402
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
+from scripts.bounded_match import match_values  # noqa: E402
 
-from bounded_match import match_values  # noqa: E402
 from hermetic_git import git_env  # noqa: E402
 
 pytestmark = pytest.mark.integration

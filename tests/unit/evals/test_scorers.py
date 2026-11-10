@@ -5,8 +5,11 @@ layer: n/a
 summary: Every scorer in evals.SCORERS has a passing and a failing twin in one table held equal to the registry, so a scorer added without both twins, or a score() that always passes, is red; json_fields compares canonical JSON (true is not 1, 1 is not 1.0) and fails a response that is not a JSON object instead of raising; check_params refuses an unknown key, a missing key, an uncompilable or empty pattern, an empty substring, an expected value with surrounding whitespace or of the wrong type, and an empty field object.
 """
 
+import subprocess
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -110,3 +113,33 @@ def test_check_params_refuses_bad_params(name, params):
 def test_the_registry_is_read_only():
     with pytest.raises(TypeError):
         SCORERS["always"] = SCORERS["exact"]
+
+
+def test_regex_timeout_refuses_instead_of_scoring_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run = subprocess.run
+
+    def short_deadline(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        kwargs["timeout"] = 0.2
+        return run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", short_deadline)
+    scorer = SCORERS["regex"]
+    params = {"pattern": "(a+)+$"}
+    scorer.check_params(params)
+    started = time.monotonic()
+    with pytest.raises(ValueError, match="regex.pattern.*timeout"):
+        scorer.score("a" * 25 + "b", params)
+    assert time.monotonic() - started < 5
+
+
+def test_regex_child_failure_refuses_instead_of_scoring_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_child(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args[0], 1, "", "private")
+
+    monkeypatch.setattr(subprocess, "run", broken_child)
+    with pytest.raises(ValueError, match="regex.pattern.*nonzero"):
+        SCORERS["regex"].score("a response", {"pattern": "response"})

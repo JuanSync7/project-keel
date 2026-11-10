@@ -9,15 +9,12 @@ import sys
 from pathlib import Path
 from typing import List, Optional, cast
 
-_ROOT = str(Path(__file__).resolve().parents[1])
-_SCRIPTS = str(Path(_ROOT) / "scripts")
-if _SCRIPTS not in sys.path:
-    sys.path.insert(0, _SCRIPTS)
-
-import config_loader  # noqa: E402
-from child_env import build_child_env  # noqa: E402
+from scripts import config_loader
+from scripts.child_env import build_child_env
 
 __all__ = ["match_values"]
+
+_ROOT = str(Path(__file__).resolve().parents[1])
 
 _TIMEOUT = ("tests", "child_timeout_seconds")
 # Python's re cannot be interrupted in-process. One child amortizes startup
@@ -72,7 +69,7 @@ def match_values(
             input=json.dumps([pattern, values, mode]),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            universal_newlines=True,
             env=build_child_env(),
             timeout=timeout,
         )

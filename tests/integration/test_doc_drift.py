@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,7 @@ import exit_code_table  # noqa: E402
 import review_docs  # noqa: E402
 import traceability  # noqa: E402
 from child_env import build_child_env  # noqa: E402
+from scripts.bounded_match import match_values  # noqa: E402
 from test_e2e_coverage import EXEMPT_KEY  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -519,29 +521,48 @@ def check_citation_findings(docs, letters, names):
     return sorted(findings)
 
 
-def moment_and_host_findings(docs, policy, mention, port_root):
+def moment_and_host_findings(
+    docs: list[tuple[str, str]],
+    policy: dict[str, Any],
+    mention: re.Pattern[str],
+    port_root: Path,
+    *,
+    timeout: float | None = None,
+) -> list[str]:
     """Findings for rule (a) over *docs*: a concrete work id or a forbidden
     phrase in prose, or a loopback port in raw text that no non-Markdown file
     under *port_root* declares. Each finding is `relpath:line: message`."""
-    findings = []
-    ports = {}
+    findings: list[str] = []
+    ports: dict[str, list[tuple[str, int, str]]] = {}
+    prose = []
     for relpath, text in docs:
         for i, line in enumerate(cs._prose_lines(text), 1):
+            prose.append((relpath, i, line))
             findings.extend(
                 "%s:%d: names the work id %r in prose -- a slice id is history; "
                 "say what is true now, or move the text under doc_drift."
                 "history_paths" % (relpath, i, m.group(0))
                 for m in mention.finditer(line)
             )
-            for regex, reason in policy["forbidden_phrases"]:
-                m = regex.search(line)
-                if m:
-                    findings.append(
-                        "%s:%d: %r -- %s" % (relpath, i, m.group(0).strip(), reason)
-                    )
         for i, line in enumerate(text.split("\n"), 1):
             for m in _LOOPBACK_PORT.finditer(line):
                 ports.setdefault(m.group(1), []).append((relpath, i, m.group(0)))
+    for regex, reason in policy["forbidden_phrases"]:
+        matched = match_values(
+            regex.pattern,
+            "doc_drift.forbidden_phrases",
+            [line for _path, _number, line in prose],
+            "search",
+            timeout=timeout,
+        )
+        for (relpath, i, line), did_match in zip(prose, matched, strict=True):
+            if did_match:
+                # Only replay proven matches to retain the exact finding excerpt.
+                m = regex.search(line)
+                assert m is not None
+                findings.append(
+                    "%s:%d: %r -- %s" % (relpath, i, m.group(0).strip(), reason)
+                )
     declared, decode_findings = declared_ports(port_root, set(ports))
     findings.extend(decode_findings)
     for port in sorted(set(ports) - declared):
@@ -591,7 +612,9 @@ def never_shipped_docs(root):
     return excluded
 
 
-def shipped_sources(root, files=None):
+def shipped_sources(
+    root: Path, files: list[str] | None = None
+) -> tuple[list[tuple[str, str]], int]:
     """Return shipped source texts and the number of NUL-containing binaries.
 
     Plain sources replaced by template twins do not ship; twins are read raw.
@@ -614,8 +637,12 @@ def shipped_sources(root, files=None):
             not path.endswith(_TWIN_SUFFIX) and path + _TWIN_SUFFIX in files
         ):
             continue
+        try:
+            data = (Path(root) / path).read_bytes()
+        except FileNotFoundError:
+            # Git still lists a tracked path deleted by an uncommitted move.
+            continue
         shipped_count += 1
-        data = (Path(root) / path).read_bytes()
         if b"\0" in data:
             binary_count += 1
             continue
@@ -2297,3 +2324,32 @@ def test_non_ascii_utf8_and_nul_binaries_are_not_decode_findings(
         )
         == []
     )
+
+
+def test_forbidden_backtracking_refuses_within_deadline(tmp_path: Path) -> None:
+    pattern, value = "(a+)+$", "a" * 100 + "b"
+    policy = drift_policy(
+        {
+            "doc_drift": {
+                "history_paths": ["history/"],
+                "forbidden_phrases": {pattern: "a reason"},
+            }
+        }
+    )
+    started = time.monotonic()
+    with pytest.raises(AssertionError, match="doc_drift.forbidden_phrases.*timeout"):
+        moment_and_host_findings(
+            [("guide.md", value)],
+            policy,
+            re.compile("never"),
+            tmp_path,
+            timeout=0.2,
+        )
+    assert time.monotonic() - started < 5
+
+
+def test_shipped_sources_ignores_deleted_tracked_paths(exclusion_tree: Path) -> None:
+    (exclusion_tree / "guide.md").write_text("Current content.\n", encoding="utf-8")
+    sources, binaries = shipped_sources(exclusion_tree, ["deleted.py", "guide.md"])
+    assert [path for path, _text in sources] == ["guide.md"]
+    assert binaries == 0
