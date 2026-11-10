@@ -9,7 +9,10 @@ import json
 import re
 import shlex
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+from string import Formatter
+from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[1]
 _SCRIPTS = str(_ROOT / "scripts")
@@ -116,9 +119,49 @@ def chosen(root):
     )
 
 
-def marker(root, name):
+def _fill_template(key: str, template: str, fields: Mapping[str, object]) -> str:
+    """Fill only bare allowed fields, or refuse with a repair and no template text."""
+    repair = (
+        "; allowed fields: %s; repair %s using literal text, escaped braces "
+        "and bare named fields only" % (", ".join(sorted(fields)), key)
+    )
+    try:
+        parsed = list(Formatter().parse(template))
+    except ValueError:
+        raise AssertionError("%s: malformed braces%s" % (key, repair)) from None
+    rendered, canonical = [], []
+    for literal, field, spec, conversion in parsed:
+        rendered.append(literal)
+        canonical.append(literal.replace("{", "{{").replace("}", "}}"))
+        if field is None:
+            continue
+        cause = ""
+        if not field or field.isdecimal():
+            cause = "positional fields are not allowed"
+        elif "." in field or "[" in field:
+            cause = "attribute and index access are not allowed"
+        elif field not in fields:
+            cause = "unknown field"
+        elif conversion is not None:
+            cause = "conversions are not allowed"
+        elif spec:
+            cause = "format specs are not allowed"
+        if cause:
+            raise AssertionError("%s: %s%s" % (key, cause, repair))
+        rendered.append(str(fields[field]))
+        canonical.append("{%s}" % field)
+    # parse gives {name:} the same empty spec as {name}; rebuilding bare
+    # fields distinguishes them while preserving escaped literal braces.
+    if "".join(canonical) != template:
+        raise AssertionError("%s: format specs are not allowed%s" % (key, repair))
+    return "".join(rendered)
+
+
+def marker(root: Path, name: str) -> str:
     """The exact line an adapter file keel wrote carries."""
-    return pipeline(root)["marker"].format(adapter=name)
+    return _fill_template(
+        "ci_pipeline.marker", pipeline(root)["marker"], {"adapter": name}
+    )
 
 
 def _scalar(value):
@@ -366,7 +409,7 @@ def _load(path, *, github=False):
     return doc, top, node, None
 
 
-def gitlab_document(root):
+def gitlab_document(root: Path) -> dict[str, Any]:
     """The .gitlab-ci.yml keel ships under *root*, as YAML reads it: the
     `test` job's image is `ci_pipeline.gitlab_image` filled from `toolchain`,
     its script the configured steps, and `GIT_DEPTH` is "0" for the same
@@ -380,7 +423,9 @@ def gitlab_document(root):
     return {
         "variables": {"GIT_DEPTH": "0"},
         "test": {
-            "image": block["gitlab_image"].format(**toolchain),
+            "image": _fill_template(
+                "ci_pipeline.gitlab_image", block["gitlab_image"], toolchain
+            ),
             "script": [gitlab_line(step) for step in block["steps"]],
         },
     }
