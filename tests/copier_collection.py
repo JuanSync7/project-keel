@@ -30,7 +30,9 @@ class CopierProbe(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> None:
         if fullname != "copier" and not fullname.startswith("copier."):
             return
-        frame: FrameType | None = sys._getframe()  # noqa: TID251 -- attribute the actual import stack, independently of source syntax
+        # Walk the real import stack, so the importer is named whatever syntax
+        # the import used.
+        frame: FrameType | None = sys._getframe()
         importer = "<unknown>"
         while frame is not None:
             source = Path(frame.f_code.co_filename).resolve()

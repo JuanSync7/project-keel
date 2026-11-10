@@ -287,6 +287,16 @@ def test_keels_run_make_target_carries_resource_limits_and_starts(tmp_path):
 # data. Function and source anchors survive line movement; duplicate sites fail.
 _COPY_EXEMPTIONS = {
     (
+        "integration/test_copier_generator_contract.py",
+        "test_runtime_collection_rejects_a_real_module_bypass",
+        "_ROOT / 'tests'",
+    ): "The case collects keel's whole real tests/ tree with one module edited. copy_with_imports copies only listed files and what they import, so a test module nothing imports would be missing from the collection under test.",
+    (
+        "integration/test_copier_generator_contract.py",
+        "test_runtime_collection_rejects_a_real_module_bypass",
+        "source",
+    ): "Every other top-level entry of the checkout is linked, not copied, so collection reads the real conftest, config and scripts and the edited tests/ copy is the only difference from the real tree.",
+    (
         "integration/test_ignore_patterns.py",
         "test_every_ignored_name_is_ignored_as_a_symlink",
         "tmp_path / 'repo' / plain_names(text)[0]",
