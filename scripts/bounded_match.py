@@ -9,8 +9,15 @@ import sys
 from pathlib import Path
 from typing import List, Optional, cast
 
-from scripts import config_loader
-from scripts.child_env import build_child_env
+# Hook callers use bare sibling imports; package callers need the same path
+# without relying on the working directory. The floor gate follows these imports.
+_SCRIPTS = str(Path(__file__).resolve().parent)
+if _SCRIPTS not in sys.path:
+    sys.path.insert(0, _SCRIPTS)
+
+# Mypy cannot resolve the runtime scripts/ path used by hook sibling imports.
+import config_loader  # type: ignore[import-not-found]  # noqa: E402
+from child_env import build_child_env  # type: ignore[import-not-found]  # noqa: E402
 
 __all__ = ["match_values"]
 

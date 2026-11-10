@@ -186,7 +186,7 @@ import re
 import shlex
 import sys
 import tokenize
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Pattern, Tuple, cast
 from urllib.parse import unquote
 
 # The allowlist's owner is scripts/child_env.py, beside this file; reading its
@@ -195,6 +195,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+# Mypy cannot resolve the runtime scripts/ path used by hook sibling imports.
+import bounded_match  # type: ignore[import-not-found]  # noqa: E402
 import changed_cache  # noqa: E402
 import child_env  # noqa: E402
 import child_exec  # noqa: E402
@@ -3628,10 +3630,24 @@ def _compile_grep(pattern, flags, where):
     )
 
 
+def _grep_matches(compiled: Pattern[str], lines: List[str], where: str) -> List[bool]:
+    """Match one grep's whole batch under the shared child deadline."""
+    pattern = compiled.pattern
+    if compiled.flags & re.IGNORECASE:
+        pattern = "(?i)" + pattern
+    return cast(
+        List[bool],
+        bounded_match.match_values(
+            pattern, "%s: help recipe grep pattern" % where, lines, "search"
+        ),
+    )
+
+
 def _help_parity_findings(makefiles):
     """makefiles: ordered [(relpath, text)] — the root Makefile then its includes,
-    i.e. what `$(MAKEFILE_LIST)` would hold. Returns (errs, warns). Pure; the
-    walk and include resolution are check_P's.
+    i.e. what `$(MAKEFILE_LIST)` would hold. Returns (errs, warns); the walk
+    and include resolution are check_P's. Each grep searches its batch in
+    one deadline-bounded child; a child failure is an error, never parity.
 
     Silent when no makefile declares a `help` target (nothing lists the
     annotations, so nothing can hide one). WARNs, never errs, for every shape
@@ -3651,6 +3667,7 @@ def _help_parity_findings(makefiles):
             break
     if recipe is None:
         return errs, warns
+    assert help_in is not None
     unverified = "%s: help parity unverified -- " % help_in
     greps = [
         (
@@ -3716,20 +3733,30 @@ def _help_parity_findings(makefiles):
             "check the pattern with the recipe's grep dialect"
         )
         return errs, warns
+    targets = []
     for relpath, text in makefiles:
-        where = "" if relpath == help_in else " (in %s)" % help_in
         for lineno, line in enumerate(text.split("\n"), 1):
             m = _ANNOTATED_TARGET.match(line)
-            if not m or listed.search(line):
-                continue
-            if any(x.search(line) for x in hidden_on_purpose):
-                continue  # the author's own `grep -v` hides it; that is a choice
-            errs.append(
-                "%s:%d: target '%s' carries a '## ' help annotation but the help "
-                "recipe's grep pattern%s does not match it, so 'make help' hides "
-                "it -- widen the pattern%s (or drop the annotation)"
-                % (relpath, lineno, m.group(1), where, where and " in " + help_in)
-            )
+            if m:
+                targets.append((relpath, lineno, line, m.group(1)))
+    try:
+        matches = _grep_matches(listed, [t[2] for t in targets], help_in)
+        missed = [t for i, t in enumerate(targets) if not matches[i]]
+        for exclusion in hidden_on_purpose:
+            matches = _grep_matches(exclusion, [t[2] for t in missed], help_in)
+            missed = [t for i, t in enumerate(missed) if not matches[i]]
+    except AssertionError as exc:
+        # A child without a verdict cannot establish help parity.
+        errs.append(str(exc))
+        return errs, warns
+    for relpath, lineno, _line, target in missed:
+        where = "" if relpath == help_in else " (in %s)" % help_in
+        errs.append(
+            "%s:%d: target '%s' carries a '## ' help annotation but the help "
+            "recipe's grep pattern%s does not match it, so 'make help' hides "
+            "it -- widen the pattern%s (or drop the annotation)"
+            % (relpath, lineno, target, where, where and " in " + help_in)
+        )
     return errs, warns
 
 
@@ -6381,11 +6408,14 @@ def _guard_findings(makefiles, unattended):
             ]
         missing = []
         for var in unattended:
+            # Escape here so callers need no identifier precondition to keep
+            # a configured name from changing the regex's meaning.
+            literal = re.escape(var)
             spellings = (
-                r"\$\(%s\)" % var,
-                r"\$\{%s\}" % var,
-                r"\$\$%s(?![A-Za-z0-9_])" % var,
-                r"\$\$\{%s\}" % var,
+                r"\$\(%s\)" % literal,
+                r"\$\{%s\}" % literal,
+                r"\$\$%s(?![A-Za-z0-9_])" % literal,
+                r"\$\$\{%s\}" % literal,
             )
             if not any(re.search(s, body) for s in spellings):
                 missing.append(var)

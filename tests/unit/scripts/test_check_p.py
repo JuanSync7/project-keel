@@ -5,6 +5,7 @@ layer: n/a
 summary: check_P errors when a Makefile target carries a `## ` help annotation that the `help` recipe's own grep pattern cannot match, because that target is then invisible to `make help` while looking documented. The live instance was `e2e` — hidden for as long as it existed because the recipe's character class `[a-zA-Z_-]` has no digits. The check reads the recipe's pattern out of the Makefile rather than restating it, so it can never agree with a wrong pattern by construction; a recipe it cannot read is a stated WARN, never a silent pass.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import cast
@@ -168,6 +169,52 @@ def test_help_pattern_fault_is_a_config_exit(
     message = capsys.readouterr().err
     assert "Makefile" in message and "help" in message and "pattern" in message
     assert "repair" in message and "HOSTILE" not in message
+
+
+@pytest.mark.parametrize("excluded", [False, True], ids=["select", "exclude"])
+def test_help_backtracking_is_an_error_within_deadline(
+    repo: Path, *, excluded: bool
+) -> None:
+    pattern = "^(a+)+$"
+    text = "help:\n\t@grep -E '%s' $(MAKEFILE_LIST)%s\n" % (
+        "^never" if excluded else pattern,
+        " | grep -v '%s'" % pattern if excluded else "",
+    )
+    (repo / "Makefile").write_text(
+        text + "include rules.mk\n" + "a" * 100 + ": ## hidden\n", encoding="utf-8"
+    )
+    (repo / "rules.mk").write_text("b: ## second\nc: ## third\n", encoding="utf-8")
+    # An outer child also bounds the regression when the gate matches in-process.
+    code = """
+import sys
+sys.path.insert(0, 'scripts')
+import bounded_match
+import check_structure as cs
+match_values = bounded_match.match_values
+calls = []
+def short_match(*args, **kwargs):
+    calls.append(len(args[2]))
+    kwargs['timeout'] = 0.2
+    return match_values(*args, **kwargs)
+bounded_match.match_values = short_match
+cs.CHECKS = [('P', cs.check_P)]
+found = cs.run_checks(sys.argv[1], project_checks=False)
+assert len(found) == 1, found
+letter, tier, message = found[0]
+assert (letter, tier) == ('P', 'error'), found
+assert 'Makefile' in message and 'help' in message, found
+assert 'timeout' in message and 'repair' in message, found
+assert calls == ([3, 3] if sys.argv[2] == 'True' else [3]), calls
+"""
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", code, str(repo), str(excluded)],
+        cwd=_ROOT,
+        capture_output=True,
+        text=True,
+        env=cs.child_env.build_child_env(),
+        timeout=5,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_posix_character_classes_in_the_recipe_are_understood():

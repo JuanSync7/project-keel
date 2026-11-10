@@ -10,6 +10,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Callable, cast
 
 import pytest
 
@@ -460,6 +461,27 @@ def test_a_guard_that_misses_a_configured_refusal_errors(repo, guard, missing):
 )
 def test_every_spelling_of_a_variable_counts(repo, guard):
     assert _run(repo, guard + "check: ## [local] c\n\tc\n") == ([], [])
+
+
+@pytest.mark.parametrize("spelling", ["$(%s)", "${%s}", "$$%s", "$${%s}"])
+def test_unattended_variable_names_cannot_change_the_regex(spelling: str) -> None:
+    guard_findings = cast(
+        Callable[[list[tuple[str, str]], list[str]], tuple[str | None, list[str]]],
+        cs._guard_findings,
+    )
+    guard = (
+        "WRITE_GUARD = "
+        + _CLAUSE
+        + '@if [ -n "'
+        + spelling % "CI"
+        + '" ]; then exit 1; fi\n'
+    )
+    _, errs = guard_findings([("Makefile", guard)], ["CI", "C."])
+    assert len(errs) == 1 and "misses C." in errs[0], errs
+    # The unbraced shell form only permits identifiers, so it has no literal control.
+    if spelling != "$$%s":
+        literal = guard.replace(spelling % "CI", spelling % "C.")
+        assert guard_findings([("Makefile", literal)], ["C."]) == ("Makefile", [])
 
 
 @pytest.mark.parametrize(
