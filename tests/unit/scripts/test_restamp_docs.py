@@ -299,10 +299,10 @@ def test_the_writer_and_the_judge_share_one_clock():
 
 
 def test_the_target_is_never_earlier_than_the_last_commit():
-    """The judge's first rule is `updated:` >= the date of the file's last
-    commit, read from git, not from the writer's clock. A writer that stamped
-    only its own today left a committed-stale document stale whenever that
-    today was behind the commit (a pinned SOURCE_DATE_EPOCH, or a committer
+    """The judge's first rule is `updated:` >= the author date of the file's
+    last commit, read from git, not from the writer's clock. A writer that
+    stamped only its own today left a committed-stale document stale whenever
+    that today was behind the commit (a pinned SOURCE_DATE_EPOCH, or an author
     timezone ahead of UTC), and `--check` then passed a red gate (measured)."""
     today = datetime.date(2026, 1, 1)
     assert restamp_docs.target_date(today, None) == today

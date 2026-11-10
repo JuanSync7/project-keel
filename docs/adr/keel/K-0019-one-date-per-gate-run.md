@@ -123,7 +123,7 @@ Two other gate rules were weaker than their own documents said.
   untouched: a committed document's stamp is still compared with the date git
   recorded (the author date under `docs/guides/doc-style.md §7`). Only the test
   suite's own commits take their date from the variable (decision 9), and a
-  test that sets `GIT_COMMITTER_DATE` itself still wins.
+  test that sets `GIT_AUTHOR_DATE` itself still wins.
 - **The suite's commits share a moment.** Under every `make verify` the
   variable is set, so the commits made under one git environment carry the
   second it was built at. A test that needs commits in a date order sets its

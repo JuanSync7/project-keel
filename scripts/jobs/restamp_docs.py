@@ -149,12 +149,12 @@ def target_date(today, last_commit):
     if last_commit is None:
         return today
     if not review_docs.ISO_DATE.match(last_commit):
-        raise RestampError("git commit date %r is not an ISO date" % last_commit)
+        raise RestampError("git author date %r is not an ISO date" % last_commit)
     try:
         committed = datetime.datetime.strptime(last_commit, "%Y-%m-%d").date()
     except ValueError as exc:
         raise RestampError(
-            "git commit date %r is not a calendar date" % last_commit
+            "git author date %r is not a calendar date" % last_commit
         ) from exc
     return max(today, committed)
 
@@ -355,7 +355,7 @@ def pending(root, today, errors=None, skipped=None):
     listed; when *errors* is a list, (path, reason) is appended to it instead.
     A conflicted document and its twin are not listed either; when *skipped*
     is a list, (path, reason) is appended to it. Raises RestampError on a
-    malformed commit date, as a run would."""
+    malformed author date, as a run would."""
     rows = []
     work = worklist(root, today, skipped)
     targets = _confined_targets(root, work)
