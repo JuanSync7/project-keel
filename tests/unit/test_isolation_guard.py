@@ -2,7 +2,7 @@
 title: Unit — the isolation guard judges each reach by the test's tier
 kind: tests
 layer: n/a
-summary: Exercises the isolation guard's policy, event classification, store copies, usage records and scratch selection. Refused reaches name their axis and target. Unsafe scratch settings name their key. Child scratch roots differ by worker and use a fixed name without xdist. Redirecting child environments preserves tempfile at the session root. Repeating a child redirect preserves the environment and existing files. The child environment context restores both set and unset variables on exit.
+summary: Exercises the isolation guard's policy, event classification, store copies, usage records and scratch selection. Refused reaches name their axis and target. Unsafe scratch settings name their key. Child scratch roots differ by worker and use a fixed name without xdist. Redirecting child environments preserves tempfile at the session root. Repeating a child redirect preserves the environment and existing files. The child environment context restores both set and unset variables on exit and preserves tempfile's cached object and resolved directory after exit.
 """
 
 import dataclasses
@@ -1285,3 +1285,14 @@ def test_children_environment_restores_prior_values(
 
     for name, value in prior.items():
         assert os.environ.get(name) == value
+
+
+def test_children_environment_leaves_tempfile_unchanged_after_exit(tmp_path):
+    before_tempdir = tempfile.gettempdir()
+    before_cached = tempfile.tempdir
+
+    with ig.children_environment(str(tmp_path)):
+        assert Path(os.environ["TMPDIR"]).is_dir()
+
+    assert tempfile.tempdir is before_cached
+    assert tempfile.gettempdir() == before_tempdir
