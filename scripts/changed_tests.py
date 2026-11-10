@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: Changed-tests loop — rerun recorded failures with a checkout-local cache
-summary: test-changed uses pytest's --lf selection, running all selected tests on a cold cache. Refuses a disabled cacheprovider before collection and validates tests.cache_dir through the same function check_H uses. --help describes the loop; other arguments pass to pytest. Never gate evidence.
+summary: test-changed uses pytest's --lf selection, running all selected tests on a cold cache. Refuses a disabled cacheprovider before collection and validates tests.cache_dir for path shape and git write safety before pytest runs; check_H judges only path shape. --help describes the loop; other arguments pass to pytest. Never gate evidence.
 effect: writes
 rerun: unsafe
 """

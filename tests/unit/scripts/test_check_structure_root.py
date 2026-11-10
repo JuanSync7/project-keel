@@ -2,7 +2,7 @@
 title: Unit — check_structure judges a root it is given
 kind: tests
 layer: n/a
-summary: The gate's root override, pinned. `run_checks(root)` judges the tree at *root*, never keel's own; it resets every piece of module state a run accumulates (the unreadable-file memo included), so a second run in one process sees nothing of the first; and it attributes each message to the check letter that emitted it. `CHECKS` lists every `check_<LETTER>` the module defines, in order, so a check that is defined but not registered fails here. `main(['--root', path])` prints today's report shape and exit code for that root, refuses a root that is not a directory with exit 2, and `main()` with no argv still judges the template whatever `sys.argv` holds.
+summary: The gate's root override, pinned. `run_checks(root)` judges the tree at *root*, never keel's own; it resets every piece of module state a run accumulates (the unreadable-file memo included), so a second run in one process sees nothing of the first; and it attributes each message to the check letter that emitted it. A valid cache declaration also passes before git init. `CHECKS` lists every `check_<LETTER>` the module defines, in order, so a check that is defined but not registered fails here. `main(['--root', path])` prints today's report shape and exit code for that root, refuses a root that is not a directory with exit 2, and `main()` with no argv still judges the template whatever `sys.argv` holds.
 """
 
 import json
@@ -90,6 +90,12 @@ def _keel_paths():
 def test_a_clean_tree_is_clean(tmp_path):
     """The vacuity control: every negative case below starts from this tree."""
     assert cs.run_checks(str(_tree(tmp_path))) == []
+
+
+def test_a_tree_without_git_accepts_a_valid_cache_path(tmp_path):
+    root = _tree(tmp_path, {"tests": {"cache_dir": ".cache/loop"}})
+    assert not (root / ".git").exists()
+    assert cs.run_checks(str(root)) == []
 
 
 def test_bad_numbered_heading_is_reported_once_across_checks(tmp_path):

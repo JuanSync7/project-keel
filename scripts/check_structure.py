@@ -37,7 +37,8 @@ Checks:
   G. Tool<->agent binding (ERR): tools.md <-> '## Used by' agree; tool_command invokes public_api
   H. Project facts in config/project.json agree with the tree (ERR), and an
      absent manifest, an escaping layers.frontend.root or an unsafe
-     tests.cache_dir is an ERR; structural walks exclude the validated cache;
+     tests.cache_dir shape is an ERR; path shape is judged without git and
+     structural walks exclude the confined cache;
      an undeclared leftover stack/transport dir
      WARNs (CONVENTIONS section 15).
      An optional 'runtimes' block is validated the same way (section 16)
@@ -422,9 +423,10 @@ def _checkout_of(root):
     # ROOT still names the last tree judged; that tree's cache is not theirs.
     home = os.path.realpath(ROOT)
     real = os.path.realpath(root)
-    if real == home or real.startswith(home + os.sep):
-        return ROOT
-    return root
+    # One conditional expression, not two returns: tests/root_config_cli.py
+    # merges its branches, and two differing returns leave the loader read in
+    # _loop_cache_path unresolved (test_exit_codes_cli fails at that line).
+    return ROOT if real == home or real.startswith(home + os.sep) else root
 
 
 def _loop_cache_path(checkout):
@@ -444,13 +446,8 @@ def _loop_cache_path(checkout):
     ):
         return None
     try:
-        return changed_cache.cache_path(checkout, manifest)
-    except (
-        config_loader.ConfigError,
-        ValueError,
-        git_tree.NoGitError,
-        git_tree.GitFailedError,
-    ):  # noqa: DROP001 -- check_H reports the refusal; invalid paths must stay visible to walkers
+        return changed_cache.cache_shape(checkout, manifest)
+    except (config_loader.ConfigError, ValueError):  # noqa: DROP001 -- check_H reports the refusal; invalid paths must stay visible to walkers
         return None
 
 
@@ -1771,8 +1768,9 @@ def check_H():
     it is one whose every declared fact goes unjudged.
     Frontend confinement judges the path when this check runs; a link swapped
     later is not caught.
-    A declared tests.cache_dir must be checkout-relative, confined and ignored
-    by git, with no tracked files; structural walks exclude the validated cache.
+    A declared tests.cache_dir must be checkout-relative and confined, with no
+    empty, . or .. parts; structural walks exclude that cache without git.
+    The changed-tests runner checks git's tracked and ignored state before writing.
     Stdlib JSON, so it runs under the old pre-commit interpreter (no tomllib).
     See CONVENTIONS section 15.
     """
@@ -1788,19 +1786,14 @@ def check_H():
         return
     layers = _expect(manifest.get("layers"), dict, "layers", {})
 
-    # Older manifests have no loop declaration; once declared, its local
-    # effect must hold even when the cache directory has not been created yet.
+    # A render has no repository yet; git write authorization belongs to the
+    # changed-tests runner, while the gate judges only the declared path shape.
     if isinstance(manifest.get("tests"), dict) and "cache_dir" in manifest["tests"]:
         try:
-            changed_cache.cache_path(ROOT, manifest)
-        except (
-            config_loader.ConfigError,
-            ValueError,
-            git_tree.NoGitError,
-            git_tree.GitFailedError,
-        ) as exc:
+            changed_cache.cache_shape(ROOT, manifest)
+        except (config_loader.ConfigError, ValueError) as exc:
             err(
-                "config/project.json: tests.cache_dir refused (%s) -- choose a checkout-relative ignored directory"
+                "config/project.json: tests.cache_dir refused (%s) -- choose a confined checkout-relative directory"
                 % _shown(str(exc))
             )
 
