@@ -526,7 +526,7 @@ def point_children_at(path: str, environ: Dict[str, str]) -> None:
     """
     # Sibling nested pytest sessions race in cleanup_dead_symlinks when they
     # share pytest-of-<user>: one unlinks pytest-current before another does.
-    # Fixed worker names separate their roots without accumulating PID dirs.
+    # Naming a root by worker separates them without accumulating PID dirs.
     child = child_scratch_root(path, environ)
     os.makedirs(child, exist_ok=True)
     environ["TMPDIR"] = child
