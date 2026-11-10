@@ -9,7 +9,7 @@ tags: [practices, gate, advisory, ruff, mypy, types, llm, cuda, langgraph, guide
 summary: The catalogue of good-Python practices Keel promotes for general and LLM/CUDA/LangGraph code — each sorted onto the gate/advisory/doc line, sourced from config/practices.json.
 id: docs-guides-coding-practices
 created: 2026-07-06
-updated: 2026-11-09
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
