@@ -9,7 +9,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-09
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -1627,6 +1627,20 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 Enable once: `pip install -e ".[dev]" && pre-commit install`, then `make secrets-install`.
 
 ### CI (event trigger)
+
+Every GitHub workflow, including those copied into generated projects, uses
+setup-python with `cache: pip` and `cache-dependency-path: pyproject.toml`
+for its editable install.
+The cache stores pip downloads only: the install line still runs on every job,
+a cache hit included.
+`tests/integration/test_pip_cache_gate.py` derives all workflow files through
+the YAML reader in `tests/integration/test_toolchain_gate.py` and fails a
+setup-python step without pip caching, an absent or unread cache input, an
+unkeyed install input, a conditional install, or zero setup-python steps.
+If an install adds requirements or constraints files, include every file it
+reads in `cache-dependency-path` as well.
+Caching changes no gate step: `tests/integration/test_ci_pipeline_gate.py`
+fails a workflow that drops or reorders a configured step.
 
 config/project.json `ci_pipeline.steps` is the one list of what CI runs: the
 editable install, `make secrets-install`, `make secret-scan`,

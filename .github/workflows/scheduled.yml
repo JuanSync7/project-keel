@@ -31,7 +31,10 @@ jobs:
       - id: toolchain
         run: python3 scripts/check_toolchain.py versions >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
-        with: { python-version: "${{ steps.toolchain.outputs.python }}" }
+        with:
+          python-version: "${{ steps.toolchain.outputs.python }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       # The doer is pure-stdlib; the editable install just makes `make`/imports
       # available and keeps this identical to the other workflows.
       # config/project.json install_sources.python_index, when set, is pip's

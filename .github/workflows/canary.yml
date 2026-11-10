@@ -30,7 +30,10 @@ jobs:
       - id: toolchain
         run: python3 scripts/check_toolchain.py versions >> "$GITHUB_OUTPUT"
       - uses: actions/setup-python@v6
-        with: { python-version: "${{ steps.toolchain.outputs.python }}" }
+        with:
+          python-version: "${{ steps.toolchain.outputs.python }}"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - uses: actions/setup-node@v6
         with: { node-version: "${{ steps.toolchain.outputs.node }}" }
       # The interpreter every rendered project's make runs under (`PY=` is the

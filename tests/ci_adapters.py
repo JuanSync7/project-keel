@@ -35,7 +35,11 @@ GITHUB_CONSTANTS = {
         },
         {
             "uses": "actions/setup-python@v6",
-            "with": {"python-version": "${{ steps.toolchain.outputs.python }}"},
+            "with": {
+                "python-version": "${{ steps.toolchain.outputs.python }}",
+                "cache": "pip",
+                "cache-dependency-path": "pyproject.toml",
+            },
         },
         {
             "uses": "actions/setup-node@v6",
