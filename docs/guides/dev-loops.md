@@ -134,7 +134,11 @@ passed over. It refuses, before any test runs, a root that is relative or sits
 under the system temporary directory or inside the checkout. A root that holds the checkout is accepted,
 and the checkout stays outside it. A passed test's directory is removed and a
 failed one's is kept, named after the test (`pyproject.toml`
-`tmp_path_retention_policy`). A test that starts a child process gives it the
+`tmp_path_retention_policy`). The session autouse fixture `child_scratch`
+points `TMPDIR` and `KEEL_TEST_SCRATCH` at a child directory of that root for
+each test-running process, so nested pytest sessions on sibling workers never
+share one `pytest-of-<user>`, and restores both variables at teardown. A test
+that starts a child process gives it the
 seconds `tests.child_timeout_seconds` names.
 
 In a template checkout, every fix or review round, including a doc-only round,

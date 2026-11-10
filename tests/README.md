@@ -63,7 +63,7 @@ changes directory to `tmp_path` first. `docs/adr/keel/K-0024-what-a-test-may-rea
 ## Where test scratch lives
 
 `conftest.py` points tempfile and pytest's numbered basetemp at
-the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` mebibytes (MiB) free, and the directory is this user's with mode 0700; else `tests.scratch_root`. A session-scoped autouse fixture gives each test-running
+the first root of three that applies: `KEEL_TEST_SCRATCH` when it is set; else `tests.memory_scratch_root` with `-<uid>` appended, when its parent exists, its file system has `tests.memory_scratch_min_free_mb` mebibytes (MiB) free, and the directory is this user's with mode 0700; else `tests.scratch_root`. The session-scoped autouse fixture `child_scratch` gives each test-running
 process a child scratch directory under the session root. The directory is named
 `children-<worker-id>` for an xdist worker. It is named `children-main` without
 xdist. The fixture points `TMPDIR` and `KEEL_TEST_SCRATCH` at that directory for
