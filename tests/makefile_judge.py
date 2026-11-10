@@ -9,7 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -113,6 +113,9 @@ _PYTEST_INPUT_VARIABLES = (
     "CI",
     "BUILD_NUMBER",
 )
+# A shell startup file executes before the visible recipe script, so its
+# contents cannot be derived from literal command words.
+_SHELL_STARTUP_VARIABLES = ("BASH_ENV", "ENV")
 _MAKE_CONTROL_VARIABLES = frozenset(
     {"MAKE", "MAKEFILES", "MAKEFLAGS", "GNUMAKEFLAGS", "SHELL"}
 )
@@ -123,18 +126,26 @@ def _require(condition: object, cause: str, source: object, fix: str) -> None:
 
 
 def _guard_pytest_environment(
-    text: str, source: str, *, check_references: bool = True
+    text: str,
+    source: str,
+    *,
+    check_references: bool = True,
+    check_startup: bool = True,
 ) -> None:
     # Refuse assignments/exports conservatively: their state can cross
     # statement, recipe and recursive-make boundaries without a local prefix.
     # References also import caller state that our empty expansion env loses.
     # Literal help prose may name an input; @echo naming it with $$ is refused
     # because even a quoted reference imports state our empty env cannot judge.
-    for name in _PYTEST_INPUT_VARIABLES:
+    names: tuple[str, ...] = _PYTEST_INPUT_VARIABLES
+    if check_startup:
+        names += _SHELL_STARTUP_VARIABLES
+    for name in names:
         _require(
             not re.search(rf"\b{name}[ \t]*[:?+]?=", text)
             and not (
                 check_references
+                and name in _PYTEST_INPUT_VARIABLES
                 and re.search(rf"\$\$?(?:\({name}\)|\{{{name}\}}|{name}\b)", text)
             )
             and not re.search(
@@ -182,7 +193,9 @@ def guard_makefile(text: str, source: str | Path) -> None:
         where = f"{source}:{number}: {line}"
         _guard_expansions(line, where, macros)
         lazy = re.match(r"^([\w.-]+)[ \t]*\??=", line)
-        _guard_pytest_environment(line, where, check_references=not lazy)
+        _guard_pytest_environment(
+            line, where, check_references=not lazy, check_startup=not lazy
+        )
         definition = re.fullmatch(r"define ([A-Z_][A-Z0-9_]*)[ \t]*", line)
         if definition:
             _require(not in_define, "Nested make definition", where, "use flat macros")
@@ -528,6 +541,7 @@ def _shell_tokens(command: str) -> list[_ShellToken]:
 # operands and --option=value consume no following word. Unknown options fail
 # closed rather than guessing whether they conceal a command.
 _WRAPPER_OPTIONS = {
+    "busybox": (set(), set()),
     "env": (
         {"-u", "--unset", "-C", "--chdir"},
         {"-i", "--ignore-environment", "-0", "--null"},
@@ -594,6 +608,106 @@ _WRAPPER_OPTIONS = {
         {"-p", "--portability", "-a", "--append", "-v", "--verbose"},
     ),
 }
+
+# POSIX shell strings re-enter the command iterator. Other shell grammars
+# cannot share its command-position rules and must fail closed.
+_STRING_RUNNERS = {
+    "script": ({"-c", "--command"}, {"-O", "-I", "-B", "-T", "-m"}, {"q", "e", "f"}),
+    "su": (
+        {"-c", "--command", "--session-command"},
+        {
+            "-s",
+            "--shell",
+            "-g",
+            "--group",
+            "-G",
+            "--supp-group",
+            "-w",
+            "--whitelist-environment",
+        },
+        {"l", "m", "p"},
+    ),
+    "sg": ({"-c", "--command"}, set(), set()),
+    "csh": ({"-c"}, set(), {"f", "i", "l", "s", "v", "x"}),
+    "tcsh": ({"-c"}, set(), {"f", "i", "l", "s", "v", "x"}),
+    "fish": ({"-c", "--command"}, set(), {"i", "l"}),
+}
+_NON_POSIX_SHELLS = frozenset({"csh", "tcsh", "fish"})
+
+
+def _runner_string(name: str, arguments: list[str], source: str) -> str | None:
+    commands, operands, flags = _STRING_RUNNERS[name]
+    position = 0
+    while position < len(arguments):
+        option = arguments[position]
+        position += 1
+        if option == "--":
+            continue
+        if not option.startswith("-"):
+            continue
+        head, equals, value = option.partition("=")
+        if head in commands:
+            if equals:
+                return value
+        elif option.startswith("--"):
+            _require(
+                head in operands,
+                "Cannot judge string runner environment",
+                source,
+                "use supported literal runner options",
+            )
+            if equals:
+                continue
+        else:
+            cluster = option[1:]
+            offset = 0
+            while offset < len(cluster) and cluster[offset] in flags:
+                offset += 1
+            tail = cluster[offset:]
+            if not tail:
+                continue
+            head = "-" + tail[0]
+            _require(
+                head in commands | operands,
+                "Cannot judge string runner environment",
+                source,
+                "use supported literal runner options",
+            )
+            if len(tail) > 1:
+                if head in commands:
+                    return tail[1:]
+                continue
+        _require(
+            position < len(arguments),
+            "Cannot judge string runner environment",
+            source,
+            "supply a literal option operand",
+        )
+        value = arguments[position]
+        position += 1
+        if head in commands:
+            return value
+    return None
+
+
+def _guard_interpreter_string(name: str, arguments: list[str], source: str) -> None:
+    # These languages cannot be walked as shell. A pytest mention in their
+    # executable strings requires a direct invocation we can judge instead.
+    if not re.fullmatch(r"(?:python|pypy|perl|ruby|node|lua|php)[0-9.]*", name):
+        return
+    for position, option in enumerate(arguments):
+        if option in {"-c", "-e", "-E", "-r", "--eval"}:
+            body = arguments[position + 1 : position + 2]
+        elif re.match(r"^-(?:c|e|E|r).|^--eval=", option):
+            body = [option]
+        else:
+            continue
+        _require(
+            not any("pytest" in text for text in body),
+            "Cannot judge interpreter string reaching pytest",
+            source,
+            "invoke pytest directly with literal environment names and arguments",
+        )
 
 
 def _substitution_texts(raw: str) -> Iterator[str]:
@@ -736,6 +850,249 @@ class _ShellCommand:
     compound: bool = False
 
 
+def _redirected_argv(
+    tokens: list[_ShellToken], source: str
+) -> tuple[list[_ShellToken], str | None]:
+    # Descriptors and redirection operands never occupy command position.
+    argv = []
+    script_input: str | None = None
+    cursor = 0
+    while cursor < len(tokens):
+        item = tokens[cursor]
+        if item.descriptor:
+            cursor += 1
+            continue
+        if item.operator:
+            _require(
+                cursor + 1 < len(tokens),
+                "Unjudged shell redirection",
+                source,
+                "supply literal input",
+            )
+            operand = tokens[cursor + 1]
+            if item.value == "<<<":
+                script_input = operand.value
+            elif item.value in {"<<", "<<-"}:
+                script_input = operand.stdin
+            cursor += 2
+            continue
+        argv.append(item)
+        cursor += 1
+    return argv, script_input
+
+
+def _posix_shell_script(
+    arguments: list[str],
+    script_input: str | None,
+    producer: _ShellCommand | None,
+    source: str,
+    *,
+    piped: bool,
+) -> str | None:
+    script: str | None = None
+    offset = 0
+    reads_stdin = False
+    while offset < len(arguments) and arguments[offset].startswith(("-", "+")):
+        option = arguments[offset]
+        offset += 1
+        if option in {"--", "-"}:
+            break
+        if option in {"-o", "+o", "-O", "+O"}:
+            offset += 1
+            continue
+        reads_stdin = reads_stdin or bool(re.fullmatch(r"-[A-Za-z]*s[A-Za-z]*", option))
+        if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", option):
+            if arguments[offset : offset + 1] == ["--"]:
+                offset += 1
+            _require(
+                offset < len(arguments),
+                "Cannot judge shell string environment",
+                source,
+                "supply a literal shell script",
+            )
+            script = arguments[offset]
+            break
+    if script is None and (
+        reads_stdin or offset == len(arguments) or arguments[offset:] == ["-"]
+    ):
+        script = script_input
+        if piped:
+            _require(
+                producer is not None
+                and producer.word.rsplit("/", 1)[-1] in {"echo", "printf"},
+                "Cannot judge stdin environment",
+                source,
+                "pipe a literal script from echo or printf",
+            )
+            assert producer is not None
+            script = _printed_script(producer, source)
+        _require(
+            script is not None,
+            "Cannot judge stdin environment",
+            source,
+            "supply a literal shell script",
+        )
+    return script
+
+
+def _executed_script(
+    name: str,
+    arguments: list[str],
+    script_input: str | None,
+    producer: _ShellCommand | None,
+    source: str,
+    *,
+    piped: bool,
+) -> str | None:
+    script: str | None = None
+    _guard_interpreter_string(name, arguments, source)
+    if name in _STRING_RUNNERS:
+        script = _runner_string(name, arguments, source)
+        _require(
+            name not in _NON_POSIX_SHELLS,
+            "Cannot judge non-POSIX shell string environment",
+            source,
+            "use a literal POSIX shell script or a direct pytest invocation",
+        )
+    elif name.endswith("sh") or re.fullmatch(r"ksh[0-9]+", name):
+        script = _posix_shell_script(
+            arguments, script_input, producer, source, piped=piped
+        )
+    return script
+
+
+def _wrapped_command(
+    words: list[str], index: int, name: str, prefix: tuple[str, ...], source: str
+) -> tuple[int | None, tuple[str, ...]]:
+    next_index = _after_options(words, index + 1, name, source)
+    if name == "command" and any(
+        re.fullmatch(r"-[pVv]*[Vv][pVv]*", argument)
+        for argument in words[index + 1 : next_index]
+    ):
+        return None, prefix
+    index = next_index
+    if name == "timeout":
+        _require(
+            index < len(words) and not re.search(r"[$`]", words[index]),
+            "Cannot judge computed wrapper environment",
+            source,
+            "write the timeout duration literally",
+        )
+        index += 1
+    if name == "xargs":
+        replacement = None
+        for offset in range(1, index):
+            option = words[offset]
+            if option == "-I" and offset + 1 < index:
+                replacement = words[offset + 1]
+            elif option.startswith("-I"):
+                replacement = option[2:]
+        if replacement is None:
+            words.append("$xargs_input")
+        else:
+            words[index:] = [
+                value.replace(replacement, "$xargs_input") for value in words[index:]
+            ]
+    if name in {"env", "time"}:
+        while index < len(words) and "=" in words[index]:
+            if name == "time":
+                prefix += (words[index],)
+            index += 1
+    return index, prefix
+
+
+def _nested_command_arguments(
+    name: str, arguments: list[str], source: str
+) -> Iterator[_ShellCommand]:
+    if name == "find":
+        for offset, argument in enumerate(arguments):
+            if argument in {"-exec", "-execdir", "-ok", "-okdir"}:
+                stop = offset + 1
+                while stop < len(arguments) and arguments[stop] not in {
+                    ";",
+                    "+",
+                }:
+                    stop += 1
+                yield from _command_words(
+                    shlex.join(
+                        [
+                            value.replace("{}", "$find_path")
+                            for value in arguments[offset + 1 : stop]
+                        ]
+                    ),
+                    source,
+                )
+    if "--" in arguments and arguments[arguments.index("--") + 1 :][:1] == [
+        "__keel_make__"
+    ]:
+        yield from _command_words(
+            shlex.join(arguments[arguments.index("--") + 1 :]), source
+        )
+
+
+def _statement_commands(
+    tokens: list[_ShellToken],
+    position: int,
+    boundary: int,
+    end: int,
+    producer: _ShellCommand | None,
+    source: str,
+) -> Generator[_ShellCommand, None, _ShellCommand | None]:
+    argv, script_input = _redirected_argv(tokens[position:end], source)
+    words = [item.value for item in argv]
+    # Substitutions execute in arguments too, independently of argv runners.
+    for item in argv:
+        for substitution_text in _substitution_texts(item.raw):
+            yield from _command_words(substitution_text, source)
+    index = 0
+    wrapped = False
+    prefix = tuple(item.value for item in tokens[boundary:position])
+    while index < len(words) and re.match(r"^[A-Za-z_]\w*=", words[index]):
+        prefix += (words[index],)
+        index += 1
+    while index < len(words):
+        word = words[index]
+        _require(
+            not re.search(r"[$`*?]|\[[^]]+\]", word),
+            "Cannot judge computed command environment for pytest",
+            source,
+            "write the command word literally",
+        )
+        name = word.rsplit("/", 1)[-1]
+        arguments = words[index + 1 :]
+        script = _executed_script(
+            name,
+            arguments,
+            script_input,
+            producer,
+            source,
+            piped=bool(position and tokens[position - 1].value == "|"),
+        )
+        entry = _ShellCommand(
+            word,
+            tuple(arguments),
+            prefix,
+            tuple(item.value for item in tokens[:boundary]),
+            wrapped,
+            script,
+            redirected=any(item.operator for item in tokens[position:end]),
+            compound=bool(boundary or end < len(tokens)),
+        )
+        yield entry
+        if script is not None:
+            yield from _command_words(script, source)
+        if name in _WRAPPER_OPTIONS:
+            next_index, prefix = _wrapped_command(words, index, name, prefix, source)
+            if next_index is None:
+                break
+            index, wrapped = next_index, True
+            continue
+        yield from _nested_command_arguments(name, arguments, source)
+        producer = entry
+        break
+    return producer
+
+
 def _command_words(command: str, source: str | None = None) -> Iterator[_ShellCommand]:
     # Literal environment names require one command-position rule for every
     # guard: follow argv runners, time, compound bodies and shell input strings;
@@ -784,180 +1141,9 @@ def _command_words(command: str, source: str | None = None) -> Iterator[_ShellCo
             and tokens[end].value in {";", ";;", "&", "&&", "|", "||", "(", ")", "\n"}
         ):
             end += 1
-        # Redirections may precede the executable or appear between its args.
-        # Their descriptors and operands never occupy command position.
-        argv = []
-        script_input: str | None = None
-        cursor = position
-        while cursor < end:
-            item = tokens[cursor]
-            if item.descriptor:
-                cursor += 1
-                continue
-            if item.operator:
-                _require(
-                    cursor + 1 < end,
-                    "Unjudged shell redirection",
-                    source,
-                    "supply literal input",
-                )
-                operand = tokens[cursor + 1]
-                if item.value == "<<<":
-                    script_input = operand.value
-                elif item.value in {"<<", "<<-"}:
-                    script_input = operand.stdin
-                cursor += 2
-                continue
-            argv.append(item)
-            cursor += 1
-        words = [item.value for item in argv]
-        # Substitutions execute in arguments too, independently of argv runners.
-        for item in argv:
-            for substitution_text in _substitution_texts(item.raw):
-                yield from _command_words(substitution_text, source)
-        index = 0
-        wrapped = False
-        prefix = tuple(item.value for item in tokens[boundary:position])
-        while index < len(words) and re.match(r"^[A-Za-z_]\w*=", words[index]):
-            prefix += (words[index],)
-            index += 1
-        while index < len(words):
-            word = words[index]
-            _require(
-                not re.search(r"[$`*?]|\[[^]]+\]", word),
-                "Cannot judge computed command environment for pytest",
-                source,
-                "write the command word literally",
-            )
-            name = word.rsplit("/", 1)[-1]
-            arguments = words[index + 1 :]
-            script: str | None = None
-            if name.endswith("sh") or re.fullmatch(r"ksh[0-9]+", name):
-                offset = 0
-                reads_stdin = False
-                while offset < len(arguments) and arguments[offset].startswith(
-                    ("-", "+")
-                ):
-                    option = arguments[offset]
-                    offset += 1
-                    if option in {"--", "-"}:
-                        break
-                    if option in {"-o", "+o", "-O", "+O"}:
-                        offset += 1
-                        continue
-                    reads_stdin = reads_stdin or bool(
-                        re.fullmatch(r"-[A-Za-z]*s[A-Za-z]*", option)
-                    )
-                    if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", option):
-                        if arguments[offset : offset + 1] == ["--"]:
-                            offset += 1
-                        _require(
-                            offset < len(arguments),
-                            "Cannot judge shell string environment",
-                            source,
-                            "supply a literal shell script",
-                        )
-                        script = arguments[offset]
-                        break
-                if script is None and (
-                    reads_stdin
-                    or offset == len(arguments)
-                    or arguments[offset:] == ["-"]
-                ):
-                    script = script_input
-                    if position and tokens[position - 1].value == "|":
-                        _require(
-                            producer is not None
-                            and producer.word.rsplit("/", 1)[-1] in {"echo", "printf"},
-                            "Cannot judge stdin environment",
-                            source,
-                            "pipe a literal script from echo or printf",
-                        )
-                        assert producer is not None
-                        script = _printed_script(producer, source)
-                    _require(
-                        script is not None,
-                        "Cannot judge stdin environment",
-                        source,
-                        "supply a literal shell script",
-                    )
-            entry = _ShellCommand(
-                word,
-                tuple(arguments),
-                prefix,
-                tuple(item.value for item in tokens[:boundary]),
-                wrapped,
-                script,
-                redirected=any(item.operator for item in tokens[position:end]),
-                compound=bool(boundary or end < len(tokens)),
-            )
-            yield entry
-            if script is not None:
-                yield from _command_words(script, source)
-            if name in _WRAPPER_OPTIONS:
-                next_index = _after_options(words, index + 1, name, source)
-                if name == "command" and any(
-                    re.fullmatch(r"-[pVv]*[Vv][pVv]*", argument)
-                    for argument in words[index + 1 : next_index]
-                ):
-                    break
-                index = next_index
-                if name == "timeout":
-                    _require(
-                        index < len(words) and not re.search(r"[$`]", words[index]),
-                        "Cannot judge computed wrapper environment",
-                        source,
-                        "write the timeout duration literally",
-                    )
-                    index += 1
-                if name == "xargs":
-                    replacement = None
-                    for offset in range(1, index):
-                        option = words[offset]
-                        if option == "-I" and offset + 1 < index:
-                            replacement = words[offset + 1]
-                        elif option.startswith("-I"):
-                            replacement = option[2:]
-                    if replacement is None:
-                        words.append("$xargs_input")
-                    else:
-                        words[index:] = [
-                            value.replace(replacement, "$xargs_input")
-                            for value in words[index:]
-                        ]
-                if name in {"env", "time"}:
-                    while index < len(words) and "=" in words[index]:
-                        if name == "time":
-                            prefix += (words[index],)
-                        index += 1
-                wrapped = True
-                continue
-            if name == "find":
-                for offset, argument in enumerate(arguments):
-                    if argument in {"-exec", "-execdir", "-ok", "-okdir"}:
-                        stop = offset + 1
-                        while stop < len(arguments) and arguments[stop] not in {
-                            ";",
-                            "+",
-                        }:
-                            stop += 1
-                        yield from _command_words(
-                            shlex.join(
-                                [
-                                    value.replace("{}", "$find_path")
-                                    for value in arguments[offset + 1 : stop]
-                                ]
-                            ),
-                            source,
-                        )
-            if "--" in arguments and arguments[arguments.index("--") + 1 :][:1] == [
-                "__keel_make__"
-            ]:
-                yield from _command_words(
-                    shlex.join(arguments[arguments.index("--") + 1 :]), source
-                )
-            producer = entry
-            break
+        producer = yield from _statement_commands(
+            tokens, position, boundary, end, producer, source
+        )
         position = end
         boundary = position
 
@@ -984,17 +1170,6 @@ def _guard_shell_environment(command: str, source: str) -> None:
             source,
             "replace eval, sourcing and allexport with literal environment names",
         )
-        if entry.script is not None:
-            _require(
-                not re.search(
-                    r"[$`]|\b(?:export|declare|typeset|local|env|eval|source|allexport)\b"
-                    r"|(?:^|[;&|])[ \t]*\.[ \t]",
-                    entry.script,
-                ),
-                "Cannot judge indirect shell environment",
-                source,
-                "replace shell script environment construction with literal names",
-            )
         if word not in {"export", "declare", "typeset", "local", "env"}:
             continue
         options = []

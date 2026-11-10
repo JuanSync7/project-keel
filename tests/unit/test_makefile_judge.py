@@ -84,6 +84,72 @@ _FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\
 
 
 @pytest.mark.parametrize(
+    "runner",
+    ["script -qc", "script --command", "su -c", "sg grp -c", "busybox sh -c"],
+)
+@pytest.mark.parametrize("body", ["pytest --durations 10 -k quick", "export $$n=x"])
+def test_string_runners_judge_each_executed_command(
+    tmp_path: Path, runner: str, body: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(_FULL_CHAIN + f"\tn=OTHER; {runner} '{body}'\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Fix:"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize("shell", ["csh", "tcsh", "fish"])
+def test_non_posix_strings_are_refused(tmp_path: Path, shell: str) -> None:
+    body = "set -gx OTHER x" if shell == "fish" else "setenv OTHER x"
+    path = tmp_path / "Makefile"
+    path.write_text(_FULL_CHAIN + f"\t{shell} -c '{body}'\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Fix:"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize("name", ["BASH_ENV", "ENV"])
+@pytest.mark.parametrize(
+    "shape", ["{name}=startup", "export {name}", "sh -c 'export {name}=startup'"]
+)
+def test_shell_startup_inputs_are_refused(
+    tmp_path: Path, name: str, shape: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN + "\t" + shape.format(name=name) + "\n", encoding="utf-8"
+    )
+    with pytest.raises(AssertionError, match=name) as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        '$(PY) -c \'import os,pytest; os.environ["PYTEST_"+"ADDOPTS"]="-k quick"; pytest.main()\'',
+        "perl -e 'system(\"pytest --durations 10 -k quick\")'",
+        "ruby -e 'system(\"pytest --durations 10 -k quick\")'",
+    ],
+    ids=["python-environment", "perl-system", "ruby-system-extra-shape"],
+)
+def test_interpreter_strings_naming_pytest_are_refused(
+    tmp_path: Path, shape: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(_FULL_CHAIN + f"\t{shape}\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Fix:"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize("body", ["echo $$HOME", "export FOO=1; true"])
+def test_walked_literal_shell_strings_are_accepted(tmp_path: Path, body: str) -> None:
+    (tmp_path / "Makefile").write_text(
+        _FULL_CHAIN + f"\tsh -c '{body}'\n", encoding="utf-8"
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
     "shape",
     [
         "nice env $$n=x true",
@@ -410,12 +476,16 @@ def test_export_option_clusters_are_refused(
         )
     ],
 )
-def test_indirect_shell_environment_is_refused(tmp_path: Path, shape: str) -> None:
+def test_indirect_shell_environment_is_judged(tmp_path: Path, shape: str) -> None:
     path = tmp_path / "Makefile"
     path.write_text(
         _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
         encoding="utf-8",
     )
+    # Literal names follow the same rule inside and outside a shell string.
+    if "OTHER=value" in shape:
+        judge.assert_verify_keeps_slow(tmp_path)
+        return
     with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
         judge.assert_verify_keeps_slow(tmp_path)
     assert str(path) in str(failure.value)
