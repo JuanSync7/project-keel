@@ -439,8 +439,8 @@ change to a template check upstream as an issue or a pull request.
   that variable for a check can move the check's today back by
   `evidence.run_date.max_age_days` (`1`) days and never forward, so a document
   touched today and stamped yesterday passes that check. A committed
-  document's stamp is still compared with its commit date, which the variable
-  does not move. `SOURCE_DATE_EPOCH` moves today back without a bound
+  document's stamp is still compared with its last commit's author date (`%as`),
+  which the variable does not move. `SOURCE_DATE_EPOCH` moves today back without a bound
   ([ADR-K-0019](../adr/keel/K-0019-one-date-per-gate-run.md)).
 - **A gate longer than the bound refuses, it does not guess.** A `make verify`
   that runs past `evidence.run_date.max_age_days` (`1`) days after it began has

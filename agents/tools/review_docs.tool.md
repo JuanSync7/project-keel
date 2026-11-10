@@ -9,7 +9,7 @@ tags: [tool, documentation, freshness, rosters, review]
 summary: Read-only documentation review — stale `updated:` stamps, backticked paths that resolve to nothing, thoughts that open with a change phrase, and every roster row, as JSON.
 id: tool-review-docs
 created: 2026-09-02
-updated: 2026-11-05
+updated: 2026-11-10
 visibility: internal
 canonical: true
 tool_command: python3 scripts/jobs/review_docs.py --json
@@ -24,8 +24,8 @@ tool_effect: read-only
 ## Purpose
 The deterministic half of the documentation review: the facts a rule can state
 about the docs. Freshness — every governed document's `updated:` is no earlier
-than its last commit, and a document modified in the working tree carries
-today's date (CONVENTIONS §1). The advisory that stays advisory — a backticked
+than the author date (`%as`) of its last commit, and a document modified in the
+working tree carries today's date (CONVENTIONS §1). The advisory that stays advisory — a backticked
 repository path that resolves to nothing, and a thought in a shipped document
 that opens with a config/project.json `change_comments.phrases` phrase ("Now
 runs X" reports a change; "2. Now run X" is a step, so a reader judges it). And

@@ -9,7 +9,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-09
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -39,7 +39,7 @@ summary: One-line purpose, <=120 chars.
 # --- corpus core (for the company "one brain": ingest/dedup/age/govern) ---
 id: backend                          # stable, unique; keep it when you move the file
 created: 2026-06-14
-updated: 2026-06-14                  # = touched: never earlier than the last commit (gated)
+updated: 2026-06-14                  # = touched: never earlier than the last commit's author date (gated)
 visibility: internal                 # public | internal | confidential | restricted
 canonical: true                      # true = authoritative; or a path/id to the source of truth
 ---
@@ -61,7 +61,7 @@ failure mode:
 | Field | Values | Why the brain needs it |
 |-------|--------|------------------------|
 | `id` | stable slug, unique | cite/track a doc across renames & moves (path is not stable) |
-| `created` / `updated` | ISO dates | rank by recency; flag stale content. `updated` means *touched*: never earlier than the file's last commit, and today's date when the file is modified — gated by `tests/integration/test_doc_freshness.py` (`scripts/jobs/review_docs.py`) |
+| `created` / `updated` | ISO dates | rank by recency; flag stale content. `updated` means *touched*: never earlier than the author date (`%as`) of the file's last commit, and today's date when the file is modified — gated by `tests/integration/test_doc_freshness.py` (`scripts/jobs/review_docs.py`) |
 | `visibility` | `public`/`internal`/`confidential`/`restricted`, least restrictive first | never surface a confidential doc to the wrong audience |
 | `canonical` | `true` or a path/id | dedup: when the same fact lives in N places, point mirrors at the one source of truth |
 

@@ -8,7 +8,7 @@ tags: [adr, gate, freshness, verify, child-env, evidence]
 summary: "A make verify that crossed midnight turned red on every document touched that day, because the freshness judge read the clock again late in the run. The gate's driver now reads the clock once, before the first goal, and hands that date to every goal in the variable config/project.json evidence.run_date.env names. The judge reads the variable after --today and SOURCE_DATE_EPOCH and before the clock, which adds one step to the order ADR-K-0010 decision 5 states. A supplied date is checked on every read: it may be earlier than the clock by at most evidence.run_date.max_age_days and never later. A commit the test suite makes inside a run is dated by the run as well, so the date git records agrees with the stamps the run wrote. The same slice makes two more gate rules fail closed: a git command that ran and failed is refused rather than read as no git, and the driver refuses an evidence path reached through a symlink."
 id: docs-adr-0019-one-date-per-gate-run
 created: 2026-10-12
-updated: 2026-10-15
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -121,9 +121,9 @@ Two other gate rules were weaker than their own documents said.
   caller move today back without any bound (ADR-K-0010, "A pinned date can
   lag"), so this adds no power that caller lacked. The commit-date floor is
   untouched: a committed document's stamp is still compared with the date git
-  recorded. Only the test suite's own commits take their date from the
-  variable (decision 9), and a test that sets `GIT_COMMITTER_DATE` itself
-  still wins.
+  recorded (the author date under `docs/guides/doc-style.md §7`). Only the test
+  suite's own commits take their date from the variable (decision 9), and a
+  test that sets `GIT_COMMITTER_DATE` itself still wins.
 - **The suite's commits share a moment.** Under every `make verify` the
   variable is set, so the commits made under one git environment carry the
   second it was built at. A test that needs commits in a date order sets its

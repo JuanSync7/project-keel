@@ -1,8 +1,8 @@
 """
-title: Integration — every governed document is stamped no earlier than its last commit
+title: Integration — every governed document is stamped no earlier than its last commit's author date
 kind: tests
 layer: n/a
-summary: The freshness rule of scripts/review_docs.py as a gate: `updated:` is never earlier than the file's last commit, and a document modified in the working tree carries today's date. Not a check_* letter on purpose (ADR-K-0009): check_structure.py is stdlib-only and 3.6-safe and does not shell to git. Absent is not broken — no git, or not a repository, is a stated skip. Landed with every stamp normalised in the same commit, so the tree complied on arrival.
+summary: The freshness rule of scripts/jobs/review_docs.py as a gate: `updated:` is never earlier than the author date of the file's last commit, and a document modified in the working tree carries today's date. A cherry-pick with a later committer date preserves freshness, while a stamp older than the author date remains stale. Not a check_* letter on purpose (ADR-K-0009): check_structure.py is stdlib-only and 3.6-safe and does not shell to git. Absent is not broken — no git, or not a repository, is a stated skip. Landed with every stamp normalised in the same commit, so the tree complied on arrival.
 """
 
 import datetime
@@ -95,13 +95,67 @@ def _touched_yesterday(tmp_path, stamp):
 
 def _judge(repo, env, **extra):
     return subprocess.run(
-        [sys.executable, str(_JUDGE), "--root", str(repo), "--strict"],
+        [sys.executable, "-B", str(_JUDGE), "--root", str(repo), "--strict"],
         cwd=str(repo),
         env=dict(env, **extra),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
     )
+
+
+@pytest.mark.parametrize("stamp", ["2026-09-02", "2026-09-01"])
+def test_a_cherry_picked_document_is_judged_by_when_its_text_was_written(
+    tmp_path, stamp
+):
+    """A later committer date preserves freshness, but an old stamp stays stale."""
+    work = tmp_path / "work"
+    work.mkdir()
+    git = hermetic_git.git_env(work)
+    written = "2026-09-02"
+    landed = "2026-09-03"
+    git.update(
+        GIT_AUTHOR_DATE=written + "T12:00:00+0000",
+        GIT_COMMITTER_DATE=written + "T12:00:00+0000",
+    )
+    repo = tmp_path / "repo"
+    (repo / "docs").mkdir(parents=True)
+    for argv in (
+        ("init", "-q"),
+        ("commit", "-q", "--allow-empty", "-m", "base"),
+        ("checkout", "-q", "-b", "landing"),
+        ("checkout", "-q", "-b", "written"),
+    ):
+        _git(repo, git, *argv)
+    text = _DOC % stamp
+    (repo / "docs" / "note.md").write_text(text, encoding="utf-8")
+    _git(repo, git, "add", "docs/note.md")
+    _git(repo, git, "commit", "-q", "-m", "write document")
+    commit = _git(repo, git, "rev-parse", "HEAD").strip()
+    _git(repo, git, "checkout", "-q", "landing")
+    _git(
+        repo,
+        dict(git, GIT_COMMITTER_DATE=landed + "T12:00:00+0000"),
+        "cherry-pick",
+        commit,
+    )
+    assert _git(repo, git, "log", "-1", "--format=%as %cs").strip() == (
+        written + " " + landed
+    )
+    assert (repo / "docs" / "note.md").read_text(encoding="utf-8") == text
+    env = child_env.build_child_env(extra=hermetic_git.git_env_vars(work))
+    judged = _judge(repo, env)
+    if stamp == written:
+        assert judged.returncode == exit_codes.ExitCode.SUCCESS, (
+            judged.stdout + judged.stderr
+        )
+        assert " 0 stale" in judged.stdout, judged.stdout
+    else:
+        assert judged.returncode == exit_codes.ExitCode.FAILURE, (
+            judged.stdout + judged.stderr
+        )
+        assert "STALE docs/note.md" in judged.stdout, judged.stdout
+        assert written in judged.stdout and stamp in judged.stdout, judged.stdout
 
 
 def test_a_doc_stamped_on_the_run_date_stays_fresh_after_the_clock_passes_midnight(
@@ -178,7 +232,7 @@ def test_a_tree_the_suite_commits_inside_a_run_begun_yesterday_stays_fresh(
         git = hermetic_git.git_env(work)
         for argv in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "run")):
             _git(repo, git, *argv)
-        committed = _git(repo, git, "log", "-1", "--format=%cs").strip()
+        committed = _git(repo, git, "log", "-1", "--format=%as").strip()
         env = child_env.build_child_env(extra=hermetic_git.git_env_vars(work))
         env.pop("SOURCE_DATE_EPOCH", None)
         judged = _judge(repo, env)

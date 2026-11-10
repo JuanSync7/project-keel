@@ -73,7 +73,7 @@ everything and therefore expect the project interpreter.
 | Code-doc drift | `scripts/cdmon_sync.py --check` | error* | any | cdmon code↔doc drift — the CONVENTIONS §9 worked example of a thin adapter over an external tool (*a stated skip, exit 0, until `cdmon` is on PATH **and** `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI). Reached from `check-all` via `make check-cdmon`. It has no regenerate target: the adapter run without `--check` still lints, so `tests/integration/test_check_regenerates.py` excuses it by name |
 | Exit-code table | `scripts/exit_code_table.py --check` | error | ≥3.10 | The exit-code table in `docs/guides/limits-and-troubleshooting.md` is what `scripts/exit_codes.py` `ExitCode` and the scripts `make verify` runs say: a member with no row, a row with no member and a script row naming other codes each fail it. Reached from `check-all` via `make check-exit-codes`; `make exit-codes` regenerates |
 | Accountability | `scripts/accountability_report.py` | report | ≥3.7 | Lists corpus nodes that resolve to no owner, and counts apart those on the default owner and those with a real owner (informational; rides `make advise`) |
-| Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip. The fix it names is `make restamp-docs` (`scripts/jobs/restamp_docs.py`) |
+| Doc review | `scripts/jobs/review_docs.py` | report | any (git) | Freshness — every governed document's `updated:` is no earlier than the author date of its last commit, and a document modified in the working tree carries today's date (gated by `tests/integration/test_doc_freshness.py`, `--strict`) — and the advisory that stays advisory: backticked repository paths that resolve to nothing. No git is a stated skip. The fix it names is `make restamp-docs` (`scripts/jobs/restamp_docs.py`) |
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
@@ -670,10 +670,10 @@ says to repair that `README.md`, or state an owner on the node, then rebuild. A 
 **Purpose.** The deterministic documentation review: what a rule can decide
 about the docs but `check_structure.py` cannot reach without git. Today that is
 **freshness** — a governed document (git-tracked Markdown whose frontmatter has
-`updated:`) is stamped no earlier than the date of its last commit, and a
-document modified in the working tree is stamped today or later. `updated:`
-means *touched*: it is a cache of the git date, kept in the file so the corpus
-can rank by recency without git (CONVENTIONS §1). The remedy is always one
+`updated:`) is stamped no earlier than the author date (`%as`) of its last
+commit, and a document modified in the working tree is stamped today or later.
+`updated:` means *touched*: it is a cache of the git author date, kept in the
+file so the corpus can rank by recency without git (CONVENTIONS §1). The remedy is always one
 line, the report says which, and every stale finding names `make restamp-docs`.
 That target runs `scripts/jobs/restamp_docs.py`, the writer half of this rule.
 It reads the stamp through the same grammar (`review_docs.updated_span`) and

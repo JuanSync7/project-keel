@@ -8,7 +8,7 @@ tags: [adr, template, copier, tasks, trust, freshness, idempotency]
 summary: "A project generated from keel and committed the same day failed its own doc-freshness test on arrival, because every `updated:` was a literal from keel's history. Generation now runs `scripts/jobs/restamp_docs.py` as a copier task and every update ends with the same writer as its last migration, so a document is stamped on the day it arrives. Tasks are unsafe to copier, so `copier copy` and `make new` now require `--trust`, which reverses ADR-K-0006's claim that generation is trust-free."
 id: docs-adr-0010-generation-needs-trust-to-stamp-docs
 created: 2026-10-06
-updated: 2026-10-07
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -65,8 +65,8 @@ moves the stamp when a document arrives.
    The judge resolves today through the same function
    (`review_docs.resolve_today`), so the writer and the judge never stand on
    different days. A stamp target is never earlier than the document's last
-   commit date, because the judge reads that date from git and not from a
-   clock.
+   commit date (the author date under `docs/guides/doc-style.md §7`), because
+   the judge reads that date from git and not from a clock.
 
 ## Consequences
 

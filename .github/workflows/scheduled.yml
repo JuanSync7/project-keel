@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         # Full history: the review compares each document's `updated:` with the
-        # date of its last commit, which a depth-1 checkout does not have.
+        # author date of its last commit, which a depth-1 checkout does not have.
         with: { fetch-depth: 0 }
       # The versions come from config/project.json `toolchain`, one home each,
       # printed by the checker into this step's outputs; the runner's own python3

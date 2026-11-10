@@ -8,7 +8,7 @@ tags: [plan, documentation, checks, corpus, rosters, citations, convergence]
 summary: The bounded-convergence record for keel's documentation-quality system: which documentation rules are decidable by a machine and are now gated (checks P–S, the tool-spec body, supersession), which are judgment and belong to a guide and an agent, what each pass measured and decided, and what remains. The status table is authoritative; the per-pass notes below it are historical.
 id: docs-design-documentation-quality
 created: 2026-09-02
-updated: 2026-11-07
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -244,8 +244,8 @@ are reachable before anything monitors compliance with them.
 ## Open questions, with the answer this plan will take unless told otherwise
 
 1. **What does `updated:` mean?** *Touched* — the only machine-checkable
-   reading: never earlier than the file's last commit date, and today's date
-   when the file is modified. Decided and landed in Phase 4 (CONVENTIONS §1
+   reading: never earlier than the author date of the file's last commit, and
+   today's date when the file is modified. Decided and landed in Phase 4 (CONVENTIONS §1
    says so). A separate `reviewed:` key can carry the human meaning later.
 2. **May `check_structure.py` shell out to git?** No — ADR-0009 already
    decided that for the release gate. Freshness goes to
@@ -279,4 +279,5 @@ over a closed vocabulary, later).
 
 ## Corrections to this document
 
-None yet. When a claim above goes stale, correct it inline and log it here.
+- 2026-11-10: The freshness answer names the last commit's author date;
+  `docs/guides/doc-style.md` states the current rule and its amend limit.

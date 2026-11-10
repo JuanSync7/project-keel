@@ -9,7 +9,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-11-07
+updated: 2026-11-10
 visibility: internal
 canonical: true
 ---
@@ -207,14 +207,18 @@ gestures at.
 
 ## 7. Freshness is a fact, not a courtesy (gated — `review_docs`)
 
-`updated:` means **touched**: never earlier than the file's last commit, and
-today's date when the file is modified (CONVENTIONS §1). It is a cache of the
-git date kept in the file so the corpus can rank by recency without git. Set it
-in the same change that touches the file; the gate lists every file that was
-not, and `make restamp-docs` (`scripts/jobs/restamp_docs.py`) sets each one it
+`updated:` means **touched**: never earlier than the author date (`%as`) of the
+file's last commit, and today's date when the file is modified (CONVENTIONS §1).
+It is a cache of the git author date kept in the file so the corpus can rank by
+recency without git. Set it in the same change that touches the file; the
+gate lists every file that was not, and `make restamp-docs` (`scripts/jobs/restamp_docs.py`) sets each one it
 lists. Copier runs the same writer when it generates or updates a project, so a
 document is stamped on the day it arrives. A separate `reviewed:` key can carry the human meaning — "someone read
 this and it is still true" — when someone wants to track that.
+
+The judge reads the author date because cherry-pick and rebase keep it.
+`git commit --amend` without `--reset-author` also keeps the old author date;
+that is a known limit of this rule.
 
 A design record carries a **corrections log**: when a claim above it goes
 stale, the claim is corrected inline and the correction is logged with its
@@ -240,7 +244,7 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | The check catalogue and the triggers agree | `check_R` | gate |
 | A roster names every member, nothing else, with a `Not for` cell | `check_S` | gate |
 | A tool spec's seven sections, effect word, `- NOT` line | `check_F` | gate |
-| `updated:` no earlier than the last commit; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`; fixed by `scripts/jobs/restamp_docs.py` | gate |
+| `updated:` no earlier than the last commit's author date; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`; fixed by `scripts/jobs/restamp_docs.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
 | A practice enforced by a document names it where an agent reads it | `check_U` | gate |
 | No concrete campaign or slice id, host-specific phrase or undeclared loopback port in a shipped document's prose; no path under unconditional `docs/` exclusions only in any shipped text source, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), except a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` | `tests/integration/test_doc_drift.py` (CONVENTIONS §15, `doc_drift`) | gate |
