@@ -637,11 +637,7 @@ def shipped_sources(
             not path.endswith(_TWIN_SUFFIX) and path + _TWIN_SUFFIX in files
         ):
             continue
-        try:
-            data = (Path(root) / path).read_bytes()
-        except FileNotFoundError:
-            # Git still lists a tracked path deleted by an uncommitted move.
-            continue
+        data = (Path(root) / path).read_bytes()
         shipped_count += 1
         if b"\0" in data:
             binary_count += 1
@@ -2346,10 +2342,3 @@ def test_forbidden_backtracking_refuses_within_deadline(tmp_path: Path) -> None:
             timeout=0.2,
         )
     assert time.monotonic() - started < 5
-
-
-def test_shipped_sources_ignores_deleted_tracked_paths(exclusion_tree: Path) -> None:
-    (exclusion_tree / "guide.md").write_text("Current content.\n", encoding="utf-8")
-    sources, binaries = shipped_sources(exclusion_tree, ["deleted.py", "guide.md"])
-    assert [path for path, _text in sources] == ["guide.md"]
-    assert binaries == 0
