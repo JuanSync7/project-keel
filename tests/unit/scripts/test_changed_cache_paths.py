@@ -106,3 +106,52 @@ def test_structural_walks_skip_only_the_validated_cache(project, path):
         assert (".cache/loop" not in walked) == (path == ".cache/loop"), walked
         assert ".cache/tracked" in walked, walked
         assert "authored/loop" in walked, walked
+
+
+def _walked(walker, root):
+    return {Path(path).relative_to(root).as_posix() for path, _, _ in walker(root)}
+
+
+def test_a_walk_of_another_tree_leaves_out_that_tree_s_cache(project, tmp_path):
+    (project / "config/project.json").write_text(
+        json.dumps({"tests": {"cache_dir": ".cache/loop"}})
+    )
+    other = tmp_path / "other"
+    (other / "config").mkdir(parents=True)
+    (other / "config/project.json").write_text(
+        json.dumps({"tests": {"cache_dir": ".cache/other"}})
+    )
+    for relative in (".cache/loop", ".cache/other"):
+        (other / relative).mkdir(parents=True)
+        (other / relative / "README.md").write_text("cache\n")
+    for walker in (cs.walk, cs.sorted_walk):
+        walked = _walked(walker, other)
+        assert ".cache/other" not in walked, walked
+        assert ".cache/loop" in walked, walked
+
+
+def test_a_walk_of_a_tree_without_a_manifest_asks_git_nothing(
+    project, tmp_path, monkeypatch
+):
+    (project / "config/project.json").write_text(
+        json.dumps({"tests": {"cache_dir": ".cache/loop"}})
+    )
+
+    def refuse(*_args):
+        raise AssertionError("a tree with no manifest declares no cache to confine")
+
+    for name in ("is_ignored", "tracked", "candidate_files", "confined_path"):
+        monkeypatch.setattr(cs.git_tree, name, refuse)
+    other = tmp_path / "other"
+    (other / ".cache/loop").mkdir(parents=True)
+    assert ".cache/loop" in _walked(cs.walk, other)
+
+
+def test_a_walk_of_a_subtree_keeps_the_checkout_s_cache(project):
+    (project / "config/project.json").write_text(
+        json.dumps({"tests": {"cache_dir": ".cache/loop"}})
+    )
+    (project / ".cache/loop").mkdir(parents=True)
+    (project / ".cache/kept").mkdir(parents=True)
+    walked = _walked(cs.walk, project / ".cache")
+    assert "loop" not in walked and "kept" in walked, walked

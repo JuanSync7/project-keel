@@ -398,7 +398,7 @@ def rel(p: str) -> str:
 
 
 def walk(root):
-    cache = _loop_cache_path()
+    cache = _loop_cache_path(_checkout_of(root))
     if cache and os.path.realpath(root) == cache:
         return
     for dirpath, dirnames, filenames in os.walk(root):
@@ -415,9 +415,28 @@ def walk(root):
         yield dirpath, dirnames, filenames
 
 
-def _loop_cache_path():
-    """The validated loop cache to leave outside structural walks, if declared."""
-    manifest = _read_json_config(os.path.join("config", "project.json"))
+def _checkout_of(root):
+    """The checkout whose manifest names the cache a walk of *root* leaves
+    out: ROOT for ROOT and every path under it, else *root* itself."""
+    # audit_project walks its destination and build_corpus its own root while
+    # ROOT still names the last tree judged; that tree's cache is not theirs.
+    home = os.path.realpath(ROOT)
+    real = os.path.realpath(root)
+    if real == home or real.startswith(home + os.sep):
+        return ROOT
+    return root
+
+
+def _loop_cache_path(checkout):
+    """The validated loop cache of *checkout* to leave outside structural
+    walks, if its manifest declares one."""
+    if checkout == ROOT:
+        manifest = _read_json_config(os.path.join("config", "project.json"))
+    else:
+        try:
+            manifest = config_loader.read(checkout)
+        except config_loader.ConfigError:  # noqa: DROP001 -- a walk needs only what to leave out; run_checks on that tree reports its manifest
+            return None
     if (
         not isinstance(manifest, dict)
         or not isinstance(manifest.get("tests"), dict)
@@ -425,7 +444,7 @@ def _loop_cache_path():
     ):
         return None
     try:
-        return changed_cache.cache_path(ROOT, manifest)
+        return changed_cache.cache_path(checkout, manifest)
     except (
         config_loader.ConfigError,
         ValueError,
