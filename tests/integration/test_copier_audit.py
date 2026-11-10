@@ -784,9 +784,9 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     for `make long-scripts`, which judges run records a fresh clone lacks, the
     entries for `make test-fe`, `test-fe-unit` and `test-fe-e2e`, which refuse
     an app a fresh clone has not installed, the entry for `make secret-scan`,
-    which needs a scanner record a fresh clone lacks, the `secrets` block the
-    committed-secrets gate reads, the
-    `evidence` block that
+    which needs a scanner record a fresh clone lacks, the entry for
+    `make test-ship`, which repeats renderer tests already in `make test`,
+    the `secrets` block the committed-secrets gate reads, the `evidence` block that
     `make verify`'s record reads (CONVENTIONS §15), the `e2e` block that
     tests/integration/test_e2e_coverage.py and tests/live_server.py read
     (CONVENTIONS §17), the `evals` block that `make eval` and
@@ -869,6 +869,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "make_targets.effect_proof_skip.test-fe",
         "make_targets.effect_proof_skip.test-fe-e2e",
         "make_targets.effect_proof_skip.test-fe-unit",
+        "make_targets.effect_proof_skip.test-ship",
         "make_targets.gate_stop_grace_seconds",
         "make_targets.gate_timeout_seconds",
         "make_targets.empty_test_selections",
@@ -989,7 +990,9 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     block tests/isolation_guard.py reads since CMP-6.S2, the `secrets` block
     the committed-secrets gate of CMP-6.S3 reads with the
     `make_targets.effect_proof_skip` entry for its `make secret-scan`, the
-    `agents` block scripts/apply_refactor.py reads and the `rosters` block
+    entry for `make test-ship`, which repeats renderer tests already in
+    `make test`, the `agents` block scripts/apply_refactor.py reads and the
+    `rosters` block
     check_S reads since CMP-6.S6, the `expiring_tier` block the config loader
     declares since CMP-6.S4, and one more name in
     `child_env.names`: the variable the run date travels in, without which
@@ -1051,6 +1054,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "make_targets.effect_proof_skip.test-fe",
         "make_targets.effect_proof_skip.test-fe-e2e",
         "make_targets.effect_proof_skip.test-fe-unit",
+        "make_targets.effect_proof_skip.test-ship",
         "make_targets.gate_stop_grace_seconds",
         "make_targets.gate_timeout_seconds",
         "models.allowed_hosts",

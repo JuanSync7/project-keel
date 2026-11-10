@@ -202,7 +202,7 @@ def test_public_answer_root_refusals_hold_no_host_path(
 
     other = tmp_path / "read-checkout"
     options = {"root": str(other)}
-    message = "checkout whose corpus is read does not exist"
+    message = "checkout whose corpus is read is not an existing directory"
     name = other.name
     if selection == "empty-root":
         options = {"root": ""}

@@ -30,13 +30,12 @@ pytestmark = [
 
 # What a test-tier recipe needs to run in a project of its own, beside the
 # Makefile and every makefile it includes (tests/makefile_copy.py): pytest's
-# configuration, the suite's conftest and the version-check entry script.
-# Imports are derived; pytest configuration and the manifest are runtime data.
+# configuration and the suite's conftest. Recipe entry scripts and their imports
+# are derived; pytest configuration and the manifest are runtime data.
 _SHIPPED = (
     "pyproject.toml",
     "config/project.json",
     "tests/conftest.py",
-    "scripts/check_python_version.py",
 )
 
 _PASS = "def test_passes():\n    assert True\n"
@@ -61,13 +60,34 @@ def _scratch(tmp_path, selections=None):
     root = tmp_path / "proj"
     root.mkdir(parents=True)
     makefile_copy.copy_makefiles(root, _ROOT)
-    script_copy.copy_with_imports(root, _ROOT, _SHIPPED)
+    rules = cs._make_rules((_ROOT / "Makefile").read_text(encoding="utf-8"))
+    scripts = set()
+    for target in _tiers():
+        scripts.update(cs._scripts_reachable_from(rules, target))
+    script_copy.copy_with_imports(root, _ROOT, [*_SHIPPED, *sorted(scripts)])
+    # Explicit module selections must exist to reach conftest's session guard;
+    # missing paths are pytest usage errors rather than empty selections.
+    for rel in _ship_paths(root):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
     if selections is not None:
         path = root / "config" / "project.json"
         manifest = json.loads(path.read_text(encoding="utf-8"))
         manifest["make_targets"]["empty_test_selections"] = selections
         path.write_text(json.dumps(manifest), encoding="utf-8")
     return root
+
+
+def _ship_paths(root):
+    """Return the configured tests.ship_set paths of the project at root."""
+    key = ("tests", "ship_set")
+    return config_loader.resolve(
+        config_loader.read(str(root)),
+        config_loader.rows(key),
+        config_loader.CONFIG_FILE,
+        environ={},
+    )[key]
 
 
 def _add_test(root, name, marker, body):
@@ -134,6 +154,27 @@ def test_a_skip_only_selection_fails(tmp_path):
     assert code != 0 and "zero tests ran" in out, out[-2000:]
     code, out = _make(root, "test")
     assert code != 0 and "zero tests ran" in out, out[-2000:]
+
+
+def test_ship_paths_run_only_their_tests_and_name_an_empty_narrowing(tmp_path):
+    root = _scratch(tmp_path)
+    paths = _ship_paths(root)
+    assert paths, "the ship recipe must select at least one module"
+    selected = root / paths[0]
+    selected.write_text(_PASS, encoding="utf-8")
+    _add_test(root, "outside_ship", None, _FAIL)
+    code, out = _make(root, "test-ship")
+    assert code == 0 and "1 passed" in out, out[-2000:]
+
+    code, out = _make(root, "test-ship", addopts="-k zzz_nomatch")
+    assert code != 0 and "zero tests ran" in out, out[-2000:]
+    assert "make_targets.empty_test_selections" in out, out[-2000:]
+    assert paths[0] in out and "-k zzz_nomatch" in out, out[-2000:]
+
+    selected.write_text(_SKIP, encoding="utf-8")
+    code, out = _make(root, "test-ship")
+    assert code != 0 and "zero tests ran" in out, out[-2000:]
+    assert "make_targets.empty_test_selections" in out, out[-2000:]
 
 
 def test_a_declared_empty_selection_passes_with_its_reason(tmp_path):
