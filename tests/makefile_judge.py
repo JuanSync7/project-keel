@@ -91,6 +91,23 @@ _PYTEST_ARGUMENTS = {
     "--junitxml": r"[A-Za-z0-9_./-]+",
 }
 _PYTEST_ENVIRONMENT = frozenset({"PYTHONPATH"})
+# pytest's reference/environment-variables and how-to/tmp_path document these
+# inputs: https://docs.pytest.org/en/stable/reference/reference.html#environment-variables
+# CI/BUILD_NUMBER also select CI output. PYTEST_CURRENT_TEST is output, not input.
+_PYTEST_INPUT_VARIABLES = (
+    "PYTEST_ADDOPTS",
+    "PYTEST_PLUGINS",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+    "PYTEST_DEBUG",
+    "PYTEST_DEBUG_TEMPROOT",
+    "PYTEST_THEME",
+    "PYTEST_THEME_MODE",
+    "PY_COLORS",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "CI",
+    "BUILD_NUMBER",
+)
 _MAKE_CONTROL_VARIABLES = frozenset(
     {"MAKE", "MAKEFILES", "MAKEFLAGS", "GNUMAKEFLAGS", "SHELL"}
 )
@@ -98,6 +115,21 @@ _MAKE_CONTROL_VARIABLES = frozenset(
 
 def _require(condition: object, cause: str, source: object, fix: str) -> None:
     assert condition, f"{cause} on {source!r}. Fix: {fix}."
+
+
+def _guard_pytest_environment(text: str, source: str) -> None:
+    # Refuse assignments/exports conservatively: their state can cross
+    # statement, recipe and recursive-make boundaries without a local prefix.
+    for name in _PYTEST_INPUT_VARIABLES:
+        _require(
+            not re.search(rf"\b{name}[ \t]*[:?+]?=", text)
+            and not re.search(
+                rf"\b(?:export|declare[ \t]+-x)\b[^;\n&|]*\b{name}\b", text
+            ),
+            f"Unjudged pytest environment {name}",
+            source,
+            f"remove {name} and pass only _PYTEST_ARGUMENTS explicitly",
+        )
 
 
 def _guard_expansions(text: str, source: str, macros: set[str]) -> None:
@@ -135,12 +167,7 @@ def guard_makefile(text: str, source: str | Path) -> None:
             continue
         where = f"{source}:{number}: {line}"
         _guard_expansions(line, where, macros)
-        _require(
-            not re.search(r"\bPYTEST_ADDOPTS\b", line),
-            "Unjudged PYTEST_ADDOPTS",
-            where,
-            "remove PYTEST_ADDOPTS and pass only _PYTEST_ARGUMENTS explicitly",
-        )
+        _guard_pytest_environment(line, where)
         definition = re.fullmatch(r"define ([A-Z_][A-Z0-9_]*)[ \t]*", line)
         if definition:
             _require(not in_define, "Nested make definition", where, "use flat macros")
@@ -342,11 +369,9 @@ def _expanded_recipes(
         )
         (line,) = matches
         command = line.removeprefix(prefix)
-        _require(
-            not re.search(r"\bPYTEST_ADDOPTS\b", command),
-            "Unjudged expanded PYTEST_ADDOPTS",
-            f"{root}/Makefile: {rule.target}: {command}",
-            "remove PYTEST_ADDOPTS and pass only _PYTEST_ARGUMENTS explicitly",
+        _guard_pytest_environment(command, f"{root}/Makefile: {rule.target}: {command}")
+        _guard_computed_environment_names(
+            command, f"{root}/Makefile: {rule.target}: {command}"
         )
         commands.append(command)
     return commands
@@ -364,6 +389,31 @@ def _shell_words(command: str) -> list[str]:
         raise AssertionError(
             f"Unjudged shell quoting on {command!r}. Fix: use balanced simple quoting."
         ) from error
+
+
+def _guard_computed_environment_names(command: str, source: str) -> None:
+    # Values may expand, but names cannot be resolved without running a shell.
+    # Inspect each statement, including exports on lines without pytest.
+    words = _shell_words(command)
+    # Shell quoting can split a literal name in the original text.
+    _guard_pytest_environment(" ".join(words), source)
+    for i, word in enumerate(words):
+        if word not in {"export", "declare", "env"}:
+            continue
+        if word == "declare" and (i + 1 == len(words) or words[i + 1] != "-x"):
+            continue
+        for argument in words[i + 1 :]:
+            if argument and all(char in ";&|()\n" for char in argument):
+                break
+            name = argument.split("=", 1)[0]
+            _require(
+                "$" not in name and "`" not in name,
+                "Cannot judge a computed environment name without a shell",
+                source,
+                "write the exported or env variable name literally",
+            )
+            if word == "env" and "=" not in argument and not argument.startswith("-"):
+                break
 
 
 def make_hop(command: str) -> tuple[list[str], list[str]]:
@@ -392,11 +442,11 @@ def make_hop(command: str) -> tuple[list[str], list[str]]:
         if re.match(r"^[A-Za-z_]\w*=", word):
             _require(
                 word.split("=", 1)[0]
-                not in _MAKE_CONTROL_VARIABLES | {"PYTEST_ADDOPTS"}
+                not in _MAKE_CONTROL_VARIABLES | set(_PYTEST_INPUT_VARIABLES)
                 and "$" not in word,
                 "Unjudged make assignment",
                 command,
-                "pass literal data assignments without make controls or PYTEST_ADDOPTS",
+                "pass literal data assignments without make controls or pytest inputs",
             )
             assignments.append(word)
         else:

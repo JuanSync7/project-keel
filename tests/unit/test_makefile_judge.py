@@ -84,6 +84,110 @@ _FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\
 
 
 @pytest.mark.parametrize(
+    "name",
+    [
+        "PYTEST_ADDOPTS",
+        "PYTEST_PLUGINS",
+        "PYTEST_DISABLE_PLUGIN_AUTOLOAD",
+        "PYTEST_DEBUG",
+        "PYTEST_DEBUG_TEMPROOT",
+        "PYTEST_THEME",
+        "PYTEST_THEME_MODE",
+        "PY_COLORS",
+        "NO_COLOR",
+        "FORCE_COLOR",
+        "CI",
+        "BUILD_NUMBER",
+    ],
+)
+@pytest.mark.parametrize(
+    ("prefix", "recipe"),
+    [
+        ("", "export {name}=literal\n\t$(PY) -m pytest --durations 10"),
+        ("", "export {name}=literal; $(PY) -m pytest --durations 10"),
+        ("", "export {name}=literal && $(PY) -m pytest --durations 10"),
+        ("", "env {name}=literal $(PY) -m pytest --durations 10"),
+        ("export {name}=literal\n", "$(PY) -m pytest --durations 10"),
+        ("export {name}\n", "$(PY) -m pytest --durations 10"),
+        ("{name} = literal\nexport\n", "$(PY) -m pytest --durations 10"),
+        ("test: {name} = literal\n", "$(PY) -m pytest --durations 10"),
+        ("", "{name}=literal\n\t$(PY) -m pytest --durations 10"),
+        ("", "declare -x {name}=literal; $(PY) -m pytest --durations 10"),
+    ],
+    ids=[
+        "earlier-export",
+        "semicolon-export",
+        "and-export",
+        "env-prefix",
+        "make-export-value",
+        "make-export-name",
+        "make-export-all",
+        "target-variable",
+        "earlier-assignment",
+        "declare-export",
+    ],
+)
+def test_pytest_inputs_are_refused_in_every_placement(
+    tmp_path: Path, name: str, prefix: str, recipe: str
+) -> None:
+    text = (
+        prefix.format(name=name)
+        + "verify:\n\t$(MAKE) test\ntest:\n\t"
+        + recipe.format(name=name)
+        + "\n"
+    )
+    path = tmp_path / "Makefile"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(
+        AssertionError, match=f"Unjudged pytest environment {name}"
+    ) as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize("operation", ["export", "declare -x", "env"])
+@pytest.mark.parametrize(
+    "name",
+    ["$$name", "$${name}", "PYTEST_`printf PLUGINS`"],
+    ids=["shell-variable", "braced-variable", "backquote"],
+)
+def test_shell_computed_export_names_are_refused(
+    tmp_path: Path, operation: str, name: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        "verify:\n\t$(MAKE) test\ntest:\n"
+        f"\tname=PYTEST_PLUGINS; {operation} {name}=literal\n"
+        "\t$(PY) -m pytest --durations 10\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        AssertionError, match="Cannot judge a computed.*name"
+    ) as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    message = str(failure.value)
+    assert str(path) in message
+    assert "Fix:" in message and "literal" in message
+
+
+@pytest.mark.parametrize("operation", ["export", "declare -x", "env"])
+def test_quoted_pytest_input_names_are_refused(tmp_path: Path, operation: str) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        "verify:\n\t$(MAKE) test\ntest:\n"
+        f"\t{operation} PYTEST_'PLUGINS'=literal; $(PY) -m pytest --durations 10\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        AssertionError, match="pytest environment PYTEST_PLUGINS"
+    ) as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
     ("prefix", "reason"),
     [
         ("-include missing.mk\nmissing.mk:\n\t@touch missing.mk\n", "include"),
