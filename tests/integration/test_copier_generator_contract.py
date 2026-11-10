@@ -2,9 +2,10 @@
 title: Integration — the generator's own entry points stay wired up
 kind: tests
 layer: n/a
-summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
+summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
 """
 
+import ast
 import re
 import shlex
 import shutil
@@ -243,6 +244,96 @@ def test_ci_declares_the_template_surface_required_for_the_suite():
         )
 
 
+_IMPORT_CALLS = {"importorskip", "import_module", "__import__"}
+
+# How a copier load in a test module reaches copier.
+_ROUTED = "routed"  # optional_deps.importorskip(..., extra="template")
+_SKIPS = "skips"  # any other importorskip, which CI's declaration cannot reach
+_PLAIN = "plain"  # an import statement or an import_module/__import__ call
+
+
+def _is_copier(name):
+    return name == "copier" or name.startswith("copier.")
+
+
+def _load_kind(node):
+    """How *node* loads copier or a copier submodule, or None when it does not."""
+    if isinstance(node, ast.Import):
+        return _PLAIN if any(_is_copier(a.name) for a in node.names) else None
+    if isinstance(node, ast.ImportFrom):
+        return _PLAIN if node.level == 0 and _is_copier(node.module or "") else None
+    if not (isinstance(node, ast.Call) and node.args):
+        return None
+    func = node.func
+    called = func.attr if isinstance(func, ast.Attribute) else None
+    if isinstance(func, ast.Name):
+        called = func.id
+    first = node.args[0]
+    if not (
+        called in _IMPORT_CALLS
+        and isinstance(first, ast.Constant)
+        and isinstance(first.value, str)
+        and _is_copier(first.value)
+    ):
+        return None
+    if called != "importorskip":
+        return _PLAIN
+    owner = func.value if isinstance(func, ast.Attribute) else None
+    extra = [
+        kw.value.value
+        for kw in node.keywords
+        if kw.arg == "extra" and isinstance(kw.value, ast.Constant)
+    ]
+    routed = (
+        isinstance(owner, ast.Name)
+        and owner.id == "optional_deps"
+        and extra == ["template"]
+    )
+    return _ROUTED if routed else _SKIPS
+
+
+def _copier_loads(text):
+    """The kind of each copier load in *text*, in source order."""
+    # A module that only names copier in a string, such as the render scan in
+    # test_copier_ship_set.py, loads nothing, so it has no loads to judge.
+    loads = []
+    for node in ast.walk(ast.parse(text)):
+        kind = _load_kind(node)
+        if kind is not None:
+            loads.append((node.lineno, node.col_offset, kind))
+    return [kind for _, _, kind in sorted(loads)]
+
+
+@pytest.mark.parametrize(
+    ("text", "loads"),
+    [
+        ("import copier\n", [_PLAIN]),
+        ("import copier.vcs as v\n", [_PLAIN]),
+        ("from copier import run_copy\n", [_PLAIN]),
+        ('m = importlib.import_module("copier")\n', [_PLAIN]),
+        (
+            'copier = optional_deps.importorskip("copier", extra="template")\n',
+            [_ROUTED],
+        ),
+        (
+            't = optional_deps.importorskip("copier._tools", extra="template")\n',
+            [_ROUTED],
+        ),
+        ('optional_deps.importorskip("copier", extra="docs")\n', [_SKIPS]),
+        ('copier = pytest.importorskip("copier")\n', [_SKIPS]),
+        (
+            'optional_deps.importorskip("copier", extra="template")\nimport copier\n',
+            [_ROUTED, _PLAIN],
+        ),
+        ('names = {"copier"}\n', []),
+        ("from .copier import x\n", []),
+        ("import copierish\n", []),
+    ],
+)
+def test_each_copier_load_is_classified_by_how_it_reaches_copier(text, loads):
+    assert _copier_loads(text) == loads
+
+
 def test_copier_test_modules_hard_fail_when_the_surface_is_required():
     """Both halves of the guard live in the test modules themselves: whatever guards
     the `copier` import must route through `optional_deps`, or CI's declaration
@@ -253,20 +344,24 @@ def test_copier_test_modules_hard_fail_when_the_surface_is_required():
     would specifically decommission the template's own gates.)"""
     guarded = []
     for path in sorted((_ROOT / "tests").rglob("test_*.py")):
-        # Skip THIS file. It contains the searched-for literal as its own filter
-        # string, so it always matched itself — which made `guarded` permanently
-        # non-empty and the backstop below unfireable. Deleting every real copier
-        # test module left this test green (measured: `1 passed`).
+        # Skip THIS file. Its detector cases load copier in strings it parses,
+        # and its own scan must not count itself as a guarded module: that made
+        # `guarded` permanently non-empty and the backstop below unfireable.
+        # Deleting every real copier test module left this test green
+        # (measured: `1 passed`).
         if path.resolve() == Path(__file__).resolve():
             continue
-        text = path.read_text()
-        if '"copier"' not in text:
+        loads = _copier_loads(path.read_text())
+        if not loads:
             continue
         guarded.append(path.name)
-        assert 'optional_deps.importorskip("copier", extra="template")' in text, (
-            "%s guards the copier import without routing through optional_deps, so "
-            "CI's required-surface declaration cannot reach it and it would still "
-            "skip silently" % path.name
+        # The first load decides whether a missing copier skips through
+        # optional_deps; a plain import after it runs only once copier is there.
+        assert loads[0] == _ROUTED and _SKIPS not in loads, (
+            "%s loads copier without routing its first load through "
+            'optional_deps.importorskip(..., extra="template"), so CI\'s '
+            "required-surface declaration cannot reach it and it would still skip "
+            "silently or fail to collect: %s" % (path.name, loads)
         )
     # Named explicitly, not just "something was found": a rename or a rewrite that
     # drops the guard must be a failure, not a quietly smaller set.

@@ -54,28 +54,44 @@ def _tiers():
     return cs.pytest_selections([("Makefile", text)])
 
 
+def _recipe_scripts():
+    """Every script a test-tier target's recipe reaches, sorted."""
+    rules = cs._make_rules((_ROOT / "Makefile").read_text(encoding="utf-8"))
+    scripts = set()
+    for target in _tiers():
+        scripts.update(cs._scripts_reachable_from(rules, target))
+    return tuple(sorted(scripts))
+
+
+# A module-level name, so tests/integration/test_script_copy.py can evaluate
+# the copy roster and prove the copy complete.
+_RECIPE_SCRIPTS = _recipe_scripts()
+
+# The ship set the scratch project declares, whatever the host configures: a
+# generated project ships an empty tests.ship_set, which test-ship refuses
+# before any selection reaches the empty-selection guard.
+_SCRATCH_SHIP = ["tests/test_ship_scratch.py"]
+
+
 def _scratch(tmp_path, selections=None):
     """A project carrying the test tiers and nothing to test; `selections`
     replaces make_targets.empty_test_selections."""
     root = tmp_path / "proj"
     root.mkdir(parents=True)
     makefile_copy.copy_makefiles(root, _ROOT)
-    rules = cs._make_rules((_ROOT / "Makefile").read_text(encoding="utf-8"))
-    scripts = set()
-    for target in _tiers():
-        scripts.update(cs._scripts_reachable_from(rules, target))
-    script_copy.copy_with_imports(root, _ROOT, [*_SHIPPED, *sorted(scripts)])
+    script_copy.copy_with_imports(root, _ROOT, _SHIPPED + _RECIPE_SCRIPTS)
+    path = root / "config" / "project.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["tests"]["ship_set"] = _SCRATCH_SHIP
+    if selections is not None:
+        manifest["make_targets"]["empty_test_selections"] = selections
+    path.write_text(json.dumps(manifest), encoding="utf-8")
     # Explicit module selections must exist to reach conftest's session guard;
     # missing paths are pytest usage errors rather than empty selections.
     for rel in _ship_paths(root):
-        path = root / rel
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("", encoding="utf-8")
-    if selections is not None:
-        path = root / "config" / "project.json"
-        manifest = json.loads(path.read_text(encoding="utf-8"))
-        manifest["make_targets"]["empty_test_selections"] = selections
-        path.write_text(json.dumps(manifest), encoding="utf-8")
+        module = root / rel
+        module.parent.mkdir(parents=True, exist_ok=True)
+        module.write_text("", encoding="utf-8")
     return root
 
 

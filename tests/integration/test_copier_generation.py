@@ -1903,6 +1903,11 @@ def test_a_generated_project_ships_the_isolation_guard(tmp_path, generate):
         assert own.pop(key) == theirs.pop(key).replace(
             template["name"], manifest["name"]
         ), manifest["tests"]
+    # The ship set names the template's renderer modules the project still
+    # carries; copier.yml prunes them, so a generated project selects none.
+    assert own.pop("ship_set") == [
+        path for path in theirs.pop("ship_set") if (dest / path).is_file()
+    ], manifest["tests"]
     assert own == theirs, manifest.get("tests")
     ran = _project_tests(dest, _ISOLATION_TESTS)
     assert ran.returncode == 0, ran.stdout[-8000:] + ran.stderr[-2000:]
