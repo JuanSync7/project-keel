@@ -66,7 +66,8 @@ Checks:
      a generated one has no committed plain file. Render-free (no jinja2 here),
      so it bounds what it proves; the byte-exact rendered comparison lives in
      tests/integration. template.required_settings protects promised pyproject
-     keys in both siblings. Silent without twins or promised settings.
+     keys in both siblings and refuses malformed promise lists with one named
+     error. Silent without twins or promised settings.
   O. Module header contract (ERR): every CODE_ROOTS module docstring carries
      explicit, non-empty title:/summary: lines — the grammar build_corpus
      reads. Without them the corpus falls back to filename/first-prose-line
@@ -3194,6 +3195,9 @@ def check_N():
     declared = _declared_twins()
     if declared is None:
         return
+    required = _required_settings()
+    if required is None:
+        return
     files = {}
     # A directory at a config path is absent from the walk's filenames, but
     # its loader refusal still prevents judging the plain side of its twin.
@@ -3214,22 +3218,6 @@ def check_N():
                 unreadable.add(relp)
     for m in _twin_parity_findings(files, declared, unreadable=unreadable):
         err(m)
-    manifest = _read_json_config(os.path.join("config", "project.json"))
-    if manifest is _NO_DATA or manifest is _REFUSED:
-        return
-    key = ("template", "required_settings")
-    try:
-        required = config_loader.resolve(
-            manifest,
-            config_loader.rows(key),
-            "config/project.json",
-            environ={},
-            stream=io.StringIO(),
-        )[key]
-    except config_loader.ConfigError as exc:
-        for line in exc.lines:
-            err(line)
-        return
     for path in ("pyproject.toml", "pyproject.toml" + _TWIN_SUFFIX):
         if path in unreadable:
             continue
@@ -3252,6 +3240,28 @@ def _declared_twins():
     if not isinstance(twins, dict):
         return {}
     return {k: v for k, v in twins.items() if not str(k).startswith("_")}
+
+
+def _required_settings():
+    """Template-only promises, empty when absent; None when refused or malformed."""
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _REFUSED:
+        return None
+    template = manifest.get("template") if isinstance(manifest, dict) else None
+    if not isinstance(template, dict) or "required_settings" not in template:
+        return []
+    required = template["required_settings"]
+    if not isinstance(required, list) or not all(
+        isinstance(setting, str)
+        and all(part and part.strip() == part for part in setting.split("."))
+        for setting in required
+    ):
+        err(
+            "config/project.json template.required_settings: expected a list of "
+            "dotted TOML setting names with no blank parts; correct the declaration"
+        )
+        return None
+    return required
 
 
 def check_M():

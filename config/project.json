@@ -2,6 +2,7 @@
   "_comment": "Authoritative project facts: hand-edited, enforced by scripts/check_structure.py (check_H, CONVENTIONS section 15). Choose one frontend stack; list shipped stacks/transports under 'available'.",
   "name": "project_keel",
   "audit_project": {
+    "_comment": "Keel's scripts/audit_project.py reads settings_tables to compare rendered pyproject.toml settings with DEST. A generated project carries the same value so its config loader stays silent.",
     "settings_tables": ["tool.pytest.ini_options"]
   },
   "template": {

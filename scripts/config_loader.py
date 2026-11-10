@@ -857,21 +857,6 @@ KEYS = tuple(
                 ),
             ),
             _row(
-                ("template", "required_settings"),
-                "list_of_str",
-                [],
-                "the dotted pyproject.toml settings check_N requires in both "
-                "the plain file and its template twin; empty: no promises",
-                accepts=(
-                    lambda value: all(
-                        v
-                        and all(part.strip() == part and part for part in v.split("."))
-                        for v in value
-                    ),
-                    "a list of dotted TOML setting names, no blank parts",
-                ),
-            ),
-            _row(
                 ("refactor", "journal_path"),
                 "repo_path",
                 NONE,

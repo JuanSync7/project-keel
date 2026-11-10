@@ -2,7 +2,7 @@
 title: Unit — check_structure check_N (template twin parity)
 kind: tests
 layer: n/a
-summary: check_N is the render-free half of twin parity — it runs in the 3.6 pre-commit gate with no jinja2, over ALL twins rather than one. It proves every `*.jinja` is declared with a kind in config/project.json template.twins, that the declaration matches reality (a parity/divergence twin has a plain sibling, a generated one does not), that a parity twin carries no non-templated line the plain file has lost, and that a divergence twin actually diverges.
+summary: check_N is the render-free half of twin parity — it runs in the 3.6 pre-commit gate with no jinja2, over ALL twins rather than one. It proves every `*.jinja` is declared with a kind in config/project.json template.twins, that the declaration matches reality (a parity/divergence twin has a plain sibling, a generated one does not), that a parity twin carries no non-templated line the plain file has lost, and that a divergence twin actually diverges. Self-contained fixtures prove promised pyproject settings are present in both siblings and malformed promises produce one named error.
 """
 
 import json
@@ -140,13 +140,25 @@ def test_no_jinja_files_at_all_is_silent():
 def test_promised_setting_missing_from_either_twin_errors(
     tmp_path, monkeypatch, filename, missing
 ):
-    manifest = json.loads((_ROOT / "config/project.json").read_text(encoding="utf-8"))
+    manifest = {
+        "template": {
+            "twins": {"pyproject.toml": "parity"},
+            "required_settings": [
+                "tool.pytest.ini_options.tmp_path_retention_policy",
+                "tool.pytest.ini_options.tmp_path_retention_count",
+            ],
+        }
+    }
     (tmp_path / "config").mkdir()
     (tmp_path / "config/project.json").write_text(
         json.dumps(manifest), encoding="utf-8"
     )
     for rel in ("pyproject.toml", "pyproject.toml.jinja"):
-        text = (_ROOT / rel).read_text(encoding="utf-8")
+        text = (
+            "[tool.pytest.ini_options]\n"
+            'tmp_path_retention_policy = "failed"\n'
+            "tmp_path_retention_count = 3\n"
+        )
         if rel == filename:
             text = "\n".join(
                 line
@@ -188,3 +200,35 @@ def test_promised_settings_are_configured_not_a_fixed_key_list(tmp_path, monkeyp
     cs.check_N()
     assert len(cs.errors) == 2
     assert all("tool.build.future" in m and "required_settings" in m for m in cs.errors)
+
+
+@pytest.mark.parametrize(
+    "required",
+    [
+        None,
+        "tool.build.future",
+        {},
+        1,
+        [1],
+        [""],
+        ["tool..future"],
+        ["tool. .future"],
+        [" tool.future"],
+    ],
+)
+def test_bad_promised_settings_shape_is_one_named_error(
+    tmp_path, monkeypatch, required
+):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(
+        json.dumps({"template": {"required_settings": required}}), encoding="utf-8"
+    )
+    for name in ("ROOT", "errors", "warnings", "_CONFIG_READ", "_READ_REPORTED"):
+        monkeypatch.setattr(cs, name, getattr(cs, name))
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "errors", [])
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_READ_REPORTED", set())
+    cs.check_N()
+    assert len(cs.errors) == 1
+    assert "template.required_settings" in cs.errors[0]

@@ -777,6 +777,21 @@ def test_theirs_is_rendered_from_the_twin_with_dest_answers_and_derived_defaults
     assert not any("project_slug" in n or "_commit" in n for n in notes), notes
 
 
+@pytest.mark.parametrize(
+    ("block", "key"),
+    [
+        ("child_env", "_comment"),
+        ("tests", "_comment"),
+        ("audit_project", "settings_tables"),
+    ],
+)
+def test_generated_manifest_carries_shared_policy(block, key):
+    """Rendered policy and its explanation must agree with the template's own."""
+    configs, _ = ap.render_configs(ap.worktree_reader(ap.TEMPLATE), {})
+    plain = json.loads((_ROOT / "config/project.json").read_text(encoding="utf-8"))
+    assert configs["config/project.json"][block][key] == plain[block][key]
+
+
 def test_an_undefined_template_variable_is_a_named_error(tmp_path, template):
     (template / "config" / "project.json.jinja").write_text(
         '{"x": "{{ nowhere_defined }}"}\n', encoding="utf-8"
