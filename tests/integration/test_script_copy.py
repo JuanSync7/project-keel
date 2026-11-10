@@ -193,6 +193,14 @@ def test_a_second_copy_changes_no_byte(tmp_path):
     assert _bytes(dest) == before
 
 
+def test_a_recipe_path_that_leaves_the_root_is_refused(tmp_path):
+    """A `..` part would copy outside dest, so it is named, never followed."""
+    with pytest.raises(AssertionError, match=r"leaves the root \.\./scripts/x\.py"):
+        script_copy.imports_closure(
+            tmp_path, [], recipes=["test:\n\t$(PY) ../scripts/x.py\n"]
+        )
+
+
 def test_copied_recipes_carry_the_scripts_they_name_and_their_imports(tmp_path):
     src, dest = tmp_path / "src", tmp_path / "dest"
     _tree(src, _SIBLINGS)
