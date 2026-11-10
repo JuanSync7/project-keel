@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any, Callable, cast
 
 import pytest
 
@@ -23,6 +24,7 @@ import check_structure as cs  # noqa: E402
 import child_env  # noqa: E402
 import review_docs  # noqa: E402
 
+from bounded_match import match_values  # noqa: E402
 from hermetic_git import git_env  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -103,7 +105,6 @@ def trailer_findings(root, env=None):
     declared = set(
         cs.plan_inventory(str(root), policy, cs.work_owner(manifest))["slices"]
     )
-    backlog = re.compile(policy["backlog_id"])
     keys = {
         policy["slice_trailer"].lower(): policy["slice_trailer"],
         policy["backlog_trailer"].lower(): policy["backlog_trailer"],
@@ -112,16 +113,40 @@ def trailer_findings(root, env=None):
         r"^\s*(%s)\s*:\s*(.*?)\s*$" % "|".join(re.escape(k) for k in sorted(keys)),
         re.IGNORECASE,
     )
+    records = [
+        record.lstrip("\n") for record in log.split(_RECORD) if record.lstrip("\n")
+    ]
+    backlog_values = []
+    for record in records:
+        _sha, trailers, body = record.split(_FIELD, 2)
+        for line in trailers.splitlines():
+            m = _TRAILER_LINE.match(line)
+            if m and m.group(1).lower() == policy["backlog_trailer"].lower():
+                backlog_values.append(m.group(2).strip())
+        for line in body.splitlines():
+            m = body_key.match(line)
+            if m and keys[m.group(1).lower()] == policy["backlog_trailer"]:
+                backlog_values.append(m.group(2))
+    backlog_matches = dict(
+        zip(
+            backlog_values,
+            match_values(
+                policy["backlog_id"],
+                "work_naming.backlog_id",
+                backlog_values,
+                "search",
+                root=str(root),
+            ),
+            strict=True,
+        )
+    )
     # A line is a misplaced trailer only when its value has the shape its key
     # carries; "slice: split the parser" in an old history is prose.
-    shaped = {
+    shaped: dict[str, Callable[[str], bool]] = {
         policy["slice_trailer"]: lambda v: grammar["mention"].fullmatch(v) is not None,
-        policy["backlog_trailer"]: lambda v: backlog.search(v) is not None,
+        policy["backlog_trailer"]: lambda v: backlog_matches[v],
     }
-    for record in log.split(_RECORD):
-        record = record.lstrip("\n")
-        if not record:
-            continue
+    for record in records:
         sha, trailers, body = record.split(_FIELD, 2)
         out["commits"] += 1
         tag = sha[:12] + ": "
@@ -166,7 +191,7 @@ def trailer_findings(root, env=None):
                     % (policy["slice_trailer"], value)
                 )
         for value in parsed.get(policy["backlog_trailer"], []):
-            if not backlog.search(value):
+            if not backlog_matches[value]:
                 out["findings"].append(
                     tag
                     + "%s: %r does not match work_naming.backlog_id"
@@ -243,8 +268,12 @@ def toy(tmp_path):
     (root / "config").mkdir(parents=True)
     (root / "docs" / "design").mkdir(parents=True)
     with open(str(_ROOT / "config" / "project.json"), encoding="utf-8") as fh:
-        block = json.load(fh)["work_naming"]
-    data = {"name": "demo", "work_naming": block}
+        manifest = json.load(fh)
+    data = {
+        "name": "demo",
+        "work_naming": manifest["work_naming"],
+        "tests": manifest["tests"],
+    }
     (root / "config" / "project.json").write_text(json.dumps(data), encoding="utf-8")
     (root / "docs" / "design" / "plan.md").write_text(_PLAN, encoding="utf-8")
     env = git_env(tmp_path)
@@ -414,3 +443,23 @@ def test_the_gate_is_a_fixed_point(toy):
     root, env, commit = toy
     commit("x\n\nSlice: CMP-1.S9")
     assert trailer_findings(root, env) == trailer_findings(root, env)
+
+
+@pytest.mark.parametrize("in_block", [True, False], ids=["trailer", "body"])
+def test_backtracking_backlog_pattern_is_refused(toy: Any, *, in_block: bool) -> None:
+    root, env, commit = toy
+    pattern, value = "^(a+)+$", "a" * 100 + "!"
+    path = root / "config" / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["work_naming"]["backlog_id"] = pattern
+    data["tests"] = {"child_timeout_seconds": 2}
+    path.write_text(json.dumps(data), encoding="utf-8")
+    commit("x\n\nBacklog: " + value + ("" if in_block else "\n\nMore prose."))
+    judge = cast(Callable[..., Any], trailer_findings)
+    with pytest.raises(AssertionError) as caught:
+        judge(root, env)
+    message = str(caught.value)
+    assert "work_naming.backlog_id" in message
+    assert "tests.child_timeout_seconds" in message
+    assert "timeout" in message and "repair" in message
+    assert pattern not in message and value not in message
