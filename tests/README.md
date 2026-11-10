@@ -68,8 +68,8 @@ process a child scratch directory under the session root. The directory is named
 `children-<worker-id>` for an xdist worker. It is named `children-main` without
 xdist. The fixture points `TMPDIR` and `KEEL_TEST_SCRATCH` at that directory for
 children to inherit. It restores both variables at teardown. Fixed names avoid
-accumulating directories across runs. Separate directories prevent sibling nested
-pytest sessions from racing over `pytest-current` cleanup in a shared
+accumulating directories across runs. Separate directories prevent nested pytest
+sessions started from different workers from racing over `pytest-current` cleanup in a shared
 `pytest-of-<user>` directory. In-process readers use `tempfile.gettempdir()` for
 the session root. Memory comes first
 because test scratch is thrown away within seconds and needs no durability. A
