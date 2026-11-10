@@ -2,7 +2,7 @@
 title: Unit — the isolation guard judges each reach by the test's tier
 kind: tests
 layer: n/a
-summary: Exercises the isolation guard's policy, event classification, store copies, usage records and scratch selection. Refused reaches name their axis and target. Unsafe scratch settings name their key. Child scratch roots differ by worker and use a fixed name without xdist. Redirecting child environments preserves tempfile at the session root. Repeating a child redirect preserves the environment and existing files.
+summary: Exercises the isolation guard's policy, event classification, store copies, usage records and scratch selection. Refused reaches name their axis and target. Unsafe scratch settings name their key. Child scratch roots differ by worker and use a fixed name without xdist. Redirecting child environments preserves tempfile at the session root. Repeating a child redirect preserves the environment and existing files. The child environment context restores both set and unset variables on exit.
 """
 
 import dataclasses
@@ -1260,3 +1260,28 @@ def test_pointing_children_at_the_root_twice_leaves_tempfile_untouched(
     assert tempfile.gettempdir() == session
     assert sorted(Path(session).iterdir()) == [Path(child)]
     assert (Path(child) / "kept.txt").read_text(encoding="utf-8") == "evidence"
+
+
+@pytest.mark.parametrize("prior_tmpdir", ["/prior/tmpdir", None])
+@pytest.mark.parametrize("prior_scratch", ["/prior/scratch", None])
+def test_children_environment_restores_prior_values(
+    tmp_path, monkeypatch, prior_tmpdir, prior_scratch
+):
+    prior = {"TMPDIR": prior_tmpdir, _SCRATCH_VAR: prior_scratch}
+    for name, value in prior.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    session = str(tmp_path)
+    child = ig.child_scratch_root(session, os.environ)
+    before_tempdir = tempfile.gettempdir()
+
+    with ig.children_environment(session):
+        assert os.environ["TMPDIR"] == child
+        assert os.environ[_SCRATCH_VAR] == child
+        assert Path(child).is_dir()
+        assert tempfile.gettempdir() == before_tempdir
+
+    for name, value in prior.items():
+        assert os.environ.get(name) == value

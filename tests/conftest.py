@@ -94,12 +94,7 @@ def child_scratch():
     # The controller imports conftest before spawning workers. Moving the
     # child environment at import would make workers inherit its child root
     # as their session root instead of sharing the intended session root.
-    environ = dict(os.environ)
-    isolation_guard.point_children_at(_SCRATCH.path, environ)
-    with pytest.MonkeyPatch.context() as patch:
-        for name, value in environ.items():
-            if os.environ.get(name) != value:
-                patch.setenv(name, value)
+    with isolation_guard.children_environment(_SCRATCH.path):
         yield
 
 

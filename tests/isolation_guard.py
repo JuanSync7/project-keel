@@ -1,6 +1,6 @@
 """
 title: isolation guard — a test reaches the network, the disk and the stores only as its tier allows
-summary: Judges test reaches against the tier rules in config/project.json tests.isolation. An audit hook raises IsolationError for a refused reach. The phase record lets conftest fail a test even when it catches the refusal. copy_store supplies scratch copies of configured stores. Scratch selection prefers the configured override, then a private memory root, then the disk root. Unsafe scratch roots raise ConfigError. point_temp_at sets the session root for tempfile and pytest. child_scratch_root names a fixed directory for each worker or the serial process. point_children_at directs child environments there without changing tempfile. Separate child roots prevent nested pytest sessions on sibling workers from racing over pytest-current cleanup. Usage records let the xdist controller judge unused exemptions across workers.
+summary: Judges test reaches against the tier rules in config/project.json tests.isolation. An audit hook raises IsolationError for a refused reach. The phase record lets conftest fail a test even when it catches the refusal. copy_store supplies scratch copies of configured stores. Scratch selection prefers the configured override, then a private memory root, then the disk root. Unsafe scratch roots raise ConfigError. point_temp_at sets the session root for tempfile and pytest. child_scratch_root names a fixed directory for each worker or the serial process. point_children_at directs child environments there without changing tempfile. children_environment restores prior environment values and unsets previously absent variables on exit. Separate child roots prevent nested pytest sessions on sibling workers from racing over pytest-current cleanup. Usage records let the xdist controller judge unused exemptions across workers.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/unit/test_isolation_guard.py
@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
 from typing import Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
+
+import pytest
 
 _SCRIPTS = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"
@@ -531,6 +533,19 @@ def point_children_at(path: str, environ: Dict[str, str]) -> None:
     (key,) = config_loader.rows(SCRATCH_KEY)
     if key.env is not None:
         environ[key.env] = child
+
+
+@contextlib.contextmanager
+def children_environment(path: str) -> Iterator[None]:
+    """Direct children to this process's scratch root and restore the prior
+    environment on exit, including variables that were unset."""
+    environ = dict(os.environ)
+    point_children_at(path, environ)
+    with pytest.MonkeyPatch.context() as patch:
+        for name, value in environ.items():
+            if os.environ.get(name) != value:
+                patch.setenv(name, value)
+        yield
 
 
 def rule_for(policy: Policy, marker_names: Iterable[str]) -> TierRule:
