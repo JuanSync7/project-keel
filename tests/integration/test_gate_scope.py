@@ -2,7 +2,7 @@
 title: Integration — the gate's scope is the whole corpus, not a hand-written subset
 kind: tests
 layer: n/a
-summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry, each keel module it imports by bare name and every file of config/project.json `import_layers.order[0]` must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3, and where the host has one, child_env builds an environment and scripts/config_loader.py resolves keel's own config there with nothing on stderr. (6) The tools whose output IS the gate's verdict — ruff, mypy, and pre-commit, which builds the secret scanner — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places; its secret-scanner block names the repository and rev config/project.json `secrets.scanner` pins, runs the commit scan (the staged diff, or every commit when nothing is staged) on commit and holds the manual hook `make secrets-install` runs, `make verify` reaches `make secret-scan` and never the install, and CI installs the scanner, then scans, before the suite, with no step carrying on past a failure. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. Imports nothing optional: this pin must never itself skip.
+summary: Pass 3's contract, read off the REAL Makefile recipes, the REAL pyproject and the REAL .pre-commit-config.yaml. (1) `lint-py` and `fmt` must cover every entry of `CODE_ROOTS` — imported from scripts/check_structure.py, never re-typed here, so the three scope lists cannot drift. (2) mypy's scope must ACCOUNT for every code root: each is either inside `[tool.mypy] files` or a declared, reasoned entry in config/practices.json rulesets.mypy.ratchet — a root may not simply be unmentioned. (3) ruff must actually be clean over that scope. (4) The static FE gates (lint-fe, typecheck-fe) SKIP when npm is absent; the frontend suites and `fe-browsers` exit 2 naming the target, the app and `make fe-install` when npm is absent or any app lacks node_modules, checked for every app before any suite runs, and every FE target is silent and green on a repo with no frontend app; CI installs the packages and the journey's browser before it runs `make test-fe`, and no CI step carries on past a failure. (5) Every bare-`python3` pre-commit entry, each keel module it imports by bare name and every file of config/project.json `import_layers.order[0]` must be legal under the documented old interpreter, since pre-commit `language: system` hooks exec the ambient python3, and where the host has one, child_env builds an environment and scripts/config_loader.py resolves keel's own config there with nothing on stderr. (6) The tools whose output IS the gate's verdict — ruff, mypy, and pre-commit, which builds the secret scanner — must be pinned exactly in the `dev` extra, and pre-commit must run the SAME ruff, or the same tree gets different verdicts in different places; its secret-scanner block names the repository and rev config/project.json `secrets.scanner` pins, runs the commit scan (the staged diff, or every commit when nothing is staged) on commit and holds the manual hook `make secrets-install` runs, `make verify` reaches `make secret-scan` and never the install, and CI installs the scanner, then scans, before the suite, with no step carrying on past a failure. (7) Every frontend app the Makefile's FE_APPS glob finds wires a unit runner and a browser journey that `make verify` reaches and `make test` does not: each npm script the test-fe and fe-browsers recipes run is defined, the unit config refuses zero tests and a focused test and never collects the journeys, the journey config refuses a focused test, both suites hold at least one file, the journey config reads every config/project.json `layers.frontend.journey` key and spells no port, and the browser runner is pinned to one exact version every app and lockfile agree on. (8) An AST scan rejects raw pytest.importorskip calls, including import and assignment aliases, unless their module is deliberately optional; strings and comments are data, and unparseable modules fail with their filename. Imports nothing optional: this pin must never itself skip.
 """
 
 import ast
@@ -1249,7 +1249,115 @@ sys.path.insert(0, str(_ROOT / "tests"))
 
 import optional_deps  # noqa: E402
 
-_RAW_SKIP = "pytest.importorskip("
+
+def _skip_callees(expr, bindings, seen=frozenset()):
+    """The qualified names an imported or assigned expression can refer to."""
+    if isinstance(expr, str):
+        return {expr}
+    if isinstance(expr, ast.Attribute):
+        return {
+            "%s.%s" % (base, expr.attr)
+            for base in _skip_callees(expr.value, bindings, seen)
+        }
+    if isinstance(expr, ast.Name) and expr.id not in seen:
+        return {
+            name
+            for value in bindings.get(expr.id, [])
+            for name in _skip_callees(value, bindings, seen | {expr.id})
+        }
+    return set()
+
+
+def _importorskip_calls(text, filename):
+    """Each pytest or routed importorskip Call in a module's AST, in source order."""
+    tree = ast.parse(text, filename=filename)
+    bindings = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                head = alias.name.split(".")[0]
+                bindings.setdefault(alias.asname or head, []).append(
+                    alias.name if alias.asname else head
+                )
+        elif isinstance(node, ast.ImportFrom) and node.level == 0:
+            for alias in node.names:
+                bindings.setdefault(alias.asname or alias.name, []).append(
+                    "%s.%s" % (node.module, alias.name)
+                )
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value:
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bindings.setdefault(target.id, []).append(node.value)
+    # A name with more than one binding may take either path at runtime. Keeping
+    # every imported/assigned possibility prevents a conditional rebind hiding a skip.
+    calls = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        callees = _skip_callees(node.func, bindings)
+        calls.extend(
+            (node, callee)
+            for callee in ("pytest.importorskip", "optional_deps.importorskip")
+            if callee in callees
+        )
+    return sorted(calls, key=lambda item: (item[0].lineno, item[0].col_offset))
+
+
+def _silent_skip_calls(text, filename):
+    """The lines that silently skip imports outside the optional registry."""
+    offenders = []
+    for call, callee in _importorskip_calls(text, filename):
+        if callee != "pytest.importorskip":
+            continue
+        modules = list(call.args[:1]) + [
+            kw.value for kw in call.keywords if kw.arg == "modname"
+        ]
+        if len(modules) == 1 and isinstance(modules[0], ast.Constant):
+            module = modules[0].value
+            if (
+                isinstance(module, str)
+                and module in optional_deps.DELIBERATELY_OPTIONAL
+            ):
+                continue
+        offenders.append(call.lineno)
+    return offenders
+
+
+@pytest.mark.parametrize(
+    "text,lines",
+    [
+        ('import pytest\npytest.importorskip("x")\n', [2]),
+        ("sample = 'pytest.importorskip(\"x\")'\n", []),
+        ('# pytest.importorskip("x")\n', []),
+        ('from pytest import importorskip\nimportorskip("x")\n', [2]),
+        ('from pytest import importorskip as s\ns("x")\n', [2]),
+        ('import pytest\ns = pytest.importorskip\ns("x")\n', [3]),
+        ('import pytest as p\np.importorskip("x")\n', [2]),
+        ('import pytest\np = pytest\ns = p.importorskip\nt = s\nt("x")\n', [5]),
+        ('import optional_deps\noptional_deps.importorskip("x", extra="dev")\n', []),
+        ('import pytest\npytest.importorskip("x")  # langgraph\n', [2]),
+        ('import pytest\npytest.importorskip("not_langgraph")\n', [2]),
+        ('import pytest\npytest.importorskip("x", reason="langgraph")\n', [2]),
+        ('import pytest\npytest.importorskip(\n    "x"\n)\n', [2]),
+        ('import pytest\npytest.importorskip(modname="x")\n', [2]),
+    ],
+)
+def test_silent_skip_judges_code(text, lines):
+    assert _silent_skip_calls(text, "sample.py") == lines
+
+
+@pytest.mark.parametrize("module", sorted(optional_deps.DELIBERATELY_OPTIONAL))
+@pytest.mark.parametrize("argument", ['"%s"', 'modname="%s"'])
+def test_silent_skip_excuses_declared_optional_modules(module, argument):
+    text = "import pytest\npytest.importorskip(%s)\n" % (argument % module)
+    assert _silent_skip_calls(text, "optional.py") == []
+
+
+def test_silent_skip_rejects_unparseable_modules():
+    with pytest.raises(SyntaxError) as exc:
+        _silent_skip_calls("def broken(\n", "broken_test.py")
+    assert exc.value.filename == "broken_test.py"
 
 
 def _test_modules():
@@ -1265,18 +1373,13 @@ def test_no_test_module_silently_skips_a_dependency_ci_installs():
     """
     offenders = []
     for path in _test_modules():
-        # This module names the searched-for literal as its own filter string, so
-        # without the self-exclusion it would always match itself and the scan
-        # would never be able to find a real offender. (Exactly the trap that made
-        # an earlier meta-test unfireable — see test_copier_generator_contract.py.)
-        if path.resolve() == Path(__file__).resolve():
-            continue
-        for i, line in enumerate(path.read_text().splitlines(), 1):
-            if _RAW_SKIP not in line or line.lstrip().startswith("#"):
-                continue
-            if any(name in line for name in optional_deps.DELIBERATELY_OPTIONAL):
-                continue
-            offenders.append("%s:%d: %s" % (path.relative_to(_ROOT), i, line.strip()))
+        text = path.read_text(encoding="utf-8-sig")
+        filename = str(path.relative_to(_ROOT))
+        lines = text.splitlines()
+        offenders.extend(
+            "%s:%d: %s" % (filename, line, lines[line - 1].strip())
+            for line in _silent_skip_calls(text, filename)
+        )
     assert not offenders, (
         "these guarded imports skip silently instead of failing when CI declares "
         "the surface required, so the assertions behind them can stop running "
@@ -1293,12 +1396,14 @@ def test_the_silent_skip_scan_actually_reaches_the_suite():
     Both halves must be non-empty — real modules walked, and at least one real
     guarded import found — or a rename could quietly empty the scan.
     """
-    modules = [p for p in _test_modules() if p.resolve() != Path(__file__).resolve()]
+    modules = _test_modules()
     assert len(modules) > 10, "the test-module scan found almost nothing: %s" % modules
     guarded = [
         p.name
         for p in modules
-        if "optional_deps.importorskip(" in p.read_text() or _RAW_SKIP in p.read_text()
+        if _importorskip_calls(
+            p.read_text(encoding="utf-8-sig"), str(p.relative_to(_ROOT))
+        )
     ]
     assert guarded, "no module guards an optional import — has the pattern moved?"
 
