@@ -2,7 +2,7 @@
 title: Integration — the live-server harness starts a real process, waits on a probe and leaves nothing behind
 kind: tests
 layer: n/a
-summary: tests/live_server.py starts the REST app under uvicorn as its own process on a loopback port the OS picks, waits on a readiness probe bounded by config/project.json `e2e.server.ready_timeout_s`, and kills its whole process group on the way out. Each test here is a RED proof of one promise - a server that answers over the socket and leaves no process, one that never becomes ready times out and is killed, one that exits early fails fast with its log, a scenario that raises still kills the server, a runner ended by SIGTERM or SIGHUP still kills the server, and a proxy in the environment cannot reroute a loopback request. Skips, naming the `transport` extra, without uvicorn or FastAPI.
+summary: Signal-runner children explicitly set the tested signal to its default action, so inherited ignored SIGHUP cannot turn the expected termination into a timeout. tests/live_server.py starts the REST app under uvicorn as its own process on a loopback port the OS picks, waits on a readiness probe bounded by config/project.json `e2e.server.ready_timeout_s`, and kills its whole process group on the way out. Each test here is a RED proof of one promise - a server that answers over the socket and leaves no process, one that never becomes ready times out and is killed, one that exits early fails fast with its log, a scenario that raises still kills the server, a runner ended by SIGTERM or SIGHUP still kills the server, and a proxy in the environment cannot reroute a loopback request. Skips, naming the `transport` extra, without uvicorn or FastAPI.
 """
 
 import contextlib
@@ -108,7 +108,10 @@ def test_a_failing_scenario_still_kills_the_server():
 
 
 _RUNNER = """
-import sys, time
+import signal, sys, time
+# A nohup caller may ignore SIGHUP. This scenario requires its default action
+# when the harness restores and re-raises it after stopping the server.
+signal.signal(getattr(signal, {name!r}), signal.SIG_DFL)
 sys.path.insert(0, {tests!r})
 import live_server
 root = {root!r}
@@ -143,7 +146,9 @@ def test_a_runner_ended_by_a_signal_leaves_no_server(tmp_path, name):
     out = tmp_path / "server"
     script = tmp_path / "runner.py"
     script.write_text(
-        _RUNNER.format(tests=str(_ROOT / "tests"), root=str(_ROOT), out=str(out)),
+        _RUNNER.format(
+            tests=str(_ROOT / "tests"), root=str(_ROOT), out=str(out), name=name
+        ),
         encoding="utf-8",
     )
     runner = subprocess.Popen(

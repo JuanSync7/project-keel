@@ -1,8 +1,8 @@
 """
-title: Integration — a copied script carries every project module it imports
+title: Integration — copied recipes and scripts carry their dependencies
 kind: tests
 layer: n/a
-summary: tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Local helper calls bind positional and keyword parameter sources through helper chains with cycle termination; calls retain rooted arguments unless every suffix of a join on a pytest-owned scratch parameter is proven relative from literal bindings or a direct local literal-return function; all binding forms can void that proof; path operations resolve import origins instead of bare names. A cached repository scan feeds collection and guards pinned to test_launcher.py::_build and tests/script_copy.py, with bounded diagnostic samples and a scan-count regression.
+summary: Copied recipe text supplies literal Python and shell script paths and their transitive imports, including entries a recipe gains later; missing paths fail before copying and repeated copies change no bytes. tests/script_copy.py copy_with_imports copies the files a fixture lists into a scratch project together with every project module a listed Python file imports, followed to its end, so a script that starts importing a sibling never leaves a fixture's copy unable to start. Over synthetic trees: an import of a sibling, made at module level or inside a function, is carried and an unimported sibling is not; a module under scripts/jobs/ carries what it imports from scripts/; a tests/ helper carries its tests/ sibling; `from scripts import x` and `from scripts.x import y`, resolved against the repo root, are carried; an import of the project that no file holds raises naming the importer and the module, never a silent skip; an import cycle is read once per file; a standard-library or installed name is left out; a listed file that does not exist raises naming it before anything is written; and a second copy into the same destination changes no byte. Over keel's own tree, copying scripts/check_structure.py carries scripts/corpus_level.py, the module whose absence from every hand-kept list once stopped 96 fixtures with ModuleNotFoundError, and copying scripts/run_make_target.py carries scripts/resource_limits.py, which it imports as `from scripts import resource_limits`, and the copy starts. An AST scan follows test imports into helpers and repository-root provenance through assignments and function returns, retaining unresolved rooted sources, and recognizes shutil copies, os and Path links and subprocess cp/rsync argv; configured import layers define code roots. Entry rosters must route through the helper and their copied trees must resolve every project import. Direct copies have reasons in _COPY_EXEMPTIONS keyed by module, enclosing function and source expression; a stale or ambiguous site fails naming its key. Local helper calls bind positional and keyword parameter sources through helper chains with cycle termination; calls retain rooted arguments unless every suffix of a join on a pytest-owned scratch parameter is proven relative from literal bindings or a direct local literal-return function; all binding forms can void that proof; path operations resolve import origins instead of bare names. A cached repository scan feeds collection and guards pinned to test_launcher.py::_build and tests/script_copy.py, with bounded diagnostic samples and a scan-count regression.
 """
 
 import ast
@@ -191,6 +191,49 @@ def test_a_second_copy_changes_no_byte(tmp_path):
     before = _bytes(dest)
     assert script_copy.copy_with_imports(dest, src, ["scripts/a.py"]) == first
     assert _bytes(dest) == before
+
+
+def test_copied_recipes_carry_the_scripts_they_name_and_their_imports(tmp_path):
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    _tree(src, _SIBLINGS)
+    recipe = 'test:\n\t@value="$$($(PY) ./scripts/a.py)"\n'
+    written = script_copy.copy_with_imports(dest, src, [], recipes=[recipe])
+    assert written == ["scripts/a.py", "scripts/b.py", "scripts/c.py"]
+    before = _bytes(dest)
+    assert script_copy.copy_with_imports(dest, src, [], recipes=[recipe]) == written
+    assert _bytes(dest) == before
+
+
+def test_a_new_recipe_entry_is_discovered_without_editing_a_roster(tmp_path):
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    _tree(
+        src,
+        {
+            "scripts/first.py": "",
+            "tests/next.py": "import sibling\n",
+            "tests/sibling.py": "",
+            "scripts/run.sh": "#!/bin/sh\n",
+        },
+    )
+    recipe = "test:\n\t$(PY) scripts/first.py\n"
+    script_copy.copy_with_imports(dest, src, [], recipes=[recipe])
+    recipe += '\t$(PY) "tests/next.py" && sh scripts/run.sh\n'
+    assert script_copy.copy_with_imports(dest, src, [], recipes=[recipe]) == [
+        "scripts/first.py",
+        "scripts/run.sh",
+        "tests/next.py",
+        "tests/sibling.py",
+    ]
+
+
+def test_a_missing_recipe_script_raises_before_copying(tmp_path):
+    src, dest = tmp_path / "src", tmp_path / "dest"
+    _tree(src, _SIBLINGS)
+    with pytest.raises(AssertionError, match="scripts/gone.py"):
+        script_copy.copy_with_imports(
+            dest, src, ["scripts/a.py"], recipes=["test:\n\t$(PY) scripts/gone.py\n"]
+        )
+    assert not dest.exists()
 
 
 def test_keels_check_structure_carries_corpus_level(tmp_path):

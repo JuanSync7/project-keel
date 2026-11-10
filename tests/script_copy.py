@@ -1,8 +1,8 @@
 """
-title: Test helper — copy listed files with every project module they import
+title: Test helper — copy recipe scripts and listed files with their imports
 kind: tests
 layer: n/a
-summary: copy_with_imports copies the files a fixture lists from a project root into a scratch directory, each at its own relative path, together with every project module a listed Python file imports, followed to its end; imports_closure is the list it copies. An import resolves the way the copied file meets it at run time: first against the importer's own directory (a script's directory is the head of its sys.path), then against scripts/, which every tests/ helper and scripts/jobs/ module puts on its path, then against the repo root, which a module importing `from scripts import x` or `from scripts.x import y` puts on its path. An import of the project that none of these holds raises AssertionError naming the importer and the module, before anything is written, never a silent skip: an absolute import is the project's when one of those roots holds its first segment as a module or a directory, and a relative import always is. tests/source_tree.py import_edges reads the imports, so an import inside a function counts and a standard-library or installed name never resolves to a project file. A fixture that lists its entry scripts this way keeps starting when one of them begins importing a new sibling; a hand-kept list does not. A listed file that does not exist raises AssertionError naming it, before anything is written. It cannot see an import made through importlib or `__import__`, or one a module finds through a sys.path entry other than those three; that file stays the calling test's to list.
+summary: copy_with_imports copies literal relative .py and .sh paths in the supplied copied recipes, the files a fixture lists from a project root into a scratch directory, each at its own relative path, together with every project module a listed Python file imports, followed to its end; imports_closure is the list it copies. An import resolves the way the copied file meets it at run time: first against the importer's own directory (a script's directory is the head of its sys.path), then against scripts/, which every tests/ helper and scripts/jobs/ module puts on its path, then against the repo root, which a module importing `from scripts import x` or `from scripts.x import y` puts on its path. An import of the project that none of these holds raises AssertionError naming the importer and the module, before anything is written, never a silent skip: an absolute import is the project's when one of those roots holds its first segment as a module or a directory, and a relative import always is. tests/source_tree.py import_edges reads the imports, so an import inside a function counts and a standard-library or installed name never resolves to a project file. A fixture that lists its entry scripts this way keeps starting when one of them begins importing a new sibling; a hand-kept list does not. A listed file that does not exist raises AssertionError naming it, before anything is written. Recipe paths are literal, including quoted paths and shell substitutions; computed recipe paths must be listed explicitly. It cannot see an import made through importlib or `__import__`, or one a module finds through a sys.path entry other than those three; that file stays the calling test's to list.
 effect: writes
 rerun: fixed-point
 rerun_proof: tests/integration/test_script_copy.py
@@ -10,6 +10,7 @@ rerun_proof: tests/integration/test_script_copy.py
 
 import os
 import posixpath
+import re
 import shutil
 
 import source_tree
@@ -19,14 +20,23 @@ _PY = ".py"
 _SHARED_ROOT = "scripts/"
 # A module importing `from scripts import x` puts the repo root on its sys.path.
 _REPO_ROOT = ""
+# Recipe paths may sit inside quotes or a shell substitution, so shell-word
+# splitting would lose scripts/config_get.py in value="$$($(PY) ... )".
+_RECIPE_SCRIPT = re.compile(
+    r"(?<![\w./-])(?:\./)?((?:[\w.-]+/)+[\w.-]+\.(?:py|sh))(?=[^\w./-]|$)"
+)
 
 
-def imports_closure(root, relpaths):
+def imports_closure(root, relpaths, *, recipes=()):
     """*relpaths* and every project module a listed `.py` imports, transitively,
-    as a sorted list of relative paths under *root*. Raises AssertionError
+    as a sorted list of relative paths under *root*. Literal relative Python
+    and shell script paths in *recipes* join the entry files. Raises AssertionError
     naming each listed file *root* does not hold, and each import of the
     project no file holds with the file that makes it."""
     root = str(root)
+    relpaths = set(relpaths)
+    for recipe in recipes:
+        relpaths.update(_RECIPE_SCRIPT.findall(recipe))
     missing = [
         rel
         for rel in relpaths
@@ -63,14 +73,14 @@ def imports_closure(root, relpaths):
     return sorted(seen)
 
 
-def copy_with_imports(dest, root, relpaths):
-    """Copy *imports_closure* of *relpaths* from *root* into *dest*, each at
+def copy_with_imports(dest, root, relpaths, *, recipes=()):
+    """Copy *imports_closure* of *relpaths* and *recipes* into *dest*, each at
     its relative path. -> the relative paths written, sorted.
 
     Each file is a whole-file overwrite, so a second call into the same *dest*
     writes the same bytes."""
     dest = str(dest)
-    written = imports_closure(root, relpaths)
+    written = imports_closure(root, relpaths, recipes=recipes)
     for rel in written:
         target = os.path.join(dest, *rel.split("/"))
         os.makedirs(os.path.dirname(target), exist_ok=True)
