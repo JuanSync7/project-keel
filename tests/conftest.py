@@ -1,6 +1,6 @@
 """
-title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard + the expiring-tier recorder
-summary: Selects the session scratch root before test imports. tempfile, pytest basetemp and the hermetic git directory use that root. A session autouse fixture directs each test-running process's child environment to its own fixed scratch directory. The fixture restores the changed environment variables at teardown. The xdist controller keeps the session root in the environment it hands its workers. The isolation guard fails tests that reach outside their tier rules. store_copy supplies private copies of listed stores. The selection guard fails runs in which zero tests ran. The expiring-tier recorder writes requested findings as canonical JSON.
+title: Shared pytest fixtures + the test scratch root + the hermetic git environment + the isolation guard + the zero-tests guard + the expiring-tier recorder + the check_structure state guard
+summary: Selects the session scratch root before test imports. tempfile, pytest basetemp and the hermetic git directory use that root. A session autouse fixture directs each test-running process's child environment to its own fixed scratch directory. The fixture restores the changed environment variables at teardown. The xdist controller keeps the session root in the environment it hands its workers. The isolation guard fails tests that reach outside their tier rules. store_copy supplies private copies of listed stores. The selection guard fails runs in which zero tests ran. The expiring-tier recorder writes requested findings as canonical JSON. The state guard puts back, after every test, the scripts/check_structure.py globals run_checks rebinds, so a test that judges a temporary tree never hands a later test its root or config memo (see tests/gate_state.py for how the names are read).
 
 Shared pytest fixtures live here.
 
@@ -21,6 +21,7 @@ import tempfile
 
 import pytest
 
+import gate_state
 import hermetic_git
 import isolation_guard
 import selection_guard
@@ -250,6 +251,20 @@ def store_copy(tmp_path):
             pytest.fail(str(exc), pytrace=False)
 
     return copy
+
+
+@pytest.fixture(autouse=True)
+def _check_structure_state():
+    """Put back the check_structure globals run_checks rebinds once the test
+    ends, when the module is imported."""
+    # A test that calls run_checks on a temporary tree leaves ROOT and the
+    # config memo there, and the next in-process reader judges that deleted
+    # tree unless some later test happens to judge the real one first.
+    module = sys.modules.get("check_structure")
+    saved = gate_state.snapshot(module) if module is not None else None
+    yield
+    if saved is not None:
+        gate_state.restore(module, saved)
 
 
 @pytest.fixture(scope="session")

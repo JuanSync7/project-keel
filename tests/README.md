@@ -156,6 +156,16 @@ and whose call returns nothing, gets its node id and the reason in
 `test_quality.assertions.exempt`. `unit/test_assertion_quality.py` plants each
 fault in a temporary tree.
 
+## A test leaves the structure gate as it found it
+
+`scripts/check_structure.py` `run_checks` points module globals (`ROOT`, the
+config memo, the error lists) at the tree it judges and leaves them there.
+`conftest.py` saves those globals before every test and puts them back after
+it, so a test that judges a temporary tree in-process never hands a later
+test that tree. `gate_state.py` reads the names from the `global` statements
+in `run_checks` and refuses a `run_checks` it cannot read or one that
+declares none. `unit/test_gate_state.py` proves each case.
+
 ## A copied Makefile carries its includes
 
 A test that runs make in a scratch copy of a project copies the root Makefile
