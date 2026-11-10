@@ -11,6 +11,7 @@ import importlib
 import importlib.util
 import io
 import json
+import re
 import sys
 import threading
 import traceback
@@ -42,6 +43,60 @@ pytestmark = pytest.mark.unit
 
 _WHERE = "config/project.json"
 _SENTINEL = "tok-SENTINEL"
+
+
+def test_compile_pattern_accepts_keels_character_bound() -> None:
+    pattern = "x" * 65536
+    compiled = config_loader.compile_pattern(pattern, "patterns.example", _WHERE)
+    assert compiled.pattern == pattern
+    assert compiled.fullmatch(pattern) is not None
+
+
+@pytest.mark.parametrize(
+    "pattern, fault",
+    [
+        ("PRIVATE[", "syntax"),
+        ("(" * 600 + "PRIVATE" + ")" * 600, "nested too deep"),
+        ("PRIVATE{4294967296}", "repetition or size"),
+        ("PRIVATE{" + "9" * 5000 + "}", "repetition"),
+        ("PRIVATE" + "x" * (65537 - len("PRIVATE")), "keel's 65536 character"),
+    ],
+    ids=["syntax", "recursion", "overflow", "repeat-count", "size"],
+)
+def test_compile_pattern_refuses_with_key_repair_and_no_pattern(
+    pattern: str, fault: str
+) -> None:
+    key = "patterns.example"
+    with pytest.raises(WrongValue) as caught:
+        config_loader.compile_pattern(pattern, key, _WHERE)
+    assert caught.value.path == _WHERE
+    message = str(caught.value)
+    assert _WHERE in message and key in message and fault in message
+    assert (
+        "correct " + key in message and "valid, smaller regular expression" in message
+    )
+    printed = "".join(traceback.format_exception(caught.value))
+    assert "PRIVATE" not in printed and pattern not in printed
+
+
+@pytest.mark.parametrize("flags", [re.LOCALE, re.ASCII | re.UNICODE])
+def test_compile_pattern_does_not_blame_config_for_invalid_caller_flags(
+    flags: int,
+) -> None:
+    with pytest.raises(ValueError):
+        config_loader.compile_pattern("valid", "patterns.example", _WHERE, flags)
+
+
+def test_compile_pattern_does_not_hide_an_unexpected_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken_compile(pattern: str, flags: int) -> re.Pattern[str]:
+        raise ValueError("unexpected compiler defect")
+
+    with pytest.raises(ValueError) as caught, monkeypatch.context() as patch:
+        patch.setattr(config_loader.re, "compile", broken_compile)
+        config_loader.compile_pattern("valid", "patterns.example", _WHERE)
+    assert str(caught.value) == "unexpected compiler defect"
 
 
 def _key(

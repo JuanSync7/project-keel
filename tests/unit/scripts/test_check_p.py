@@ -109,26 +109,36 @@ def test_a_help_recipe_without_a_readable_pattern_warns_and_gates_nothing():
     assert len(warns) == 1 and "unverified" in warns[0], warns
 
 
-def test_a_pattern_this_check_cannot_compile_is_refused_naming_the_fix():
-    bad = _HELP_NARROW.replace("^[a-zA-Z_-]+", "^[a-zA-Z_-]++(?<")
-    with pytest.raises(cs.config_loader.ConfigError) as exc:
-        _find(bad + "e2e: ## a\n\tx\n")
-    message = str(exc.value)
-    assert "help recipe grep pattern" in message and "correct" in message
-    assert "++(?<" not in message
+@pytest.mark.parametrize("excluded", [False, True], ids=["select", "exclude"])
+def test_a_pattern_this_check_cannot_compile_warns_unverified(
+    *, excluded: bool
+) -> None:
+    # grep treats an escaped 'q' as literal; Python rejects the unknown escape.
+    pattern = r"PRIVATE\q"
+    if excluded:
+        bad = _HELP_WIDE.replace(
+            "$(MAKEFILE_LIST) |", "$(MAKEFILE_LIST) | grep -v '%s' |" % pattern
+        )
+    else:
+        bad = _HELP_WIDE.replace("^[a-zA-Z0-9_-]+:.*?## ", pattern)
+    errs, warns = _find(bad + "e2e: ## a\n\tx\n")
+    assert errs == []
+    assert len(warns) == 1
+    assert "Makefile" in warns[0] and "help recipe grep pattern" in warns[0]
+    assert "unverified" in warns[0] and "Python" in warns[0]
+    assert "PRIVATE" not in warns[0] and pattern not in warns[0]
 
 
 @pytest.mark.parametrize("excluded", [False, True], ids=["select", "exclude"])
 @pytest.mark.parametrize(
     "pattern",
     [
-        "HOSTILE[",
         "(" * 600 + "HOSTILE" + ")" * 600,
         "HOSTILE{4294967296}",
         "HOSTILE{" + "9" * 5000 + "}",
         "HOSTILE" + "x" * 65536,
     ],
-    ids=["syntax", "depth", "overflow", "decimal-limit", "size"],
+    ids=["depth", "overflow", "decimal-limit", "size"],
 )
 def test_help_pattern_faults_refuse_without_echoing(
     pattern: str, *, excluded: bool

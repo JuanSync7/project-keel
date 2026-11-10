@@ -165,16 +165,25 @@ class WrongValue(ConfigError):
     """A set key holds a value its row does not accept."""
 
 
-# Bound the compiler's input allocation before it builds a parse tree. This
-# ceiling does not bound matching time; callers need a separate execution bound.
+# Keel caps configured patterns at 64 Ki characters to bound parse-tree allocation
+# before calling the compiler; this is not a compiler limit or a matching-time bound.
 _PATTERN_MAX_CHARS = 65536
 
 
-def compile_pattern(pattern: str, key: str, where: str, flags: int = 0) -> Pattern[str]:
+def compile_pattern(
+    pattern: str,
+    key: str,
+    where: str,
+    flags: int = 0,
+    *,
+    refuse_syntax: bool = True,
+) -> Pattern[str]:
     """Compile configured *pattern*, or raise WrongValue naming source, key
     and repair without the pattern or compiler message. Refuse inputs longer
     than 65536 characters before compilation, syntax, depth and size faults.
-    Matching time is not bounded here."""
+    With *refuse_syntax* false, re.error escapes so a caller modelling another
+    regex dialect can report an unverified pattern. Matching time is not bounded
+    here; invalid caller flags and unexpected ValueErrors escape."""
 
     def refusal(fault: str) -> WrongValue:
         return WrongValue(
@@ -186,22 +195,26 @@ def compile_pattern(pattern: str, key: str, where: str, flags: int = 0) -> Patte
         )
 
     if len(pattern) > _PATTERN_MAX_CHARS:
-        raise refusal(
-            "exceeds the regular expression compiler's %d character limit"
-            % _PATTERN_MAX_CHARS
-        )
+        raise refusal("exceeds keel's %d character limit" % _PATTERN_MAX_CHARS)
     try:
         return re.compile(pattern, flags)
     except re.error:
+        if not refuse_syntax:
+            raise
         raise refusal("has invalid regular expression syntax") from None
     except RecursionError:
         raise refusal("is nested too deep to compile") from None
     except OverflowError:
         raise refusal("has a repetition or size too large to compile") from None
-    except ValueError:
+    except ValueError as exc:
         # Python's decimal conversion limit can reject a repetition count
-        # before the regex parser reaches its own overflow check.
-        raise refusal("has a repetition or flags that cannot be compiled") from None
+        # before the regex parser's overflow check. Other ValueErrors, including
+        # incompatible caller flags, are programming faults rather than config.
+        if not str(exc).startswith("Exceeds the limit (") or (
+            "for integer string conversion" not in str(exc)
+        ):
+            raise
+        raise refusal("has a repetition count too large to compile") from None
 
 
 class NotSet(ConfigError):

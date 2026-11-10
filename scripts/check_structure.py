@@ -3615,12 +3615,16 @@ def _expand_make_vars(pattern, makefiles):
 
 
 def _compile_grep(pattern, flags, where):
-    """A grep -E pattern as a Python regex, honouring -i; refuses compiler faults
-    through the shared configured-pattern guard without echoing its input."""
+    """A grep -E pattern as a Python regex, honouring -i; syntax mismatches escape
+    as re.error, while the shared guard refuses compiler resource faults."""
     for posix, python in _POSIX_CLASSES:
         pattern = pattern.replace(posix, python)
     return config_loader.compile_pattern(
-        pattern, "help recipe grep pattern", where, re.IGNORECASE if "i" in flags else 0
+        pattern,
+        "help recipe grep pattern",
+        where,
+        re.IGNORECASE if "i" in flags else 0,
+        refuse_syntax=False,
     )
 
 
@@ -3632,8 +3636,9 @@ def _help_parity_findings(makefiles):
     Silent when no makefile declares a `help` target (nothing lists the
     annotations, so nothing can hide one). WARNs, never errs, for every shape
     it cannot model — parity is then unverified and says so, rather than
-    reporting a green it did not earn. A malformed grep pattern raises a
-    ConfigError naming the makefile and the repair without echoing the pattern.
+    reporting a green it did not earn. Python syntax mismatches warn; compiler
+    resource faults raise ConfigError naming the makefile and repair without
+    echoing the pattern.
     """
     errs, warns = [], []
     if not makefiles:
@@ -3701,8 +3706,16 @@ def _help_parity_findings(makefiles):
             )
             return errs, warns
         excluded.append((later_raw, later_flags))
-    listed = _compile_grep(pattern, flags, help_in)
-    hidden_on_purpose = [_compile_grep(p, f, help_in) for p, f in excluded]
+    try:
+        listed = _compile_grep(pattern, flags, help_in)
+        hidden_on_purpose = [_compile_grep(p, f, help_in) for p, f in excluded]
+    except re.error:
+        # The recipe owns a grep dialect; Python rejecting it cannot prove a fault.
+        warns.append(
+            unverified + "the help recipe grep pattern cannot be compiled by Python; "
+            "check the pattern with the recipe's grep dialect"
+        )
+        return errs, warns
     for relpath, text in makefiles:
         where = "" if relpath == help_in else " (in %s)" % help_in
         for lineno, line in enumerate(text.split("\n"), 1):
