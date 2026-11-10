@@ -9,7 +9,7 @@ import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable, Generator, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -628,6 +628,16 @@ _STRING_RUNNERS = {
         {"l", "m", "p"},
     ),
     "sg": ({"-c", "--command"}, set(), set()),
+    "runuser": (
+        {"-c", "--command", "--session-command"},
+        {"-u", "--user", "-g", "--group", "-G", "--supp-group", "-s", "--shell"},
+        {"l", "m", "p"},
+    ),
+    "flock": (
+        {"-c", "--command"},
+        {"-w", "--wait", "-E", "--conflict-exit-code"},
+        {"s", "x", "u", "n", "o", "F", "e"},
+    ),
     "csh": ({"-c"}, set(), {"f", "i", "l", "s", "v", "x"}),
     "tcsh": ({"-c"}, set(), {"f", "i", "l", "s", "v", "x"}),
     "fish": ({"-c", "--command"}, set(), {"i", "l"}),
@@ -635,7 +645,9 @@ _STRING_RUNNERS = {
 _NON_POSIX_SHELLS = frozenset({"csh", "tcsh", "fish"})
 
 
-def _runner_string(name: str, arguments: list[str], source: str) -> str | None:
+def _runner_string(
+    name: str, arguments: list[str], source: str
+) -> tuple[str | None, int | None]:
     commands, operands, flags = _STRING_RUNNERS[name]
     position = 0
     while position < len(arguments):
@@ -648,7 +660,7 @@ def _runner_string(name: str, arguments: list[str], source: str) -> str | None:
         head, equals, value = option.partition("=")
         if head in commands:
             if equals:
-                return value
+                return value, position - 1
         elif option.startswith("--"):
             _require(
                 head in operands,
@@ -675,7 +687,7 @@ def _runner_string(name: str, arguments: list[str], source: str) -> str | None:
             )
             if len(tail) > 1:
                 if head in commands:
-                    return tail[1:]
+                    return tail[1:], position - 1
                 continue
         _require(
             position < len(arguments),
@@ -686,26 +698,18 @@ def _runner_string(name: str, arguments: list[str], source: str) -> str | None:
         value = arguments[position]
         position += 1
         if head in commands:
-            return value
-    return None
+            return value, position - 1
+    return None, None
 
 
-def _guard_interpreter_string(name: str, arguments: list[str], source: str) -> None:
-    # These languages cannot be walked as shell. A pytest mention in their
-    # executable strings requires a direct invocation we can judge instead.
-    if not re.fullmatch(r"(?:python|pypy|perl|ruby|node|lua|php)[0-9.]*", name):
-        return
-    for position, option in enumerate(arguments):
-        if option in {"-c", "-e", "-E", "-r", "--eval"}:
-            body = arguments[position + 1 : position + 2]
-        elif re.match(r"^-(?:c|e|E|r).|^--eval=", option):
-            body = [option]
-        else:
-            continue
+def _guard_unwalked_strings(word: str, arguments: Sequence[str], source: str) -> None:
+    # Command names and option clusters cannot bound the languages a string
+    # might execute. Every unwalked argument therefore follows the same rule.
+    for argument in arguments:
         _require(
-            not any("pytest" in text for text in body),
-            "Cannot judge interpreter string reaching pytest",
-            source,
+            not re.search(r"\bpytest\b", argument),
+            "Unjudged pytest invocation prefix/string",
+            f"{source}: command {word!r}, string {argument!r}",
             "invoke pytest directly with literal environment names and arguments",
         )
 
@@ -848,6 +852,8 @@ class _ShellCommand:
     script: str | None = None
     redirected: bool = False
     compound: bool = False
+    unwalked: tuple[str, ...] = ()
+    script_producer: _ShellCommand | None = None
 
 
 def _redirected_argv(
@@ -888,8 +894,9 @@ def _posix_shell_script(
     source: str,
     *,
     piped: bool,
-) -> str | None:
+) -> tuple[str | None, int | None]:
     script: str | None = None
+    script_argument: int | None = None
     offset = 0
     reads_stdin = False
     while offset < len(arguments) and arguments[offset].startswith(("-", "+")):
@@ -911,6 +918,7 @@ def _posix_shell_script(
                 "supply a literal shell script",
             )
             script = arguments[offset]
+            script_argument = offset
             break
     if script is None and (
         reads_stdin or offset == len(arguments) or arguments[offset:] == ["-"]
@@ -932,7 +940,7 @@ def _posix_shell_script(
             source,
             "supply a literal shell script",
         )
-    return script
+    return script, script_argument
 
 
 def _executed_script(
@@ -943,22 +951,22 @@ def _executed_script(
     source: str,
     *,
     piped: bool,
-) -> str | None:
+) -> tuple[str | None, int | None]:
     script: str | None = None
-    _guard_interpreter_string(name, arguments, source)
+    script_argument: int | None = None
     if name in _STRING_RUNNERS:
-        script = _runner_string(name, arguments, source)
+        script, script_argument = _runner_string(name, arguments, source)
         _require(
             name not in _NON_POSIX_SHELLS,
             "Cannot judge non-POSIX shell string environment",
             source,
             "use a literal POSIX shell script or a direct pytest invocation",
         )
-    elif name.endswith("sh") or re.fullmatch(r"ksh[0-9]+", name):
-        script = _posix_shell_script(
+    elif re.fullmatch(r"(?:ba|da|a|k|mk|ya|po|z)?sh(?:[0-9]+)?", name):
+        script, script_argument = _posix_shell_script(
             arguments, script_input, producer, source, piped=piped
         )
-    return script
+    return script, script_argument
 
 
 def _wrapped_command(
@@ -1003,7 +1011,9 @@ def _wrapped_command(
 
 def _nested_command_arguments(
     name: str, arguments: list[str], source: str
-) -> Iterator[_ShellCommand]:
+) -> tuple[list[_ShellCommand], list[str]]:
+    entries: list[_ShellCommand] = []
+    unwalked = list(arguments)
     if name == "find":
         for offset, argument in enumerate(arguments):
             if argument in {"-exec", "-execdir", "-ok", "-okdir"}:
@@ -1013,21 +1023,27 @@ def _nested_command_arguments(
                     "+",
                 }:
                     stop += 1
-                yield from _command_words(
-                    shlex.join(
-                        [
-                            value.replace("{}", "$find_path")
-                            for value in arguments[offset + 1 : stop]
-                        ]
-                    ),
-                    source,
+                entries.extend(
+                    _command_words(
+                        shlex.join(
+                            [
+                                value.replace("{}", "$find_path")
+                                for value in arguments[offset + 1 : stop]
+                            ]
+                        ),
+                        source,
+                    )
                 )
+                for index in range(offset + 1, stop):
+                    unwalked[index] = ""
     if "--" in arguments and arguments[arguments.index("--") + 1 :][:1] == [
         "__keel_make__"
     ]:
-        yield from _command_words(
-            shlex.join(arguments[arguments.index("--") + 1 :]), source
+        entries.extend(
+            _command_words(shlex.join(arguments[arguments.index("--") + 1 :]), source)
         )
+        unwalked = unwalked[: arguments.index("--") + 1]
+    return entries, unwalked
 
 
 def _statement_commands(
@@ -1060,7 +1076,7 @@ def _statement_commands(
         )
         name = word.rsplit("/", 1)[-1]
         arguments = words[index + 1 :]
-        script = _executed_script(
+        script, script_argument = _executed_script(
             name,
             arguments,
             script_input,
@@ -1068,6 +1084,23 @@ def _statement_commands(
             source,
             piped=bool(position and tokens[position - 1].value == "|"),
         )
+        unwalked = list(arguments)
+        if script_input is not None and script_input != script:
+            unwalked.append(script_input)
+        if script_argument is not None:
+            # Consume just the script operand; shell positional arguments are
+            # still opaque strings, even when they repeat the script's value.
+            del unwalked[script_argument]
+        next_index = None
+        nested: list[_ShellCommand] = []
+        if name in _WRAPPER_OPTIONS:
+            next_index, next_prefix = _wrapped_command(
+                words, index, name, prefix, source
+            )
+            if next_index is not None:
+                unwalked = words[index + 1 : next_index]
+        else:
+            nested, unwalked = _nested_command_arguments(name, unwalked, source)
         entry = _ShellCommand(
             word,
             tuple(arguments),
@@ -1077,17 +1110,26 @@ def _statement_commands(
             script,
             redirected=any(item.operator for item in tokens[position:end]),
             compound=bool(boundary or end < len(tokens)),
+            unwalked=tuple(unwalked),
+            script_producer=producer
+            if (
+                script is not None
+                and name not in _STRING_RUNNERS
+                and position
+                and tokens[position - 1].value == "|"
+                and script_argument is None
+            )
+            else None,
         )
         yield entry
         if script is not None:
             yield from _command_words(script, source)
         if name in _WRAPPER_OPTIONS:
-            next_index, prefix = _wrapped_command(words, index, name, prefix, source)
             if next_index is None:
                 break
-            index, wrapped = next_index, True
+            index, prefix, wrapped = next_index, next_prefix, True
             continue
-        yield from _nested_command_arguments(name, arguments, source)
+        yield from nested
         producer = entry
         break
     return producer
@@ -1148,10 +1190,25 @@ def _command_words(command: str, source: str | None = None) -> Iterator[_ShellCo
         boundary = position
 
 
+def _judged_commands(command: str, source: str) -> list[_ShellCommand]:
+    entries = list(_command_words(command, source))
+    # A wrapper can stand between a producer and the shell reading its output.
+    # Remember the actual producer rather than assuming adjacent entries.
+    producers = {id(entry.script_producer) for entry in entries}
+    for entry in entries:
+        arguments = list(entry.unwalked)
+        if entry.arguments[:2] == ("-m", "pytest"):
+            # The invocation grammar judges the module token and interpreter.
+            arguments = arguments[2:]
+        if id(entry) not in producers:
+            _guard_unwalked_strings(entry.word, arguments, source)
+    return entries
+
+
 def _guard_shell_environment(command: str, source: str) -> None:
     # Shell quoting can split a literal name in the original text.
     _guard_pytest_environment(" ".join(_shell_words(command)), source)
-    for entry in _command_words(command, source):
+    for entry in _judged_commands(command, source):
         word = entry.word.rsplit("/", 1)[-1]
         arguments = list(entry.arguments)
         _require(
@@ -1403,7 +1460,7 @@ def assert_verify_keeps_slow(root: Path) -> None:
 def assert_full_pytests(command: str) -> int:
     """Judge executable pytest invocations and return their count."""
     count = 0
-    for entry in _command_words(command):
+    for entry in _judged_commands(command, command):
         if entry.word.rsplit("/", 1)[-1] == "pytest":
             args = list(entry.arguments)
         elif entry.arguments[:2] == ("-m", "pytest"):

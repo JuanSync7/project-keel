@@ -85,7 +85,15 @@ _FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\
 
 @pytest.mark.parametrize(
     "runner",
-    ["script -qc", "script --command", "su -c", "sg grp -c", "busybox sh -c"],
+    [
+        "script -qc",
+        "script --command",
+        "su -c",
+        "sg grp -c",
+        "busybox sh -c",
+        "runuser -c",
+        "flock f -c",
+    ],
 )
 @pytest.mark.parametrize("body", ["pytest --durations 10 -k quick", "export $$n=x"])
 def test_string_runners_judge_each_executed_command(
@@ -139,6 +147,75 @@ def test_interpreter_strings_naming_pytest_are_refused(
     path.write_text(_FULL_CHAIN + f"\t{shape}\n", encoding="utf-8")
     with pytest.raises(AssertionError, match="Fix:"):
         judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "runuser -c 'pytest -k x' bob",
+        "flock f -c 'pytest -k x'",
+    ],
+)
+def test_added_shell_runners_judge_pytest(tmp_path: Path, shape: str) -> None:
+    (tmp_path / "Makefile").write_text(_FULL_CHAIN + f"\t{shape}\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="pytest.*Fix:"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "doas sh -c 'pytest -k x'",
+        "sudo sh -c 'pytest -k x'",
+        "watch -n1 'pytest -k x'",
+        "ssh host 'pytest -k x'",
+        "parallel sh -c 'pytest -k x'",
+        "perl -le 'system(\"pytest -k x\")'",
+        "python3 -Bc 'import pytest'",
+        "Rscript -e 'system(\"pytest -k x\")'",
+        "awk 'BEGIN{system(\"pytest -k x\")}'",
+        "tclsh -c 'exec pytest -k x'",
+        "tclsh <<< 'exec pytest -k x'",
+        "unlisted --payload='pytest -k x'",
+        "unlisted 'before;pytest.main()'",
+        "sh -c 'true' ignored 'pytest -k x'",
+        "sh -c 'true' ignored 'true' 'pytest -k x'",
+        "sh --pytest=x -c x",
+    ],
+)
+def test_unwalked_arguments_naming_pytest_are_refused(
+    tmp_path: Path, shape: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(_FULL_CHAIN + f"\t{shape}\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="pytest.*Fix:") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    message = str(failure.value)
+    assert shape.split()[0] in message
+    assert "pytest" in message
+    assert "string " in message
+    assert str(path) in message
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "$(PY) -c 'print(1)'",
+        "unlisted 'notpytest pytest_helper pytest2'",
+        "sh -c 'pytest --durations 10'",
+        "runuser -c 'pytest --durations 10' bob",
+        "flock f -c 'pytest --durations 10'",
+        "nice sh -c 'pytest --durations 10'",
+        r"find . -exec sh -c 'pytest --durations 10' \;",
+        "printf '%s' 'pytest --durations 10' | sh",
+        "printf '%s' 'pytest --durations 10' | nice sh",
+    ],
+)
+def test_judged_strings_and_unrelated_words_are_accepted(
+    tmp_path: Path, shape: str
+) -> None:
+    (tmp_path / "Makefile").write_text(_FULL_CHAIN + f"\t{shape}\n", encoding="utf-8")
+    judge.assert_verify_keeps_slow(tmp_path)
 
 
 @pytest.mark.parametrize("body", ["echo $$HOME", "export FOO=1; true"])
@@ -465,9 +542,28 @@ def test_export_option_clusters_are_refused(
         f"{path}{shell} -c '{body}'"
         for path in ("", "/bin/", "/custom/")
         for shell in ("sh", "bash")
+        for body in ("$$n", "`printf true`")
+    ],
+)
+def test_indirect_shell_environment_is_refused(tmp_path: Path, shape: str) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        f"{path}{shell} -c '{body}'"
+        for path in ("", "/bin/", "/custom/")
+        for shell in ("sh", "bash")
         for body in (
-            "$$n",
-            "`printf true`",
             "export OTHER=value",
             "declare -x OTHER=value",
             "typeset -x OTHER=value",
@@ -476,20 +572,12 @@ def test_export_option_clusters_are_refused(
         )
     ],
 )
-def test_indirect_shell_environment_is_judged(tmp_path: Path, shape: str) -> None:
-    path = tmp_path / "Makefile"
-    path.write_text(
+def test_indirect_shell_environment_is_accepted(tmp_path: Path, shape: str) -> None:
+    (tmp_path / "Makefile").write_text(
         _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
         encoding="utf-8",
     )
-    # Literal names follow the same rule inside and outside a shell string.
-    if "OTHER=value" in shape:
-        judge.assert_verify_keeps_slow(tmp_path)
-        return
-    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
-        judge.assert_verify_keeps_slow(tmp_path)
-    assert str(path) in str(failure.value)
-    assert "Fix:" in str(failure.value)
+    judge.assert_verify_keeps_slow(tmp_path)
 
 
 @pytest.mark.parametrize("name", judge._PYTEST_INPUT_VARIABLES)
