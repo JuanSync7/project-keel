@@ -685,7 +685,7 @@ version rather than a bare commit:
   `threading.TIMEOUT_MAX` like every seconds key, and one shorter than
   `make_targets.gate_timeout_seconds` plus twice
   `make_targets.gate_stop_grace_seconds` plus
-  `agents.tool_gate_margin_seconds` (60) is a config fault (exit 14): a
+  `agents.tool_gate_margin_seconds` (150) is a config fault (exit 14): a
   timed-out gate run waits its grace once for make's session and once more
   for make's output, the margin covers the tool child's start, the gated
   apply's `plan_edits`, writes and rollback (scripts/apply_refactor.py),

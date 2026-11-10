@@ -974,18 +974,20 @@ KEYS = tuple(
                     "a value >= 1 and <= %s" % _MOST_BYTES_TEXT,
                 ),
             ),
-            # 60 s: a margin for the tool child's start, the gated apply's
+            # 150 s: a margin for the tool child's start, the gated apply's
             # plan_edits and writes before the gate and its rollback after a
             # red one, including journal, target and recovery fsyncs
             # (scripts/apply_refactor.py, run by an agent's _run), and
             # the gate runner's start and its two tree snapshots. Measured: the
             # start and both snapshots took about 0.3 s on a small tree, and
-            # two snapshots of a 200,000-file tree on local disk about 7 s;
-            # 60 s keeps the large-tree case well inside it.
+            # two snapshots of a 200,000-file tree on local disk about 7 s,
+            # but both snapshots took up to 65 s at 50,000 listed paths on an
+            # NFS home (KEEL-MARGIN-1), past the old 60 s. 150 s covers that
+            # even if 65 s was one snapshot: twice it plus 20 s.
             _row(
                 ("agents", "tool_gate_margin_seconds"),
                 "int",
-                60,
+                150,
                 "the seconds agents.tool_timeout_seconds must leave, over "
                 "make_targets.gate_timeout_seconds plus twice "
                 "make_targets.gate_stop_grace_seconds, for the tool child's "
