@@ -1,0 +1,481 @@
+"""
+title: Unit — Makefile judge refuses unmodelled make and pytest forms
+summary: Small fixture Makefiles exercise guarded parsing, recipe expansion, make hops and full pytest argument derivation; unsupported forms fail with the input, cause and fix.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+import makefile_judge as judge
+
+pytestmark = pytest.mark.unit
+
+
+@pytest.mark.parametrize(
+    "makefile",
+    [
+        'FLAGS = -m "not slow"\n'
+        "HOP = test EXTRA='$(FLAGS)'\n"
+        "verify:\n\t$(PY) gate.py -- $(MAKE) $(HOP) test\n"
+        "test:\n\t$(PY) -m pytest --durations 10 $(EXTRA)\n",
+        "verify:\n\t$(PY) gate.py -- $(MAKE) fast test\n"
+        'fast:\n\t$(PY) -m pytest --durations 10 -m "not slow"\n'
+        "test:\n\t$(PY) -m pytest --durations 10\n",
+        "verify:\n\t$(PY) gate.py -- $(MAKE) test\ntest:\n\t@echo no tests\n",
+    ],
+    ids=["variable-hop", "different-target", "zero-pytest"],
+)
+def test_verify_rejects_incomplete_test_chains(tmp_path: Path, makefile: str) -> None:
+    (tmp_path / "Makefile").write_text(makefile, encoding="utf-8")
+    with pytest.raises(AssertionError, match="pytest"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        '--durations 10 -m "not slow"',
+        "--durations=10 -mnot\\ slow",
+        "--durations 10 -k quick",
+        "--durations 10 -kquick",
+        "--durations 10 --deselect tests/test_sample.py::test_slow",
+        "--durations 10 --deselect=tests/test_sample.py::test_slow",
+        "--durations 10 --ignore=tests/test_slow.py",
+        "--durations 10 --lf",
+        "",
+        "--durations",
+    ],
+)
+def test_verify_checks_every_pytest_and_its_durations(
+    tmp_path: Path, args: str
+) -> None:
+    (tmp_path / "Makefile").write_text(
+        "NEXT = middle\n"
+        "verify:\n\t$(MAKE) $(NEXT)\n"
+        "middle:\n\t$(PY) gate.py -- $(MAKE) test\n"
+        "test:\n\t$(PY) -m pytest --durations 10\n"
+        f"\t$(PY) -m pytest {args}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="pytest"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+def test_verify_follows_later_hops_and_distinct_variable_values(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text(
+        "HOP = middle EXTRA='--durations=7'\n"
+        "verify:\n\t$(MAKE) $(HOP)\n"
+        "middle:\n\t$(PY) -m pytest --durations 10\n"
+        "\t$(MAKE) test\n"
+        "test:\n\t$(PY) -m pytest $(EXTRA)\n",
+        encoding="utf-8",
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+    with (tmp_path / "Makefile").open("a", encoding="utf-8") as stream:
+        stream.write("\t$(MAKE) later\nlater:\n\t$(PY) -m pytest -k quick\n")
+    with pytest.raises(AssertionError, match="pytest"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+_FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\n"
+
+
+@pytest.mark.parametrize(
+    ("prefix", "reason"),
+    [
+        ("-include missing.mk\nmissing.mk:\n\t@touch missing.mk\n", "include"),
+        ("include missing.mk\nmissing.mk:\n\t@touch missing.mk\n", "include"),
+        ("X := $(call shell,printf harmless)\n", "expansion"),
+        ("X := $(shell printf harmless)\n", "expansion"),
+        ("FN = shell\nX := $($(FN) printf harmless)\n", "expansion"),
+        ("ifeq (1,1)\nX = yes\nendif\n", "conditional"),
+        ("X != printf harmless\n", "shell assignment"),
+        ("export PYTEST_ADDOPTS = -m slow\n", "PYTEST_ADDOPTS"),
+        ("test: export PYTEST_ADDOPTS = -m slow\n", "PYTEST_ADDOPTS"),
+        ("test: PYTEST_ADDOPTS = -m slow\n", "PYTEST_ADDOPTS"),
+        ("other::\n\t@echo harmless\n", "double-colon"),
+        ("other: FLAG = value\n", "target-specific"),
+        ("other:\n\t+echo harmless\n", "forced recipe"),
+    ],
+    ids=[
+        "absent-optional-include",
+        "absent-required-include",
+        "call-shell",
+        "direct-shell",
+        "computed-shell",
+        "ifeq",
+        "non-tab-shell-assignment",
+        "export-addopts",
+        "export-target-addopts",
+        "target-addopts",
+        "double-colon",
+        "target-variable",
+        "forced-recipe",
+    ],
+)
+def test_guard_refuses_unsupported_make_forms_with_a_fix(
+    prefix: str, reason: str
+) -> None:
+    with pytest.raises(AssertionError, match=reason) as failure:
+        judge.guard_makefile(prefix + _FULL_CHAIN, "fixture.mk")
+    assert "Fix:" in str(failure.value)
+    assert "fixture.mk" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        "tests/integration",
+        "--collect-only",
+        "$$FLAGS",
+        '-xm "not slow"',
+        "--desel=tests/test_sample.py::test_slow",
+        "--unknown",
+        "--durations nope",
+        "--durations 0",
+        "--durations $$OTHER",
+        "--durations $(printf 10)",
+    ],
+    ids=[
+        "positional",
+        "collect-only",
+        "shell-flags",
+        "combined-short",
+        "abbreviation",
+        "unknown-option",
+        "bad-duration",
+        "zero-duration",
+        "unknown-duration-variable",
+        "duration-substitution",
+    ],
+)
+def test_pytest_grammar_refuses_unknown_arguments_with_a_fix(
+    tmp_path: Path, args: str
+) -> None:
+    (tmp_path / "Makefile").write_text(
+        _FULL_CHAIN + f"\t$(PY) -m pytest --durations 10 {args}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="pytest|expansion") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["\tPYTEST_ADDOPTS='-m slow'\n", "\texport PYTEST_ADDOPTS='-m slow'\n"],
+    ids=["later-addopts", "later-export-addopts"],
+)
+def test_later_recipe_addopts_is_refused(tmp_path: Path, line: str) -> None:
+    (tmp_path / "Makefile").write_text(_FULL_CHAIN + line, encoding="utf-8")
+    with pytest.raises(AssertionError, match="PYTEST_ADDOPTS") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize("test_hop", ["", " test"], ids=["missing-test", "empty-test"])
+def test_unfiltered_pytest_cannot_hide_a_dropped_test_hop(
+    tmp_path: Path, test_hop: str
+) -> None:
+    (tmp_path / "Makefile").write_text(
+        f"verify:\n\t$(MAKE) other{test_hop}\n"
+        "other:\n\t$(PY) -m pytest --durations 10\n"
+        "test:\n\t@echo no tests\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="test hop") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert "Fix:" in str(failure.value)
+
+
+def test_file_prerequisite_is_refused_with_a_fix(tmp_path: Path) -> None:
+    (tmp_path / "Makefile").write_text(
+        _FULL_CHAIN.replace("test:\n", "test: input.txt\n"), encoding="utf-8"
+    )
+    (tmp_path / "input.txt").write_text("present\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="input.txt") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "recipe",
+    [
+        "\tCOUNT=10; $(PY) -m pytest --durations 10\n",
+        "\t@echo make\n\t$(PY) -m pytest --durations 10\n",
+    ],
+    ids=["first-recipe-assignment", "echo-make"],
+)
+def test_unambiguous_recipe_lines_are_accepted(tmp_path: Path, recipe: str) -> None:
+    (tmp_path / "Makefile").write_text(
+        "verify:\n\t$(MAKE) test\ntest:\n" + recipe, encoding="utf-8"
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "sinclude missing.mk\n",
+        "-include present.mk\n",
+        "X := $(file >sentinel,unsafe)\n",
+        "X := $(eval unsafe)\n",
+        "X := $(guile unsafe)\n",
+        "load unsafe.so\n",
+        "define BAD\n$(call shell,printf harmless)\nendef\n",
+        "define BAD\n$(shell printf harmless)\nendef\n",
+        "define BAD\n$(call $(FN),printf harmless)\nendef\n",
+        "Makefile:\n\t@touch Makefile\n",
+        ".RECIPEPREFIX = >\n",
+        "MAKEFLAGS = unsafe\n",
+    ],
+    ids=[
+        "sinclude",
+        "present-include",
+        "file-function",
+        "eval-function",
+        "guile-function",
+        "load-directive",
+        "macro-builtin-call",
+        "macro-shell",
+        "macro-computed-call",
+        "main-makefile-remake",
+        "recipe-prefix",
+        "makeflags",
+    ],
+)
+def test_guard_refuses_the_parse_side_effect_class(tmp_path: Path, prefix: str) -> None:
+    (tmp_path / "Makefile").write_text(prefix + _FULL_CHAIN, encoding="utf-8")
+    (tmp_path / "present.mk").write_text("# inert\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="Fix:"):
+        judge.read_rules(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "recipe",
+    [
+        "\t$(PY) -m pytest --durations $$durations\n",
+        "\t$$FLAGS $(PY) -m pytest --durations 10\n",
+        "\t@echo pytest --durations 10\n",
+    ],
+    ids=["unbound-duration", "prefix-expansion", "echo-pytest"],
+)
+def test_only_a_known_pytest_invocation_counts(tmp_path: Path, recipe: str) -> None:
+    (tmp_path / "Makefile").write_text(
+        "verify:\n\t$(MAKE) test\ntest:\n" + recipe, encoding="utf-8"
+    )
+    with pytest.raises(AssertionError, match="pytest.*Fix:"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+def test_checked_macro_and_shared_test_prerequisite_are_accepted(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "Makefile").write_text(
+        "define FULL_PYTEST\n$(PY) -m pytest --durations $(1)\nendef\n"
+        "verify:\n\t$(MAKE) other test\n"
+        "other: suite\ntest: suite\nsuite:\n\t$(call FULL_PYTEST,7)\n",
+        encoding="utf-8",
+    )
+    judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        ".SECONDEXPANSION:\n.PHONY: $$(shell printf harmless)\n",
+        "define MAKEFILES\nmissing.mk\nendef\n",
+    ],
+    ids=["secondary-expansion", "control-macro"],
+)
+def test_guard_refuses_special_expansion_contexts(tmp_path: Path, prefix: str) -> None:
+    (tmp_path / "Makefile").write_text(prefix + _FULL_CHAIN, encoding="utf-8")
+    with pytest.raises(AssertionError, match="Fix:"):
+        judge.read_rules(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "recipe",
+    [
+        "\t$(ENV) $(PY) -m pytest --durations 10\n",
+        "\t$(PY) -m pytest --durations 10\n\texport PYTEST_$(A)='-m \"not slow\"'\n",
+    ],
+    ids=["computed-prefix", "computed-export-line"],
+)
+def test_expanded_recipe_refuses_computed_addopts(tmp_path: Path, recipe: str) -> None:
+    (tmp_path / "Makefile").write_text(
+        "A = ADDOPTS\n"
+        "ENV = PYTEST_$(A)='-m \"not slow\"'\n"
+        "verify:\n\t$(MAKE) test\ntest:\n" + recipe,
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="PYTEST_ADDOPTS") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    message = str(failure.value)
+    assert "Fix:" in message
+    assert str(tmp_path / "Makefile") in message
+    assert "test:" in message
+
+
+@pytest.mark.parametrize("name", ["PYTEST_PLUGINS", "PYTHONHOME", "OTHER"])
+def test_pytest_environment_refuses_unlisted_assignments(name: str) -> None:
+    command = f"{name}=literal pytest --durations 10"
+    with pytest.raises(AssertionError, match="pytest.*Fix:") as failure:
+        judge.assert_full_pytests(command)
+    assert command in str(failure.value)
+
+
+def test_pytest_environment_accepts_pythonpath() -> None:
+    assert judge.assert_full_pytests("PYTHONPATH=src:. pytest --durations 10") == 1
+
+
+@pytest.mark.parametrize("option", ["-n=3", "-n=auto", "-p=no:cacheprovider"])
+def test_short_pytest_options_refuse_equals(option: str) -> None:
+    command = f"pytest --durations 10 {option}"
+    with pytest.raises(AssertionError, match="pytest.*Fix:") as failure:
+        judge.assert_full_pytests(command)
+    assert option in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        "--durations=10 --junitxml=report.xml -n 3 -p no:cacheprovider",
+        "--durations 7 --junitxml report.xml -n auto --keel-full-gate",
+    ],
+)
+def test_long_value_options_accept_equals_and_separate_values(args: str) -> None:
+    assert judge.assert_full_pytests(f"pytest {args}") == 1
+
+
+@pytest.mark.parametrize(
+    ("text", "cause"),
+    [
+        ("define OUTER\ndefine INNER\nendef\nendef\n", "Nested make definition"),
+        ("endef\n", "Unmatched endef"),
+        ("define OPEN\nliteral\n", "Unclosed make definition"),
+        ("define SHELL\n/bin/sh\nendef\n", "make control macro"),
+        ("SHELL = /bin/sh\n", "make control variable"),
+        (".NOTPARALLEL:\n", "make special rule"),
+        ("not a rule\n", "make syntax"),
+    ],
+)
+def test_guard_refusal_kinds_name_the_text_source(text: str, cause: str) -> None:
+    with pytest.raises(AssertionError, match=cause) as failure:
+        judge.guard_makefile(text, "fixture.mk")
+    assert "fixture.mk" in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("command", "cause"),
+    [
+        ("__keel_make__ test __keel_make__ later", "Ambiguous make hop"),
+        ("wrapper __keel_make__ test", "make wrapper"),
+        ("__keel_make__ MAKEFLAGS=x test", "make assignment"),
+        ("__keel_make__ PYTEST_ADDOPTS=x test", "make assignment"),
+        ("__keel_make__ EXTRA=$FLAGS test", "make assignment"),
+        ("__keel_make__ test/path", "make goal"),
+        ("__keel_make__", "Missing make goal"),
+        ("__keel_make__ 'test", "shell quoting"),
+    ],
+)
+def test_make_hop_refusal_kinds_name_the_command(command: str, cause: str) -> None:
+    with pytest.raises(AssertionError, match=cause) as failure:
+        judge.make_hop(command)
+    assert repr(command) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+def test_make_hop_accepts_wrapper_and_literal_assignments() -> None:
+    assert judge.make_hop("python gate.py -- __keel_make__ test EXTRA=literal") == (
+        ["test"],
+        ["EXTRA=literal"],
+    )
+    assert judge.make_hop("echo make") == ([], [])
+
+
+@pytest.mark.parametrize(
+    ("text", "cause"),
+    [
+        ("test:\ntest:\n", "Duplicate target"),
+        ("test: $(OTHER)\n", "variable prerequisites"),
+        ("Makefile:\n", "makefile or probe remake"),
+        ("__keel_slowtest_probe:\n", "makefile or probe remake"),
+    ],
+)
+def test_rule_refusal_kinds_name_the_makefile(
+    tmp_path: Path, text: str, cause: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(AssertionError, match=cause) as failure:
+        judge.read_rules(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+def test_missing_makefile_names_the_input(tmp_path: Path) -> None:
+    with pytest.raises(AssertionError, match="Missing Makefile") as failure:
+        judge.read_rules(tmp_path)
+    assert str(tmp_path / "Makefile") in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("command", "cause", "source"),
+    [
+        ("python -m pytest --durations 10", "pytest interpreter", "python"),
+        ("echo pytest --durations 10", "pytest invocation prefix", "echo"),
+        ("pytest --unknown", "pytest argument", "--unknown"),
+        ("pytest --durations 0", "pytest option value", "--durations=0"),
+        (
+            "pytest --durations 10 --durations 7",
+            "Repeated pytest option",
+            "--durations",
+        ),
+        ("pytest -n 2", "pytest loses --durations", "-n"),
+        (
+            "pytest --durations 10 --keel-full-gate=yes",
+            "pytest option value",
+            "--keel-full-gate=yes",
+        ),
+    ],
+)
+def test_pytest_refusal_kinds_name_the_input(
+    command: str, cause: str, source: str
+) -> None:
+    with pytest.raises(AssertionError, match=cause) as failure:
+        judge.assert_full_pytests(command)
+    assert source in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("text", "cause"),
+    [
+        ("test:\n\t$(MAKE) other\nother:\n", "Unsafe recursive dry run"),
+        (
+            "NEXT = __keel_make__ other\ntest:\n\t$(NEXT)\nother:\n",
+            "Unsafe recursive dry run",
+        ),
+        ("PREFIX = +\ntest:\n\t$(PREFIX)echo inert\n", "Unsafe expanded forced recipe"),
+        ("test:\n\t$(MAKE) $(NEXT)\n", "Unjudged recipe references"),
+        ("test:\n\t$(error fixture error)\n", "Make recipe expansion failed"),
+        (
+            "test:\n\t$(info __keel_slowtest_probe_0:duplicate)echo inert\n",
+            "Ambiguous make expansion output",
+        ),
+    ],
+)
+def test_leaf_refusal_kinds_name_the_input(
+    tmp_path: Path, text: str, cause: str
+) -> None:
+    (tmp_path / "Makefile").write_text(text, encoding="utf-8")
+    with pytest.raises(AssertionError, match=cause) as failure:
+        judge.dry_run("test", root=tmp_path)
+    assert any(source in str(failure.value) for source in ("test", "+echo inert"))
+    assert "Fix:" in str(failure.value)
