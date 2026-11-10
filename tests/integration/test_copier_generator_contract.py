@@ -249,89 +249,260 @@ _IMPORT_CALLS = {"importorskip", "import_module", "__import__"}
 # How a copier load in a test module reaches copier.
 _ROUTED = "routed"  # optional_deps.importorskip(..., extra="template")
 _SKIPS = "skips"  # any other importorskip, which CI's declaration cannot reach
-_PLAIN = "plain"  # an import statement or an import_module/__import__ call
+_PLAIN = "plain"  # an import statement, importlib.import_module or __import__
+_UNRESOLVED = "unresolved"  # an import call whose callee the scan cannot name
+
+# The import functions a callee can resolve to, by qualified name.
+_CALLEE_KINDS = {
+    "importlib.import_module": _PLAIN,
+    "__import__": _PLAIN,
+    "builtins.__import__": _PLAIN,
+    "pytest.importorskip": _SKIPS,
+}
+_ROUTED_CALLEE = "optional_deps.importorskip"
+# The parameter each import function takes the module name in, by keyword.
+_MODULE_KEYWORDS = {"module", "modname", "name"}
 
 
 def _is_copier(name):
     return name == "copier" or name.startswith("copier.")
 
 
-def _load_kind(node):
+def _bindings(tree):
+    """The qualified name each name an import statement in *tree* binds."""
+    bound = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                head = alias.name.split(".")[0]
+                bound[alias.asname or head] = alias.name if alias.asname else head
+        elif isinstance(node, ast.ImportFrom):
+            prefix = "." * node.level + (node.module or "")
+            for alias in node.names:
+                bound[alias.asname or alias.name] = "%s.%s" % (prefix, alias.name)
+    return bound
+
+
+def _qualified(expr, bound):
+    """The dotted name *expr* refers to, or None when no import binds it."""
+    if isinstance(expr, ast.Name):
+        if expr.id in bound:
+            return bound[expr.id]
+        return expr.id if expr.id == "__import__" else None
+    if isinstance(expr, ast.Attribute):
+        base = _qualified(expr.value, bound)
+        return None if base is None else "%s.%s" % (base, expr.attr)
+    return None
+
+
+def _argument(call, position, keywords):
+    """The string constant *call* passes at *position* or by one of *keywords*."""
+    values = [kw.value for kw in call.keywords if kw.arg in keywords]
+    if len(call.args) > position:
+        values.append(call.args[position])
+    if len(values) == 1 and isinstance(values[0], ast.Constant):
+        value = values[0].value
+        return value if isinstance(value, str) else None
+    return None
+
+
+def _is_routed_callee(callee):
+    return callee == _ROUTED_CALLEE or (callee or "").endswith("." + _ROUTED_CALLEE)
+
+
+def _load_kind(node, bound):
     """How *node* loads copier or a copier submodule, or None when it does not."""
     if isinstance(node, ast.Import):
         return _PLAIN if any(_is_copier(a.name) for a in node.names) else None
     if isinstance(node, ast.ImportFrom):
         return _PLAIN if node.level == 0 and _is_copier(node.module or "") else None
-    if not (isinstance(node, ast.Call) and node.args):
+    if not isinstance(node, ast.Call):
         return None
-    func = node.func
-    called = func.attr if isinstance(func, ast.Attribute) else None
-    if isinstance(func, ast.Name):
-        called = func.id
-    first = node.args[0]
-    if not (
-        called in _IMPORT_CALLS
-        and isinstance(first, ast.Constant)
-        and isinstance(first.value, str)
-        and _is_copier(first.value)
-    ):
+    callee = _qualified(node.func, bound)
+    spelled = getattr(node.func, "attr", getattr(node.func, "id", None))
+    known = _is_routed_callee(callee) or callee in _CALLEE_KINDS
+    if not (known or spelled in _IMPORT_CALLS):
         return None
-    if called != "importorskip":
-        return _PLAIN
-    owner = func.value if isinstance(func, ast.Attribute) else None
-    extra = [
-        kw.value.value
-        for kw in node.keywords
-        if kw.arg == "extra" and isinstance(kw.value, ast.Constant)
-    ]
-    routed = (
-        isinstance(owner, ast.Name)
-        and owner.id == "optional_deps"
-        and extra == ["template"]
+    # A module name computed at run time cannot be read here, so such a call is
+    # not judged; the named-modules backstop in the contract test still holds
+    # the two gate modules.
+    module = _argument(node, 0, _MODULE_KEYWORDS)
+    if module is None or not _is_copier(module):
+        return None
+    if _is_routed_callee(callee):
+        extra = _argument(node, 1, {"extra"})
+        return _ROUTED if extra == "template" else _SKIPS
+    # An import call through a name no import binds (an assigned alias, a method
+    # of some object) may or may not load copier, so it fails closed.
+    return _CALLEE_KINDS.get(callee, _UNRESOLVED)
+
+
+def _routes(stmt, bound):
+    """Whether *stmt* is itself a routed copier load, run whenever it is reached."""
+    value = getattr(stmt, "value", None)
+    plain_statement = isinstance(stmt, (ast.Expr, ast.Assign, ast.AnnAssign))
+    return (
+        plain_statement
+        and isinstance(value, ast.Call)
+        and _load_kind(value, bound) == _ROUTED
     )
-    return _ROUTED if routed else _SKIPS
 
 
 def _copier_loads(text):
-    """The kind of each copier load in *text*, in source order."""
+    """Each copier load in *text* as (line, kind, ok), in source order.
+
+    A routed load is ok. A plain load is ok when a routed load runs before it on
+    every path that reaches it: an earlier statement of its own block, or of a
+    block that encloses it. Any other load is not ok.
+    """
     # A module that only names copier in a string, such as the render scan in
     # test_copier_ship_set.py, loads nothing, so it has no loads to judge.
+    tree = ast.parse(text)
+    bound = _bindings(tree)
     loads = []
-    for node in ast.walk(ast.parse(text)):
-        kind = _load_kind(node)
+
+    def visit_block(stmts, guarded):
+        # A routed load guards the statements after it in its block. One under an
+        # if, a try or a loop guards only that inner block, because it may not
+        # run, and one in a function guards only that function's body, because
+        # it runs only when the function is called.
+        for stmt in stmts:
+            visit(stmt, guarded)
+            guarded = guarded or _routes(stmt, bound)
+
+    def visit(node, guarded):
+        kind = _load_kind(node, bound)
         if kind is not None:
-            loads.append((node.lineno, node.col_offset, kind))
-    return [kind for _, _, kind in sorted(loads)]
+            ok = kind == _ROUTED or (kind == _PLAIN and guarded)
+            loads.append((node.lineno, node.col_offset, kind, ok))
+        for value in ast.iter_fields(node):
+            child = value[1]
+            if isinstance(child, list) and child and isinstance(child[0], ast.stmt):
+                visit_block(child, guarded)
+            elif isinstance(child, list):
+                for item in child:
+                    if isinstance(item, ast.AST):
+                        visit(item, guarded)
+            elif isinstance(child, ast.AST):
+                visit(child, guarded)
+
+    visit(tree, guarded=False)
+    return [(line, kind, ok) for line, _, kind, ok in sorted(loads)]
+
+
+_ROUTE = 'optional_deps.importorskip("copier", extra="template")'
 
 
 @pytest.mark.parametrize(
     ("text", "loads"),
     [
-        ("import copier\n", [_PLAIN]),
-        ("import copier.vcs as v\n", [_PLAIN]),
-        ("from copier import run_copy\n", [_PLAIN]),
-        ('m = importlib.import_module("copier")\n', [_PLAIN]),
+        ("import copier\n", [(_PLAIN, False)]),
+        ("import copier.vcs as v\n", [(_PLAIN, False)]),
+        ("from copier import run_copy\n", [(_PLAIN, False)]),
         (
-            'copier = optional_deps.importorskip("copier", extra="template")\n',
-            [_ROUTED],
+            'import importlib\nm = importlib.import_module("copier")\n',
+            [(_PLAIN, False)],
         ),
+        ('__import__("copier")\n', [(_PLAIN, False)]),
+        ("import optional_deps\ncopier = %s\n" % _ROUTE, [(_ROUTED, True)]),
         (
+            "import optional_deps\n"
             't = optional_deps.importorskip("copier._tools", extra="template")\n',
-            [_ROUTED],
+            [(_ROUTED, True)],
         ),
-        ('optional_deps.importorskip("copier", extra="docs")\n', [_SKIPS]),
-        ('copier = pytest.importorskip("copier")\n', [_SKIPS]),
         (
-            'optional_deps.importorskip("copier", extra="template")\nimport copier\n',
-            [_ROUTED, _PLAIN],
+            'import optional_deps\noptional_deps.importorskip("copier", "template")\n',
+            [(_ROUTED, True)],
+        ),
+        (
+            "import optional_deps\n"
+            'optional_deps.importorskip(module="copier", extra="template")\n',
+            [(_ROUTED, True)],
+        ),
+        (
+            "import optional_deps as deps\n"
+            'deps.importorskip("copier", extra="template")\nimport copier\n',
+            [(_ROUTED, True), (_PLAIN, True)],
+        ),
+        (
+            'import optional_deps\noptional_deps.importorskip("copier", extra="docs")\n',
+            [(_SKIPS, False)],
+        ),
+        ('import pytest\ncopier = pytest.importorskip("copier")\n', [(_SKIPS, False)]),
+        (
+            'from pytest import importorskip as skip\nskip("copier")\n',
+            [(_SKIPS, False)],
+        ),
+        (
+            'from importlib import import_module as load\nload("copier")\n',
+            [(_PLAIN, False)],
+        ),
+        (
+            'import importlib\nimportlib.import_module(name="copier")\n',
+            [(_PLAIN, False)],
+        ),
+        ('registry.import_module("copier")\n', [(_UNRESOLVED, False)]),
+        (
+            "import optional_deps\n%s\nimport copier\n" % _ROUTE,
+            [(_ROUTED, True), (_PLAIN, True)],
+        ),
+        (
+            "import optional_deps\nimport copier\n%s\n" % _ROUTE,
+            [(_PLAIN, False), (_ROUTED, True)],
+        ),
+        (
+            "import optional_deps\nif False:\n    %s\nimport copier\n" % _ROUTE,
+            [(_ROUTED, True), (_PLAIN, False)],
+        ),
+        (
+            "import optional_deps\ndef _g():\n    %s\nimport copier\n" % _ROUTE,
+            [(_ROUTED, True), (_PLAIN, False)],
+        ),
+        (
+            "import optional_deps\n"
+            "def test_x():\n    %s\n    from copier import run_copy\n" % _ROUTE,
+            [(_ROUTED, True), (_PLAIN, True)],
+        ),
+        (
+            "import optional_deps\n%s\ndef f():\n    import copier\n" % _ROUTE,
+            [(_ROUTED, True), (_PLAIN, True)],
         ),
         ('names = {"copier"}\n', []),
+        ('raise ValueError("copier.yml: top level is not a mapping")\n', []),
         ("from .copier import x\n", []),
         ("import copierish\n", []),
     ],
+    ids=[
+        "import",
+        "import_submodule_alias",
+        "from_import",
+        "import_module",
+        "dunder_import",
+        "routed",
+        "routed_submodule",
+        "routed_positional_extra",
+        "routed_keywords",
+        "routed_alias",
+        "other_extra",
+        "pytest_skip",
+        "aliased_pytest_skip",
+        "aliased_import_module",
+        "keyword_import",
+        "unrelated_method",
+        "guard_then_import",
+        "import_before_guard",
+        "conditional_guard",
+        "deferred_guard",
+        "guard_in_test_function",
+        "module_guard_reaches_function",
+        "string_only",
+        "string_call_argument",
+        "relative_import",
+        "other_package",
+    ],
 )
 def test_each_copier_load_is_classified_by_how_it_reaches_copier(text, loads):
-    assert _copier_loads(text) == loads
+    assert [(kind, ok) for _, kind, ok in _copier_loads(text)] == loads
 
 
 def test_copier_test_modules_hard_fail_when_the_surface_is_required():
@@ -355,13 +526,13 @@ def test_copier_test_modules_hard_fail_when_the_surface_is_required():
         if not loads:
             continue
         guarded.append(path.name)
-        # The first load decides whether a missing copier skips through
-        # optional_deps; a plain import after it runs only once copier is there.
-        assert loads[0] == _ROUTED and _SKIPS not in loads, (
-            "%s loads copier without routing its first load through "
-            'optional_deps.importorskip(..., extra="template"), so CI\'s '
-            "required-surface declaration cannot reach it and it would still skip "
-            "silently or fail to collect: %s" % (path.name, loads)
+        faults = [(line, kind) for line, kind, ok in loads if not ok]
+        assert not faults, (
+            "%s loads copier where CI's required-surface declaration cannot reach "
+            'it: each load must be optional_deps.importorskip(..., extra="template") '
+            "or follow one that runs before it in its own block or an enclosing "
+            "one, and nothing may skip copier another way. (line, kind): %s"
+            % (path.name, faults)
         )
     # Named explicitly, not just "something was found": a rename or a rewrite that
     # drops the guard must be a failure, not a quietly smaller set.
