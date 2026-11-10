@@ -119,7 +119,16 @@ def importorskip(module, extra, loaded=None):
     if extra in required_extras(loaded):
         # A real import: ImportError propagates and collection fails loudly.
         return importlib.import_module(module)
-    return pytest.importorskip(module)
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        # Explicit skipping works at the supported pytest floor and handles
+        # ImportError without depending on pytest's changing importorskip default.
+        pytest.skip(
+            "%s comes with the %s extra; install with `%s`"
+            % (module, extra, SURFACES[extra]),
+            allow_module_level=True,
+        )
 
 
 def require_or_skip(available, extra, reason, loaded=None):

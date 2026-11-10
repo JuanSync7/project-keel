@@ -6,15 +6,21 @@ summary: Pins on the ways keel's generator rots silently, read off the real `mak
 """
 
 import ast
+import json
 import re
 import shlex
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+import config_loader
 import pytest
+from child_env import build_child_env
 
 import ci_adapters
+import optional_deps
+from copier_collection import PREFIX
 
 _ROOT = Path(__file__).resolve().parents[2]
 
@@ -894,3 +900,205 @@ def test_every_documented_copier_command_carries_trust():
         "%s: %s" % (where, line) for where, line in found if "--trust" not in line
     ]
     assert not missing, "copier commands without --trust:\n  " + "\n  ".join(missing)
+
+
+def _collect_without_copier(root, paths, *, isolated=False, run_tests=False):
+    """Observe collection in a fresh interpreter; isolate planted red cases."""
+    command = [
+        sys.executable,
+        "-B",
+        "-c",
+        "import sys; from copier_collection import collect; "
+        "from exit_codes import finish; "
+        "finish(collect(sys.argv[2], sys.argv[3:], run_tests=sys.argv[1] == 'True'))",
+        str(run_tests),
+        str(root),
+        *paths,
+    ]
+    if isolated:
+        command = [
+            "unshare",
+            "-Upf",
+            "--mount-proc",
+            "setsid",
+            "bash",
+            "-c",
+            '"$@"; exit $?',
+            "reaper",
+            *command,
+        ]
+    timeout_key = ("tests", "child_timeout_seconds")
+    timeout = config_loader.resolve(
+        config_loader.read(_ROOT),
+        config_loader.rows(timeout_key),
+        config_loader.CONFIG_FILE,
+    )[timeout_key]
+    run = subprocess.run(
+        command,
+        cwd=root,
+        env=build_child_env(
+            extra={
+                "PYTHONPATH": ":".join(
+                    str(_ROOT / p) for p in ("tests", "scripts", "src", ".")
+                ),
+                "KEEL_REQUIRED_EXTRAS": "",
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+            }
+        ),
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    output = (
+        "\n".join(
+            line for line in run.stdout.splitlines() if not line.startswith(PREFIX)
+        )
+        + run.stderr
+    )
+    records = [
+        line.removeprefix(PREFIX)
+        for line in run.stdout.splitlines()
+        if line.startswith(PREFIX)
+    ]
+    assert len(records) == 1, output
+    return run.returncode, json.loads(records[0]), output
+
+
+def _judge_copier_collection(result, scanned):
+    """Every observed copier importer must collect as a template skip."""
+    status, record, output = result
+    runtime = {module for module, _name in record["attempts"]}
+    crosscheck = "runtime=%d scan=%d; scan-only=%s; runtime-only=%s" % (
+        len(runtime),
+        len(scanned),
+        sorted(scanned - runtime),
+        sorted(runtime - scanned),
+    )
+    faults = []
+    for module in sorted(runtime):
+        reports = [
+            (outcome, reason)
+            for node, outcome, reason in record["reports"]
+            if node == module
+        ]
+        # Importing a submodule first attempts its parent; the policy's reason
+        # names the requested submodule while the finder can only see copier.
+        expected = r"\bcopier(?:\.[A-Za-z_]\w*)* " + re.escape(
+            "comes with the template extra; install with `%s`"
+            % optional_deps.SURFACES["template"]
+        )
+        if not reports or any(
+            outcome != "skipped" or re.search(expected, reason) is None
+            for outcome, reason in reports
+        ):
+            faults.append("%s: expected template skip, got %s" % (module, reports))
+    errors = [
+        node for node, outcome, _reason in record["reports"] if outcome == "failed"
+    ]
+    assert runtime, "no copier imports observed; " + crosscheck + "\n" + output
+    assert not faults, "\n".join(faults) + "\n" + crosscheck
+    assert not errors, "collection errors: %s\n%s" % (errors, output)
+    # A subtree consisting entirely of skipped modules collects no test items.
+    assert status in (0, int(pytest.ExitCode.NO_TESTS_COLLECTED)), output
+    # The scan also finds imports inside test bodies, which collection never runs.
+    # Keep its inventory as failure diagnostics, without requiring those imports.
+    return crosscheck
+
+
+def test_copier_loading_modules_collect_with_the_template_skip(record_property):
+    scanned = {
+        path.relative_to(_ROOT).as_posix()
+        for path in (_ROOT / "tests").rglob("test_*.py")
+        if path.resolve() != Path(__file__).resolve()
+        and _copier_loads(path.read_text("utf-8"))
+    }
+    summary = _judge_copier_collection(
+        _collect_without_copier(_ROOT, ["tests/"]), scanned
+    )
+    record_property("copier_inventory", summary)
+
+
+_RUNTIME_RED_CASES = {
+    "conditional_helper": "if True:\n    def load():\n        import copier\nload()\n",
+    "bare_decorator": "def load(fn):\n    import copier\n    return fn\n@load\ndef test_example():\n    pass\n",
+    "bare_importorskip": 'import pytest\npytest.importorskip("copier")\n',
+}
+
+
+@pytest.mark.parametrize("shape", _RUNTIME_RED_CASES)
+def test_runtime_collection_rejects_unrouted_imports(tmp_path, shape):
+    module = "test_%s.py" % shape
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / module).write_text(_RUNTIME_RED_CASES[shape], encoding="utf-8")
+    result = _collect_without_copier(tmp_path, [module], isolated=True)
+    with pytest.raises(AssertionError, match=module + ": expected template skip"):
+        _judge_copier_collection(result, set())
+
+
+def test_runtime_collection_rejects_a_real_module_bypass(tmp_path):
+    """A real-tree collection goes red when one copied module bypasses policy."""
+    tree = tmp_path / "tree"
+    shutil.copytree(
+        _ROOT / "tests", tree / "tests", ignore=shutil.ignore_patterns("__pycache__")
+    )
+    for source in _ROOT.iterdir():
+        if source.name not in {"tests", ".git", ".codex-report"}:
+            (tree / source.name).symlink_to(source, target_is_directory=source.is_dir())
+    module = "tests/integration/test_copier_generation.py"
+    path = tree / module
+    path.write_text("import copier\n" + path.read_text("utf-8"), encoding="utf-8")
+    result = _collect_without_copier(tree, ["tests/"], isolated=True)
+    with pytest.raises(AssertionError, match=module + ": expected template skip"):
+        _judge_copier_collection(result, set())
+
+
+@pytest.mark.parametrize("dependency", ["copier", "copier.vcs"])
+def test_runtime_collection_accepts_routed_imports(tmp_path, monkeypatch, dependency):
+    monkeypatch.setenv("KEEL_REQUIRED_EXTRAS", "template")
+    module = "test_routed.py"
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / module).write_text(
+        'import optional_deps\noptional_deps.importorskip(%r, extra="template")\n'
+        % dependency,
+        encoding="utf-8",
+    )
+    summary = _judge_copier_collection(
+        _collect_without_copier(tmp_path, [module]), {module}
+    )
+    assert "runtime=1 scan=1" in summary
+
+
+def test_runtime_collection_preserves_body_only_modules_other_tests(tmp_path):
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    routed = "test_routed.py"
+    body_only = "test_body_only.py"
+    (tmp_path / routed).write_text(
+        'import optional_deps\noptional_deps.importorskip("copier", extra="template")\n',
+        encoding="utf-8",
+    )
+    (tmp_path / body_only).write_text(
+        "import optional_deps\n"
+        "def test_needs_copier():\n"
+        '    optional_deps.importorskip("copier", extra="template")\n'
+        "def test_independent():\n"
+        "    assert 2 + 2 == 4\n",
+        encoding="utf-8",
+    )
+    summary = _judge_copier_collection(
+        _collect_without_copier(tmp_path, [routed, body_only]), {routed, body_only}
+    )
+    assert "runtime=1 scan=2; scan-only=['test_body_only.py']" in summary
+    status, record, output = _collect_without_copier(
+        tmp_path, [body_only], run_tests=True
+    )
+    assert status == 0, output
+    assert dict(record["tests"]) == {
+        body_only + "::test_needs_copier": "skipped",
+        body_only + "::test_independent": "passed",
+    }, output
+
+
+def test_runtime_collection_refuses_an_empty_inventory():
+    with pytest.raises(AssertionError, match="no copier imports observed"):
+        _judge_copier_collection((0, {"attempts": [], "reports": []}, ""), set())
