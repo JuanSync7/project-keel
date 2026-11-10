@@ -1139,3 +1139,37 @@ def build_child_env(
         # carry the value.
         raise ChildEnvError(_credentialed(leaked))
     return env
+
+
+# Hook sibling imports and package callers must share ChildEnvError, so an
+# exception raised through either name is caught through the other.
+_SELF = sys.modules.get(__name__)
+if _SELF is None:
+    raise ImportError(
+        "child_env was executed without being registered in sys.modules; "
+        "import it, or register the module before exec_module"
+    )
+sys.modules.setdefault("child_env", _SELF)
+sys.modules.setdefault("scripts.child_env", _SELF)
+
+
+def _bind_to_package(module: ModuleType) -> None:
+    """Bind the shared module on this directory's `scripts` package.
+
+    A dotted import already in sys.modules skips package attribute binding.
+    Only bind when `scripts` resolves to this directory, as config_loader does.
+    """
+    here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    # Any: a namespace package carries no declared attributes to type against.
+    package: Any = sys.modules.get("scripts")
+    if package is None:
+        spec = importlib.util.find_spec("scripts")
+        locations = [] if spec is None else spec.submodule_search_locations or []
+        if here not in [os.path.realpath(p) for p in locations]:
+            return
+        package = importlib.import_module("scripts")
+    if here in [os.path.realpath(p) for p in getattr(package, "__path__", [])]:
+        package.child_env = module
+
+
+_bind_to_package(_SELF)

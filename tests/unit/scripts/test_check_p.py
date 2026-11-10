@@ -5,6 +5,7 @@ layer: n/a
 summary: check_P errors when a Makefile target carries a `## ` help annotation that the `help` recipe's own grep pattern cannot match, because that target is then invisible to `make help` while looking documented. The live instance was `e2e` — hidden for as long as it existed because the recipe's character class `[a-zA-Z_-]` has no digits. The check reads the recipe's pattern out of the Makefile rather than restating it, so it can never agree with a wrong pattern by construction; a recipe it cannot read is a stated WARN, never a silent pass.
 """
 
+import inspect
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +101,15 @@ def test_an_annotated_target_in_an_included_makefile_is_checked_too():
 def test_no_help_target_is_silent():
     """Nothing lists the annotations, so nothing can hide one."""
     assert _find("e2e: ## a\n\tx\n") == ([], [])
+
+
+def test_a_help_recipe_without_its_source_refuses_under_optimization() -> None:
+    # Force the unreachable state and compile as -O does: an assert would vanish.
+    source = inspect.getsource(cs._help_parity_findings)
+    namespace = vars(cs).copy()
+    exec(compile(source, cs.__file__, "exec", optimize=2), namespace)
+    with pytest.raises(RuntimeError, match="help recipe.*source"):
+        namespace["_help_parity_findings"]([(None, "help:\n\t@list-targets\n")])
 
 
 def test_a_help_recipe_without_a_readable_pattern_warns_and_gates_nothing():

@@ -7,6 +7,7 @@ summary: build_child_env starts from an empty dict and copies only what config/p
 
 import base64
 import copy
+import importlib
 import json
 import os
 import shutil
@@ -168,6 +169,30 @@ def test_the_error_is_not_a_runtime_error():
     """A caller that skips on ModelUnavailable (a RuntimeError) must not skip a
     broken allowlist."""
     assert not issubclass(child_env.ChildEnvError, RuntimeError)
+
+
+@pytest.mark.parametrize("first", ["child_env", "scripts.child_env"])
+def test_both_import_names_share_the_module_and_catch_its_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, first: str
+) -> None:
+    package = importlib.import_module("scripts")
+    names = ("child_env", "scripts.child_env")
+    saved = {name: sys.modules.pop(name) for name in names if name in sys.modules}
+    monkeypatch.setattr(package, "child_env", None, raising=False)
+    try:
+        loaded = importlib.import_module(first)
+        bare = importlib.import_module("child_env")
+        dotted = importlib.import_module("scripts.child_env")
+        assert loaded is bare is dotted
+        assert package.child_env is bare
+        with pytest.raises(dotted.ChildEnvError, match="config/project.json"):
+            bare.build_child_env(root=str(tmp_path))
+        with pytest.raises(bare.ChildEnvError, match="config/project.json"):
+            dotted.build_child_env(root=str(tmp_path))
+    finally:
+        for name in names:
+            sys.modules.pop(name, None)
+        sys.modules.update(saved)
 
 
 _BROKEN = [

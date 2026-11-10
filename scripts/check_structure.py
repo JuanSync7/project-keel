@@ -3667,7 +3667,8 @@ def _help_parity_findings(makefiles):
             break
     if recipe is None:
         return errs, warns
-    assert help_in is not None
+    if help_in is None:
+        raise RuntimeError("help recipe has no source makefile")
     unverified = "%s: help parity unverified -- " % help_in
     greps = [
         (
