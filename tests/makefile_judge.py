@@ -9,7 +9,8 @@ import re
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -127,7 +128,8 @@ def _guard_pytest_environment(
     # Refuse assignments/exports conservatively: their state can cross
     # statement, recipe and recursive-make boundaries without a local prefix.
     # References also import caller state that our empty expansion env loses.
-    # Prose merely naming a variable (for example @echo help) is harmless.
+    # Literal help prose may name an input; @echo naming it with $$ is refused
+    # because even a quoted reference imports state our empty env cannot judge.
     for name in _PYTEST_INPUT_VARIABLES:
         _require(
             not re.search(rf"\b{name}[ \t]*[:?+]?=", text)
@@ -433,35 +435,539 @@ def _shell_words(command: str) -> list[str]:
         ) from error
 
 
-def _guard_shell_environment(command: str, source: str) -> None:
-    # Literal environment-name rule: refuse every statement that lets the shell
-    # decide which names reach pytest. Values may expand; names must be literal.
-    # Inspect all statements, including lines without pytest, in this one guard.
-    words = _shell_words(command)
-    # Shell quoting can split a literal name in the original text.
-    _guard_pytest_environment(" ".join(words), source)
-    command_position = True
-    for i, word in enumerate(words):
-        if word and all(char in ";&|()\n" for char in word):
-            command_position = True
+@dataclass(frozen=True)
+class _ShellToken:
+    value: str
+    raw: str
+    operator: bool = False
+    stdin: str | None = None
+    descriptor: bool = False
+
+
+def _shell_tokens(command: str) -> list[_ShellToken]:
+    # Retain quoting on operators: find's escaped semicolon and quoted script
+    # punctuation are argv data, whereas a shell separator starts a statement.
+    tokens = []
+    position = 0
+    operators = re.compile(r"&&|\|\||;;|<<<|<<-?|>>|>&|<&|<>|[;&|()<>\n]")
+    while position < len(command):
+        if command[position] in " \t\r":
+            position += 1
             continue
-        if not command_position:
+        operator = operators.match(command, position)
+        if operator:
+            raw = operator[0]
+            tokens.append(_ShellToken(raw, raw, operator=True))
+            position = operator.end()
             continue
-        word = word.removeprefix("@")
-        if (
-            word in {"if", "then", "elif", "else", "while", "until", "do", "!", "{"}
-            or re.match(r"^[A-Za-z_]\w*=", word)
-            or word.startswith("-")
-        ):
-            continue
-        # Arguments (including make goals such as eval) are data. Transparent
-        # shell wrappers leave the next executable in command position.
-        command_position = word in {"env", "command", "builtin", "exec"}
-        arguments = []
-        for argument in words[i + 1 :]:
-            if argument and all(char in ";&|()\n" for char in argument):
+        start, quote, depth = position, "", 0
+        while position < len(command):
+            char = command[position]
+            if char == "\\" and quote != "'":
+                position += 2
+                continue
+            if char in "'\"`" and (not quote or quote == char):
+                quote = "" if quote else char
+            elif quote != "'" and command.startswith("$(", position):
+                depth += 1
+                position += 2
+                continue
+            elif depth and char == ")":
+                depth -= 1
+            elif (
+                not quote
+                and not depth
+                and (char.isspace() or operators.match(command, position))
+            ):
                 break
-            arguments.append(argument)
+            position += 1
+        raw = command[start:position]
+        try:
+            value = " ".join(shlex.split(raw))
+        except ValueError as error:
+            raise AssertionError(
+                f"Unjudged shell quoting on {command!r}. Fix: use balanced simple quoting."
+            ) from error
+        stdin = None
+        if len(tokens) and tokens[-1].value in {"<<", "<<-"}:
+            newline = command.find("\n", position)
+            terminator = (
+                re.search(
+                    r"^[\t]*" + re.escape(value) + r"[\r]?(?:\n|$)",
+                    command[newline + 1 :],
+                    re.MULTILINE,
+                )
+                if newline >= 0
+                else None
+            )
+            _require(
+                terminator,
+                "Cannot judge stdin environment",
+                command,
+                "close the literal heredoc",
+            )
+            assert terminator is not None
+            stdin = command[newline + 1 : newline + 1 + terminator.start()]
+            if tokens[-1].value == "<<-":
+                stdin = re.sub(r"^\t+", "", stdin, flags=re.MULTILINE)
+            command = command[: newline + 1] + command[newline + 1 + terminator.end() :]
+        tokens.append(
+            _ShellToken(
+                value,
+                raw,
+                stdin=stdin,
+                descriptor=value.isdigit()
+                and position < len(command)
+                and command[position] in "<>",
+            )
+        )
+    return tokens
+
+
+# An option's operand is data even when it looks like an executable. Attached
+# operands and --option=value consume no following word. Unknown options fail
+# closed rather than guessing whether they conceal a command.
+_WRAPPER_OPTIONS = {
+    "env": (
+        {"-u", "--unset", "-C", "--chdir"},
+        {"-i", "--ignore-environment", "-0", "--null"},
+    ),
+    "command": (set(), {"-p", "-v", "-V"}),
+    "builtin": (set(), set()),
+    "exec": ({"-a"}, {"-c", "-l"}),
+    "nice": ({"-n", "--adjustment"}, set()),
+    "ionice": (
+        {
+            "-c",
+            "--class",
+            "-n",
+            "--classdata",
+            "-p",
+            "--pid",
+            "-P",
+            "--pgid",
+            "-u",
+            "--uid",
+        },
+        {"-t", "--ignore"},
+    ),
+    "timeout": (
+        {"-s", "--signal", "-k", "--kill-after"},
+        {"--foreground", "--preserve-status", "-v", "--verbose"},
+    ),
+    "nohup": (set(), set()),
+    "setsid": (set(), {"-c", "--ctty", "-f", "--fork", "-w", "--wait"}),
+    "stdbuf": ({"-i", "--input", "-o", "--output", "-e", "--error"}, set()),
+    "xargs": (
+        {
+            "-a",
+            "--arg-file",
+            "-d",
+            "--delimiter",
+            "-E",
+            "-I",
+            "-L",
+            "--max-lines",
+            "-n",
+            "--max-args",
+            "-P",
+            "--max-procs",
+            "--process-slot-var",
+            "-s",
+            "--max-chars",
+        },
+        {
+            "-0",
+            "--null",
+            "-r",
+            "--no-run-if-empty",
+            "-t",
+            "--verbose",
+            "-p",
+            "--interactive",
+            "-x",
+            "--exit",
+        },
+    ),
+    "time": (
+        {"-f", "--format", "-o", "--output"},
+        {"-p", "--portability", "-a", "--append", "-v", "--verbose"},
+    ),
+}
+
+
+def _substitution_texts(raw: str) -> Iterator[str]:
+    if raw.startswith("'") and raw.endswith("'"):
+        return
+    for match in re.finditer(r"\$\((.*)\)|`([^`]*)`", raw):
+        yield match[1] or match[2]
+
+
+def _printf_escapes(text: str, source: str) -> str:
+    escapes = {
+        "a": "\a",
+        "b": "\b",
+        "f": "\f",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        "v": "\v",
+        "\\": "\\",
+    }
+    result = []
+    for match in re.finditer(
+        r"\\(?:0[0-7]{1,3}|[0-7]{1,3}|x[0-9A-Fa-f]{1,2}|.|$)|[^\\]+", text
+    ):
+        piece = match[0]
+        if not piece.startswith("\\"):
+            result.append(piece)
+            continue
+        code = piece[1:]
+        _require(
+            code in escapes or re.fullmatch(r"0?[0-7]{1,3}|x[0-9A-Fa-f]{1,2}", code),
+            "Cannot judge encoded stdin environment",
+            source,
+            "use literal script text or supported printf escapes",
+        )
+        if code in escapes:
+            result.append(escapes[code])
+        else:
+            result.append(
+                chr(int(code[1:], 16) if code.startswith("x") else int(code, 8))
+            )
+    return "".join(result)
+
+
+def _printed_script(entry: _ShellCommand, source: str) -> str:
+    arguments = list(entry.arguments)
+    if entry.word.rsplit("/", 1)[-1] == "echo":
+        decode = True
+        while arguments and arguments[0] in {"-n", "-e", "-E"}:
+            option = arguments.pop(0)
+            if option in {"-e", "-E"}:
+                decode = option == "-e"
+        text = " ".join(arguments)
+        return _printf_escapes(text, source) if decode else text
+    _require(
+        arguments,
+        "Cannot judge stdin environment",
+        source,
+        "print a literal shell script",
+    )
+    format_string, *values = arguments
+    pieces = re.findall(r"%[%sb]|[^%]+", format_string)
+    _require(
+        "".join(pieces) == format_string,
+        "Cannot judge stdin environment",
+        source,
+        "use literal printf %s or %b script input",
+    )
+    result = []
+    position = 0
+    while True:
+        for piece in pieces:
+            if piece in {"%s", "%b"}:
+                value = values[position] if position < len(values) else ""
+                position += 1
+                result.append(
+                    _printf_escapes(value, source) if piece == "%b" else value
+                )
+            else:
+                result.append("%" if piece == "%%" else _printf_escapes(piece, source))
+        if position >= len(values) or not any(
+            piece in {"%s", "%b"} for piece in pieces
+        ):
+            return "".join(result)
+
+
+def _after_options(words: list[str], start: int, wrapper: str, source: str) -> int:
+    operands, flags = _WRAPPER_OPTIONS[wrapper]
+    while start < len(words) and words[start].startswith("-"):
+        option = words[start]
+        start += 1
+        if option == "--":
+            break
+        if option in operands:
+            _require(
+                start < len(words),
+                "Missing wrapper option operand",
+                source,
+                "supply a literal operand",
+            )
+            _require(
+                not re.search(r"[$`]", words[start]),
+                "Cannot judge computed wrapper environment",
+                source,
+                "write wrapper operands literally so splitting cannot choose the executable",
+            )
+            start += 1
+            continue
+        attached = any(
+            option.startswith(name + "=")
+            if name.startswith("--")
+            else option.startswith(name) and len(option) > len(name)
+            for name in operands
+        )
+        _require(
+            option in flags
+            or attached
+            or (
+                option.startswith("-")
+                and not option.startswith("--")
+                and all("-" + char in flags for char in option[1:])
+            )
+            or (wrapper == "nice" and re.fullmatch(r"-\d+", option)),
+            "Cannot judge wrapper environment",
+            source,
+            "use explicit supported wrapper options and literal operands",
+        )
+    return start
+
+
+@dataclass(frozen=True)
+class _ShellCommand:
+    word: str
+    arguments: tuple[str, ...]
+    prefix: tuple[str, ...] = ()
+    before: tuple[str, ...] = ()
+    wrapped: bool = False
+    script: str | None = None
+    redirected: bool = False
+    compound: bool = False
+
+
+def _command_words(command: str, source: str | None = None) -> Iterator[_ShellCommand]:
+    # Literal environment names require one command-position rule for every
+    # guard: follow argv runners, time, compound bodies and shell input strings;
+    # refuse computed executables because their environment effects are unknown.
+    source = command if source is None else source
+    tokens = _shell_tokens(command.replace("\\\n", "").lstrip("@-"))
+    position, boundary = 0, 0
+    producer: _ShellCommand | None = None
+    while position < len(tokens):
+        token = tokens[position]
+        if (
+            token.operator
+            and token.value in {";", ";;", "&", "&&", "|", "||", "(", ")", "\n"}
+        ) or token.value in {
+            "{",
+            "}",
+            "if",
+            "then",
+            "elif",
+            "else",
+            "while",
+            "until",
+            "do",
+            "done",
+            "fi",
+            "!",
+        }:
+            position += 1
+            boundary = position
+            continue
+        if token.value == "function":
+            position += 2
+            boundary = position
+            continue
+        if position + 1 < len(tokens) and tokens[position + 1].value == "(":
+            position += 1
+            continue
+        if re.match(r"^[A-Za-z_]\w*=", token.value):
+            for substitution_text in _substitution_texts(token.raw):
+                yield from _command_words(substitution_text, source)
+            position += 1
+            continue
+        end = position
+        while end < len(tokens) and not (
+            tokens[end].operator
+            and tokens[end].value in {";", ";;", "&", "&&", "|", "||", "(", ")", "\n"}
+        ):
+            end += 1
+        # Redirections may precede the executable or appear between its args.
+        # Their descriptors and operands never occupy command position.
+        argv = []
+        script_input: str | None = None
+        cursor = position
+        while cursor < end:
+            item = tokens[cursor]
+            if item.descriptor:
+                cursor += 1
+                continue
+            if item.operator:
+                _require(
+                    cursor + 1 < end,
+                    "Unjudged shell redirection",
+                    source,
+                    "supply literal input",
+                )
+                operand = tokens[cursor + 1]
+                if item.value == "<<<":
+                    script_input = operand.value
+                elif item.value in {"<<", "<<-"}:
+                    script_input = operand.stdin
+                cursor += 2
+                continue
+            argv.append(item)
+            cursor += 1
+        words = [item.value for item in argv]
+        # Substitutions execute in arguments too, independently of argv runners.
+        for item in argv:
+            for substitution_text in _substitution_texts(item.raw):
+                yield from _command_words(substitution_text, source)
+        index = 0
+        wrapped = False
+        prefix = tuple(item.value for item in tokens[boundary:position])
+        while index < len(words) and re.match(r"^[A-Za-z_]\w*=", words[index]):
+            prefix += (words[index],)
+            index += 1
+        while index < len(words):
+            word = words[index]
+            _require(
+                not re.search(r"[$`*?]|\[[^]]+\]", word),
+                "Cannot judge computed command environment for pytest",
+                source,
+                "write the command word literally",
+            )
+            name = word.rsplit("/", 1)[-1]
+            arguments = words[index + 1 :]
+            script: str | None = None
+            if name.endswith("sh") or re.fullmatch(r"ksh[0-9]+", name):
+                offset = 0
+                reads_stdin = False
+                while offset < len(arguments) and arguments[offset].startswith(
+                    ("-", "+")
+                ):
+                    option = arguments[offset]
+                    offset += 1
+                    if option in {"--", "-"}:
+                        break
+                    if option in {"-o", "+o", "-O", "+O"}:
+                        offset += 1
+                        continue
+                    reads_stdin = reads_stdin or bool(
+                        re.fullmatch(r"-[A-Za-z]*s[A-Za-z]*", option)
+                    )
+                    if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", option):
+                        if arguments[offset : offset + 1] == ["--"]:
+                            offset += 1
+                        _require(
+                            offset < len(arguments),
+                            "Cannot judge shell string environment",
+                            source,
+                            "supply a literal shell script",
+                        )
+                        script = arguments[offset]
+                        break
+                if script is None and (
+                    reads_stdin
+                    or offset == len(arguments)
+                    or arguments[offset:] == ["-"]
+                ):
+                    script = script_input
+                    if position and tokens[position - 1].value == "|":
+                        _require(
+                            producer is not None
+                            and producer.word.rsplit("/", 1)[-1] in {"echo", "printf"},
+                            "Cannot judge stdin environment",
+                            source,
+                            "pipe a literal script from echo or printf",
+                        )
+                        assert producer is not None
+                        script = _printed_script(producer, source)
+                    _require(
+                        script is not None,
+                        "Cannot judge stdin environment",
+                        source,
+                        "supply a literal shell script",
+                    )
+            entry = _ShellCommand(
+                word,
+                tuple(arguments),
+                prefix,
+                tuple(item.value for item in tokens[:boundary]),
+                wrapped,
+                script,
+                redirected=any(item.operator for item in tokens[position:end]),
+                compound=bool(boundary or end < len(tokens)),
+            )
+            yield entry
+            if script is not None:
+                yield from _command_words(script, source)
+            if name in _WRAPPER_OPTIONS:
+                next_index = _after_options(words, index + 1, name, source)
+                if name == "command" and any(
+                    re.fullmatch(r"-[pVv]*[Vv][pVv]*", argument)
+                    for argument in words[index + 1 : next_index]
+                ):
+                    break
+                index = next_index
+                if name == "timeout":
+                    _require(
+                        index < len(words) and not re.search(r"[$`]", words[index]),
+                        "Cannot judge computed wrapper environment",
+                        source,
+                        "write the timeout duration literally",
+                    )
+                    index += 1
+                if name == "xargs":
+                    replacement = None
+                    for offset in range(1, index):
+                        option = words[offset]
+                        if option == "-I" and offset + 1 < index:
+                            replacement = words[offset + 1]
+                        elif option.startswith("-I"):
+                            replacement = option[2:]
+                    if replacement is None:
+                        words.append("$xargs_input")
+                    else:
+                        words[index:] = [
+                            value.replace(replacement, "$xargs_input")
+                            for value in words[index:]
+                        ]
+                if name in {"env", "time"}:
+                    while index < len(words) and "=" in words[index]:
+                        if name == "time":
+                            prefix += (words[index],)
+                        index += 1
+                wrapped = True
+                continue
+            if name == "find":
+                for offset, argument in enumerate(arguments):
+                    if argument in {"-exec", "-execdir", "-ok", "-okdir"}:
+                        stop = offset + 1
+                        while stop < len(arguments) and arguments[stop] not in {
+                            ";",
+                            "+",
+                        }:
+                            stop += 1
+                        yield from _command_words(
+                            shlex.join(
+                                [
+                                    value.replace("{}", "$find_path")
+                                    for value in arguments[offset + 1 : stop]
+                                ]
+                            ),
+                            source,
+                        )
+            if "--" in arguments and arguments[arguments.index("--") + 1 :][:1] == [
+                "__keel_make__"
+            ]:
+                yield from _command_words(
+                    shlex.join(arguments[arguments.index("--") + 1 :]), source
+                )
+            producer = entry
+            break
+        position = end
+        boundary = position
+
+
+def _guard_shell_environment(command: str, source: str) -> None:
+    # Shell quoting can split a literal name in the original text.
+    _guard_pytest_environment(" ".join(_shell_words(command)), source)
+    for entry in _command_words(command, source):
+        word = entry.word.rsplit("/", 1)[-1]
+        arguments = list(entry.arguments)
         _require(
             word not in {"eval", ".", "source"}
             and not (
@@ -478,40 +984,47 @@ def _guard_shell_environment(command: str, source: str) -> None:
             source,
             "replace eval, sourcing and allexport with literal environment names",
         )
-        if word.rsplit("/", 1)[-1] in {"sh", "bash"}:
-            for j, argument in enumerate(arguments[:-1]):
-                if not re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", argument):
-                    continue
-                body = arguments[j + 1]
-                _require(
-                    not re.search(
-                        r"[$`]|\b(?:export|declare|typeset|local|env|eval|source|allexport)\b"
-                        r"|(?:^|[;&|])[ \t]*\.[ \t]",
-                        body,
-                    ),
-                    "Cannot judge indirect shell environment",
-                    source,
-                    "replace shell -c environment construction with literal names",
-                )
-                break
+        if entry.script is not None:
+            _require(
+                not re.search(
+                    r"[$`]|\b(?:export|declare|typeset|local|env|eval|source|allexport)\b"
+                    r"|(?:^|[;&|])[ \t]*\.[ \t]",
+                    entry.script,
+                ),
+                "Cannot judge indirect shell environment",
+                source,
+                "replace shell script environment construction with literal names",
+            )
         if word not in {"export", "declare", "typeset", "local", "env"}:
             continue
         options = []
-        while arguments and arguments[0].startswith("-"):
-            options.append(arguments.pop(0))
+        if word == "env":
+            offset = _after_options(arguments, 0, "env", source)
+            for option_index, option in enumerate(arguments[:offset]):
+                if option in {"-u", "--unset"}:
+                    name = arguments[option_index + 1]
+                elif option.startswith("--unset="):
+                    name = option.partition("=")[2]
+                elif option.startswith("-u"):
+                    name = option[2:]
+                else:
+                    continue
+                _require(
+                    re.fullmatch(r"[A-Za-z_]\w*", name),
+                    "Cannot judge computed environment name",
+                    source,
+                    "write the unset environment name literally",
+                )
+            arguments = arguments[offset:]
+        else:
+            while arguments and arguments[0].startswith("-"):
+                options.append(arguments.pop(0))
         if word in {"declare", "typeset", "local"} and not any(
             re.fullmatch(r"-[A-Za-z]*x[A-Za-z]*", option) for option in options
         ):
             continue
         for argument in arguments:
             if word == "env" and "=" not in argument and not argument.startswith("-"):
-                # env's remaining words are the command, not exported names.
-                _require(
-                    "$" not in argument and "`" not in argument,
-                    "Cannot judge a computed environment name without a shell",
-                    source,
-                    "write the exported or env variable name literally",
-                )
                 break
             name = argument.split("=", 1)[0]
             _require(
@@ -525,27 +1038,44 @@ def _guard_shell_environment(command: str, source: str) -> None:
 
 def make_hop(command: str) -> tuple[list[str], list[str]]:
     """Return literal goals and assignments from one expanded make command."""
-    words = _shell_words(command)
-    calls = [
-        i
-        for i, word in enumerate(words)
-        if word == "__keel_make__"
-        or (word == "make" and (i == 0 or words[i - 1] in ("--", ";", "&&")))
-    ]
+    calls = []
+    for entry in _command_words(command):
+        markers = entry.arguments.count("__keel_make__")
+        if entry.word == "__keel_make__":
+            _require(
+                not markers, "Ambiguous make hop", command, "use one make call per line"
+            )
+        elif markers:
+            _require(
+                markers == 1
+                and not entry.compound
+                and not entry.redirected
+                and "--" in entry.arguments
+                and entry.arguments[entry.arguments.index("--") + 1 :][:1]
+                == ("__keel_make__",),
+                "Unjudged make wrapper",
+                command,
+                "invoke make directly or after the gate wrapper's --",
+            )
+        if entry.word in {"__keel_make__", "make"}:
+            calls.append(entry)
     if not calls:
         return [], []
     _require(
         len(calls) == 1, "Ambiguous make hop", command, "use one make call per line"
     )
-    (start,) = calls
+    (call,) = calls
     _require(
-        start == 0 or words[start - 1] == "--",
+        not call.wrapped
+        and not call.prefix
+        and not call.redirected
+        and not call.compound,
         "Unjudged make wrapper",
         command,
         "invoke make directly or after the gate wrapper's --",
     )
     goals, assignments = [], []
-    for word in words[start + 1 :]:
+    for word in call.arguments:
         if re.match(r"^[A-Za-z_]\w*=", word):
             _require(
                 word.split("=", 1)[0]
@@ -663,9 +1193,12 @@ def assert_verify_keeps_slow(root: Path) -> None:
             child = tuple(f"{key}={value}" for key, value in sorted(inherited.items()))
             stack.extend((name, child, through_test) for name in goals)
         if any(
-            word == "pytest" or word.endswith("/pytest")
+            entry.word.rsplit("/", 1)[-1] == "pytest"
+            or any(
+                argument.rsplit("/", 1)[-1] == "pytest" for argument in entry.arguments
+            )
             for command in commands
-            for word in _shell_words(command)
+            for entry in _command_words(command)
         ):
             # A recipe may run pytest and then recurse. Never dry-run such a
             # target; its expanded commands are already available as data.
@@ -694,41 +1227,42 @@ def assert_verify_keeps_slow(root: Path) -> None:
 
 def assert_full_pytests(command: str) -> int:
     """Judge executable pytest invocations and return their count."""
-    words = _shell_words(command)
     count = 0
-    for i, word in enumerate(words):
-        if word != "pytest" and not word.endswith("/pytest"):
-            continue
-        # Only an executable invocation counts; an echo mentioning pytest
-        # cannot prove that the test hop runs any tests.
-        start = i
-        if i >= 2 and words[i - 1] == "-m":
-            start = i - 2
+    for entry in _command_words(command):
+        if entry.word.rsplit("/", 1)[-1] == "pytest":
+            args = list(entry.arguments)
+        elif entry.arguments[:2] == ("-m", "pytest"):
             _require(
-                words[start] == sys.executable,
+                entry.word == sys.executable,
                 "Unjudged pytest interpreter",
                 command,
                 "invoke pytest through $(PY) -m pytest",
             )
-        boundary = start
-        while boundary and not all(char in ";&|()\n" for char in words[boundary - 1]):
-            boundary -= 1
+            args = list(entry.arguments[2:])
+        else:
+            _require(
+                not any(
+                    argument.rsplit("/", 1)[-1] == "pytest"
+                    for argument in entry.arguments
+                ),
+                "Unjudged pytest invocation prefix",
+                command,
+                "invoke pytest through $(PY) -m pytest without opaque prefixes",
+            )
+            continue
         _require(
-            all(
+            not entry.wrapped
+            and not entry.redirected
+            and all(
                 re.fullmatch(r"[A-Za-z_]\w*=[^$`]*", value)
                 and value.split("=", 1)[0] in _PYTEST_ENVIRONMENT
-                for value in words[boundary:start]
+                for value in entry.prefix
             ),
             "Unjudged pytest invocation prefix",
             command,
             "use a direct pytest invocation with literal _PYTEST_ENVIRONMENT assignments",
         )
         count += 1
-        args = []
-        for arg in words[i + 1 :]:
-            if arg and all(char in ";&|()\n" for char in arg):
-                break
-            args.append(arg)
         options, position = set(), 0
         while position < len(args):
             option, equals, value = args[position].partition("=")
@@ -751,11 +1285,7 @@ def assert_full_pytests(command: str) -> int:
                 )
                 if option == "--durations" and "$" in value:
                     binding = f"durations=$({sys.executable} scripts/config_get.py tests.durations)"
-                    valid = (
-                        valid
-                        and boundary >= 2
-                        and words[boundary - 2 : boundary] == [binding, "&&"]
-                    )
+                    valid = valid and entry.before[-2:] == (binding, "&&")
             _require(
                 valid,
                 "Unjudged pytest option value",
@@ -776,4 +1306,10 @@ def assert_full_pytests(command: str) -> int:
             args,
             "pass --durations with a positive count from config",
         )
+    _require(
+        count,
+        "Unjudged pytest invocation prefix",
+        command,
+        "invoke pytest as a command",
+    )
     return count

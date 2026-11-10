@@ -84,6 +84,191 @@ _FULL_CHAIN = "verify:\n\t$(MAKE) test\ntest:\n\t$(PY) -m pytest --durations 10\
 
 
 @pytest.mark.parametrize(
+    "shape",
+    [
+        "nice env $$n=x true",
+        "nice -n 5 env $$n=x true",
+        "timeout 5 env $$n=x true",
+        "nohup env $$n=x true",
+        "setsid env $$n=x true",
+        "stdbuf -o0 env $$n=x true",
+        "xargs env $$n=x true",
+        r"find . -exec env $$n=x true \;",
+        "dash -c 'export $$n=x'",
+        "zsh -c 'export $$n=x'",
+        "ksh -c 'export $$n=x'",
+        "/bin/sh -c 'export $$n=x'",
+        "bash -c -- 'export $$n=x'",
+        "bash <<< 'export $$n=x'",
+        "echo 'export $$n=x' | sh",
+        "time export $$n=x",
+        "f() { export $$n=x; }; f",
+        "{ export $$n=x; }",
+        "e=export; $$e $$n=x",
+        "timeout --signal TERM 5 nice --adjustment 3 env $$n=x true",
+        r"find . -execdir env $$n=x true +",
+        "function f { export $$n=x; }; f",
+        "printf '%s' 'export $$n=x' | dash -s --",
+        "env -u OTHER command -- exec env $$n=x true",
+        "xargs -I {} env $$n=x true",
+    ],
+    ids=[
+        "nice",
+        "nice-option",
+        "timeout",
+        "nohup",
+        "setsid",
+        "stdbuf",
+        "xargs",
+        "find-exec",
+        "dash",
+        "zsh",
+        "ksh",
+        "absolute-sh",
+        "shell-c-double-dash",
+        "here-string",
+        "stdin-pipe",
+        "time",
+        "function",
+        "brace-group",
+        "computed-command",
+        "nested-wrapper-options",
+        "find-execdir",
+        "function-keyword",
+        "printf-stdin",
+        "env-options",
+        "xargs-option-operand",
+    ],
+)
+def test_every_command_position_refuses_shell_chosen_names(
+    tmp_path: Path, shape: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+def test_help_prose_refuses_a_doubled_dollar_pytest_reference(tmp_path: Path) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN + "\t@echo '$$PYTEST_PLUGINS configures plugins'\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="pytest environment PYTEST_PLUGINS"):
+        judge.assert_verify_keeps_slow(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("printf '%s\\n' 'pytest --durations 10' | dash", ["printf", "dash", "pytest"]),
+        ("sh <<'END'\npytest --durations 10\nEND\n", ["sh", "pytest"]),
+        ("value=$(env OTHER=value true)", ["env", "true"]),
+        ('echo "$(env OTHER=value true)"', ["env", "true", "echo"]),
+        ("sh <<< 'pytest --durations 10' -s", ["sh", "pytest"]),
+        ("2>/dev/null time -p env OTHER=value true", ["time", "env", "true"]),
+    ],
+    ids=[
+        "printf-script",
+        "heredoc-script",
+        "assignment-substitution",
+        "argument-substitution",
+        "redirect-before-options",
+        "leading-redirection",
+    ],
+)
+def test_command_iterator_follows_executed_text(
+    command: str, expected: list[str]
+) -> None:
+    assert [entry.word for entry in judge._command_words(command)] == expected
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "env -u $$n true",
+        "echo value | xargs env",
+        "echo value | xargs -I NAME env NAME=x true",
+        r"find . -exec {} $$n=x true \;",
+        "v=$$(env $$n=x true)",
+        "posh -c 'export $$n=x'",
+        "echo 'export $$n=x' | sh -s argument",
+        "dash -o errexit -c 'export $$n=x'",
+        "command env -v $$n=x true",
+        "ionice -c 3 env $$n=x true",
+        "time OTHER=value export $$n=x",
+        r"printf '%b' '\0145nv \0044n=x true' | sh",
+        r"echo -e '\0145nv \0044n=x true' | sh",
+        "opts='5 env'; nice -n $$opts true",
+        "opts='5 env'; timeout $$opts true",
+    ],
+    ids=[
+        "computed-unset",
+        "xargs-appended-names",
+        "xargs-replaced-names",
+        "find-computed-command",
+        "substitution-environment",
+        "another-posix-shell",
+        "stdin-shell-arguments",
+        "shell-option-operand",
+        "command-query-argument",
+        "ionice-wrapper",
+        "time-assignment-prefix",
+        "printf-encoded-script",
+        "echo-encoded-script",
+        "computed-wrapper-option",
+        "computed-wrapper-positional-operand",
+    ],
+)
+def test_command_runner_inputs_cannot_choose_environment_names(
+    tmp_path: Path, shape: str
+) -> None:
+    path = tmp_path / "Makefile"
+    path.write_text(
+        _FULL_CHAIN.replace("\t$(PY)", f"\tn=PYTEST_PLUGINS; {shape}; $(PY)"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="Cannot judge.*environment") as failure:
+        judge.assert_verify_keeps_slow(tmp_path)
+    assert str(path) in str(failure.value)
+    assert "Fix:" in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "pytest --durations 10; echo pytest",
+        "pytest --durations 10; python -B -m pytest -k quick",
+        "pytest --durations 10 > report",
+    ],
+    ids=["data-mention", "interpreter-options", "redirected-pytest"],
+)
+def test_pytest_guard_keeps_earlier_conservative_refusals(command: str) -> None:
+    with pytest.raises(AssertionError, match="pytest.*Fix:"):
+        judge.assert_full_pytests(command)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "make test; true",
+        "true; make test",
+        "make test > report",
+        "python gate.py -- __keel_make__ test; true",
+    ],
+)
+def test_make_guard_keeps_earlier_conservative_refusals(command: str) -> None:
+    with pytest.raises(AssertionError, match="make.*Fix:"):
+        judge.make_hop(command)
+
+
+@pytest.mark.parametrize(
     "name",
     [
         "PYTEST_ADDOPTS",
