@@ -2,7 +2,7 @@
 title: Eval scorers — the closed registry of deterministic judges
 layer: n/a
 public_api: no
-summary: SCORERS maps each scorer name (exact, contains, regex, json_fields) to a Scorer whose check_params refuses an unknown, missing or ill-typed parameter with ValueError and whose score(response, params) returns (passed, detail) with ValueError on regex execution refusal. It is the only place a scorer name is written in code; the case schema's scorer branches are held equal to it by tests/integration/test_evals_schema.py.
+summary: SCORERS maps each scorer name (exact, contains, regex, json_fields) to a Scorer whose check_params refuses an unknown, missing or ill-typed parameter with ValueError and whose score(response, params) returns (passed, detail) with ScoringRefused on regex execution refusal. It is the only place a scorer name is written in code; the case schema's scorer branches are held equal to it by tests/integration/test_evals_schema.py.
 """
 
 from __future__ import annotations
@@ -15,17 +15,21 @@ from types import MappingProxyType
 
 from scripts.bounded_match import match_values
 
-__all__ = ["SCORERS", "Scorer"]
+__all__ = ["SCORERS", "Scorer", "ScoringRefused"]
 
 # A detail quotes at most this much of a response: enough to recognise it in a
 # report, short enough that one long answer cannot bury the others.
 _QUOTE = 60
 
 
+class ScoringRefused(ValueError):
+    """The bounded regex matcher refused to judge a response."""
+
+
 @dataclass(frozen=True)
 class Scorer:
     """One deterministic judge: its required parameter names, a validator for
-    them, and a scoring function that refuses an unjudgeable regex with ValueError."""
+    them, and a scoring function that refuses an unjudgeable regex with ScoringRefused."""
 
     name: str
     params: frozenset[str]
@@ -103,7 +107,7 @@ def _score_regex(response: str, params: Mapping[str, object]) -> tuple[bool, str
             str(params["pattern"]), "regex.pattern", [response], "search"
         )
     except AssertionError as exc:
-        raise ValueError(str(exc)) from None
+        raise ScoringRefused(str(exc)) from None
     if matched[0]:
         return True, "matched"
     return False, "no match in %s" % _quote(response)

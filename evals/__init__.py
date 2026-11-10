@@ -20,7 +20,7 @@ from ._report import (
     verdict,
 )
 from ._run import LiveRun, SpendCapExceeded, replay, run_live
-from ._scorers import SCORERS, Scorer
+from ._scorers import SCORERS, Scorer, ScoringRefused
 
 __all__ = [
     "DOERS",
@@ -36,6 +36,7 @@ __all__ = [
     "Outcome",
     "Report",
     "Scorer",
+    "ScoringRefused",
     "SpendCapExceeded",
     "Suite",
     "SuiteResult",
