@@ -1294,5 +1294,7 @@ def test_children_environment_leaves_tempfile_unchanged_after_exit(tmp_path):
     with ig.children_environment(str(tmp_path)):
         assert Path(os.environ["TMPDIR"]).is_dir()
 
+    # Identity, not equality: a block that assigns an equal string has still
+    # set tempfile.tempdir, and only the same object proves it was left alone.
     assert tempfile.tempdir is before_cached
     assert tempfile.gettempdir() == before_tempdir
