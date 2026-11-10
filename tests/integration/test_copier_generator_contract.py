@@ -455,46 +455,42 @@ def _copier_loads(text):
     scopes = _scopes(tree)
     loads = set()
 
-    def body(stmts, scope, sink, *, guarded):
+    def body(stmts, scope, sink, relying, *, guarded):
         # A function runs when it is called, which for a test is after the
         # module has finished importing, so a function defined here starts
-        # guarded when this body is guarded by its end. A call made before the
-        # guard to a function that relies on that is a fault at the call.
+        # guarded when this body is guarded by its end.
         end = guarded or any(_routes(s, scope) for s in stmts)
-        block(stmts, guarded, scope, end, set(), sink)
+        block(stmts, guarded, scope, end, relying, sink)
 
-    def relies(fn):
+    def relies(fn, relying):
+        # Whether *fn* reaches a plain load, itself or through a function it
+        # calls, when it is called before any guard has run.
         dry = set()
-        body(fn.body, scopes[fn], dry, guarded=False)
+        body(fn.body, scopes[fn], dry, relying, guarded=False)
         return any(kind == _PLAIN and not ok for _, _, kind, ok in dry)
 
     def block(stmts, guarded, scope, deferred, relying, sink):
         # A routed load guards the statements after it in its block. One under
         # an if, a try or a loop guards only that inner block, because it may
         # not run.
-        relying = relying | {
-            s.name for s in stmts if isinstance(s, _FUNCTIONS) and relies(s)
-        }
+        defs = [s for s in stmts if isinstance(s, _FUNCTIONS)]
+        while True:  # each pass reaches one more link of a helper chain
+            more = relying | {s.name for s in defs if relies(s, relying)}
+            if more == relying:
+                break
+            relying = more
         now = guarded
         for stmt in stmts:
             if isinstance(stmt, (*_FUNCTIONS, ast.ClassDef)):
                 for part in _outer_parts(stmt):
                     visit(part, now, scope, deferred, relying, sink)
             if isinstance(stmt, _FUNCTIONS):
-                body(stmt.body, scopes[stmt], sink, guarded=deferred)
+                body(stmt.body, scopes[stmt], sink, relying, guarded=deferred)
             elif isinstance(stmt, ast.ClassDef):
                 inner = scopes[stmt]
                 ends = now or any(_routes(s, inner) for s in stmt.body)
-                block(stmt.body, now, inner, deferred or ends, set(), sink)
+                block(stmt.body, now, inner, deferred or ends, relying, sink)
             else:
-                if not now:
-                    for call in ast.walk(stmt):
-                        if (
-                            isinstance(call, ast.Call)
-                            and isinstance(call.func, ast.Name)
-                            and call.func.id in relying
-                        ):
-                            sink.add((call.lineno, call.col_offset, _PLAIN, False))
                 visit(stmt, now, scope, deferred, relying, sink)
             now = now or _routes(stmt, scope)
 
@@ -505,6 +501,12 @@ def _copier_loads(text):
         if kind is not None:
             ok = kind == _ROUTED or (kind == _PLAIN and guarded)
             sink.add((node.lineno, node.col_offset, kind, ok))
+        # A call made before the guard, here or in a decorator or a default
+        # that runs where its def stands, to a function that reaches a plain
+        # load runs that load unguarded, so the call is the fault.
+        called = getattr(getattr(node, "func", None), "id", None)
+        if isinstance(node, ast.Call) and called in relying and not guarded:
+            sink.add((node.lineno, node.col_offset, _PLAIN, False))
         for _, child in ast.iter_fields(node):
             if isinstance(child, list) and child and isinstance(child[0], ast.stmt):
                 block(child, guarded, scope, deferred, relying, sink)
@@ -515,7 +517,7 @@ def _copier_loads(text):
             elif isinstance(child, ast.AST):
                 visit(child, guarded, scope, deferred, relying, sink)
 
-    body(tree.body, scopes[tree], loads, guarded=False)
+    body(tree.body, scopes[tree], loads, frozenset(), guarded=False)
     return [(line, kind, ok) for line, _, kind, ok in sorted(loads)]
 
 
@@ -636,6 +638,28 @@ _LOAD_CASES = {
         "import optional_deps\ndef test_x():\n"
         "    def load():\n        import copier\n    load()\n    %s\n" % _ROUTE,
         [(_PLAIN, True), (_PLAIN, False), (_ROUTED, True)],
+    ),
+    "helper_in_decorator_before_guard": (
+        "import optional_deps\nimport pytest\ndef cases():\n"
+        "    from copier import run_copy\n    return [run_copy]\n"
+        '@pytest.mark.parametrize("copy", cases())\n'
+        "def test_copy(copy):\n    pass\n%s\n" % _ROUTE,
+        [(_PLAIN, True), (_PLAIN, False), (_ROUTED, True)],
+    ),
+    "helper_in_default_before_guard": (
+        "import optional_deps\ndef load():\n    import copier\n"
+        "def test_copy(copier=load()):\n    pass\n%s\n" % _ROUTE,
+        [(_PLAIN, True), (_PLAIN, False), (_ROUTED, True)],
+    ),
+    "helper_chain_called_before_guard": (
+        "import optional_deps\ndef load():\n    import copier\n"
+        "def build():\n    return load()\nbuild()\n%s\n" % _ROUTE,
+        [(_PLAIN, True), (_PLAIN, False), (_ROUTED, True)],
+    ),
+    "helper_called_from_conditional_test": (
+        "import optional_deps\ndef helper():\n    import copier\n"
+        "if True:\n    def test_copy():\n        helper()\n%s\n" % _ROUTE,
+        [(_PLAIN, True), (_ROUTED, True)],
     ),
     "no_guard_anywhere": (
         "def test_copy():\n    import copier\n",
