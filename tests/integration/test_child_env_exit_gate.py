@@ -36,6 +36,14 @@ def refusal_findings(root):
     References include callbacks and class bodies, conservatively. Dynamic
     getattr and cross-module object dispatch are outside this static check.
     A handler that re-raises cannot establish a refusal boundary.
+    Any other handler of the refusal, or of Exception, is trusted to report it.
+    A rule that also judged each handler's body flagged twelve handlers on
+    entry paths and no hidden refusal.
+    Each of the twelve translates the refusal to its script's own error,
+    returns it through the script's refusal helper, or records the run red.
+    tests/integration/test_swallowed_error_gate.py fails a handler whose body
+    only drops the error or returns a fixed value.
+    tests/integration/test_exit_gate.py fails a literal that main returns.
     """
     files = st.python_files(root)
     roots = st.import_layers(root)["search_roots"]
