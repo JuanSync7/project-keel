@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities (scripts/config_loader.py is_served), so a hidden gap is reported and never filled.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities (scripts/config_loader.py is_served), so a hidden gap is reported and never filled. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -117,10 +117,18 @@ def _fillable(corpus, served):
 
 
 def _gate(state):
-    """Read-only: run check_structure and capture its errors/warnings."""
-    _, out, _ = _run(["scripts/check_structure.py", "--root", state["root"]])
+    """Read-only: capture structure findings; a crash without errors is unreadable."""
+    rc, out, err = _run(["scripts/check_structure.py", "--root", state["root"]])
+    errors = tuple(ln[6:] for ln in out.splitlines() if ln.startswith("ERROR "))
+    if rc != 0 and not errors:
+        raise tool_reports.ToolReportUnreadable(
+            "scripts/check_structure.py gave the agent no readable report",
+            "scripts/check_structure.py exited %d under %s without ERROR lines; its stderr: %s"
+            % (rc, state["root"], err.strip() or "(empty)"),
+            "run scripts/check_structure.py on that checkout to see its output, then rerun",
+        )
     return {
-        "s_errors": tuple(ln[6:] for ln in out.splitlines() if ln.startswith("ERROR ")),
+        "s_errors": errors,
         "s_warnings": tuple(
             ln[6:].strip() for ln in out.splitlines() if ln.startswith("WARN  ")
         ),
@@ -154,30 +162,33 @@ def _link(state):
 
 
 def _report(state):
-    """Read-only: enumerate summary gaps (no authored summary) and owner gaps."""
+    """Read-only: enumerate gaps; failed or unreadable owner reports raise
+    ToolReportUnreadable before any fill or commit."""
     corpus = _load_corpus(state["root"])
     nodes = corpus.get("nodes", [])
     summary_gaps = tuple(n["node_id"] for n in _ungapped(corpus))
     # Owner gaps come from the declared accountability_report tool (its CLI),
     # not a re-implemented predicate here -- read-only, so safe in dry-run too.
     corpus_path = os.path.join(state["root"], _CORPUS)
-    # accountability_report's absent-corpus branch emits prose, so skip the
-    # call on the same absence test rather than couple to its notice wording.
-    if not os.path.exists(corpus_path):
-        owner_gaps = ()
-    else:
-        rc, ar_out, err = _run(
-            ["scripts/accountability_report.py", "--corpus", corpus_path, "--json"]
+    rc, ar_out, err = _run(
+        ["scripts/accountability_report.py", "--corpus", corpus_path, "--json"]
+    )
+    if rc != 0:
+        raise tool_reports.ToolReportUnreadable(
+            "scripts/accountability_report.py failed",
+            "scripts/accountability_report.py exited %d under %s; its stderr: %s"
+            % (rc, state["root"], err.strip() or "(empty)"),
+            "fix what scripts/accountability_report.py names, then rerun",
         )
-        owners = tool_reports.read_report(
-            "scripts/accountability_report.py",
-            rc,
-            ar_out,
-            err,
-            state["root"],
-            container=list,
-        )
-        owner_gaps = tuple(n["node_id"] for n in owners)
+    owners = tool_reports.read_report(
+        "scripts/accountability_report.py",
+        rc,
+        ar_out,
+        err,
+        state["root"],
+        container=list,
+    )
+    owner_gaps = tuple(n["node_id"] for n in owners)
     return {
         "corpus": corpus,
         "nodes": nodes,

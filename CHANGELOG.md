@@ -150,6 +150,14 @@ version rather than a bare commit:
   until a hard date, from a record that only shrinks.
 
 ### Added
+- **Index and practice verdicts require readable tool reports (KEEL-ERR-2,
+  CMP-17.S2).** Both agents preserve the shared `ToolReportUnreadable` for
+  malformed reports; failed owner status and structure crashes also stop the
+  index run. The practice CLI reports FAILURE with the error's three parts;
+  nonzero queries keep WalkRefused and USAGE. Readable negative gate and apply
+  verdicts stay valid. Absent-corpus accountability JSON is `[]` with its
+  notice on stderr. No persisted report needs repair: failed reads write none;
+  rebuild a corpus with `make site-data` to replace earlier misleading results.
 - **Test helpers read policy through the config loader (KEEL-SRCTREE-CFG-1).**
   The config-reads gate also walks the Python helpers directly under
   `config_reads.test_helpers_root`, leaving `conftest.py`, `test_*.py` and

@@ -132,7 +132,7 @@ def test_unreadable_owner_report_fails_the_run(tmp_path, monkeypatch, execute, o
 
 
 @pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
-def test_absent_corpus_skips_the_owner_tool(tmp_path, monkeypatch, execute):
+def test_absent_corpus_reads_the_owner_tool(tmp_path, monkeypatch, execute):
     calls = []
 
     def run(args):
@@ -145,7 +145,12 @@ def test_absent_corpus_skips_the_owner_tool(tmp_path, monkeypatch, execute):
 
     monkeypatch.setattr("agents.index_enforcer._brain._run", run)
     report = enforce(root=str(tmp_path), execute=execute)
-    assert not any(args[0] == "scripts/accountability_report.py" for args in calls)
+    assert calls[-1] == [
+        "scripts/accountability_report.py",
+        "--corpus",
+        str(tmp_path / "wiki/corpus.json"),
+        "--json",
+    ]
     assert report.nodes == 0 and report.owner_gaps == ()
     assert report.dry_run is not execute
 

@@ -9,7 +9,7 @@ tags: [tool, accountability, owner, governance]
 summary: Read-only list of corpus nodes with no resolved owner (accountability gaps).
 id: tool-accountability-report
 created: 2026-06-17
-updated: 2026-10-26
+updated: 2026-11-11
 visibility: internal
 canonical: true
 tool_command: python3 scripts/accountability_report.py --corpus wiki/corpus.json
@@ -59,7 +59,8 @@ list of the unowned nodes only (`node_id`, `kind`, `path`), the owner gaps
 `index_enforcer` reads. A row that lacks a field the report shows is still
 listed: the field reads `(missing)` in text and `null` in JSON, and a row that
 is not an object counts as one with every field missing. No corpus present →
-prints a notice and exits 0. A corpus that is not JSON, not an object, or has
+emits `[]` on stdout and a notice on stderr with `--json`; text mode prints
+the notice on stdout. Both exit 0. A corpus that is not JSON, not an object, or has
 no `nodes` list (missing, null or another type) → prints nothing on stdout,
 one stderr line naming the file and what is wrong with it, and exits 2
 (`USAGE`). A module that imports the report and passes such a corpus to

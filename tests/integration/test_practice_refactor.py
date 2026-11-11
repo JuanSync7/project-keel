@@ -20,6 +20,7 @@ from agents.practice_refactor import WalkRefused, refactor  # noqa: E402
 from models import ModelMeter  # noqa: E402
 from runtimes import FileCheckpointer  # noqa: E402
 from scripts import corpus_level  # noqa: E402
+from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
 
 import reclassify  # noqa: E402
 
@@ -163,6 +164,133 @@ def _checkpointer(tmp_path):
     # The default checkpointer writes under the checkout's wiki/.runtime, and
     # would resume a snapshot an earlier crashed run left there.
     return FileCheckpointer(str(tmp_path / "checkpoints"))
+
+
+def _deep_report():
+    """Build the shallowest nesting this parser refuses without changing its limit."""
+    text = "0"
+    while True:
+        text = "[" + text + "]"
+        try:
+            json.loads(text)
+        except RecursionError:
+            return text
+
+
+@pytest.mark.parametrize(
+    "execute,tool",
+    [
+        (False, "query_corpus"),
+        (True, "query_corpus"),
+        (False, "run_make_target"),
+        (True, "run_make_target"),
+        (True, "apply_refactor"),
+    ],
+)
+@pytest.mark.parametrize(
+    "out", ["not JSON", "", " \n", "[1]", '"x"', "deep", "wrong-container"]
+)
+def test_unreadable_report_stops_before_the_next_step(
+    tmp_path, monkeypatch, tool, out, execute
+):
+    if out == "deep":
+        out = _deep_report()
+    if out == "wrong-container":
+        out = "{}" if tool == "query_corpus" else "[]"
+    runner, model = _Runner(), _Model()
+
+    def run(args, stdin=None, *, root):
+        if args[0] == "scripts/%s.py" % tool:
+            runner.calls.append(tool)
+            return 0 if tool == "query_corpus" else 3, out, "tool diagnostic"
+        return runner(args, stdin, root=root)
+
+    _patch(monkeypatch, run, model)
+    with pytest.raises(ToolReportUnreadable) as raised:
+        refactor(
+            "precise-container-types",
+            root=_files(tmp_path),
+            execute=execute,
+            max_model_calls=8,
+            checkpointer=_checkpointer(tmp_path),
+        )
+    what, on, next_step = raised.value.parts
+    path = "scripts/%s.py" % tool
+    assert path in what and path in next_step
+    assert str(tmp_path) in on and "tool diagnostic" in on
+    assert "exited %d" % (0 if tool == "query_corpus" else 3) in on
+    expected = ["query_corpus", "run_make_target", "apply_refactor"]
+    assert runner.calls == expected[: expected.index(tool) + 1]
+    assert model.n == (1 if tool == "apply_refactor" else 0)
+    assert runner.applied_files == []
+
+
+@pytest.mark.parametrize(
+    "execute,tool",
+    [
+        (False, "query_corpus"),
+        (True, "query_corpus"),
+        (False, "run_make_target"),
+        (True, "run_make_target"),
+        (True, "apply_refactor"),
+    ],
+)
+def test_cli_reports_shared_tool_error_as_failure(
+    tmp_path, monkeypatch, capsys, tool, execute
+):
+    from exit_codes import ExitCode
+    from scripts import refactor_practice as cli
+
+    runner, model = _Runner(), _Model()
+
+    def run(args, stdin=None, *, root):
+        if args[0] == "scripts/%s.py" % tool:
+            return 0, "not JSON", "tool diagnostic"
+        return runner(args, stdin, root=root)
+
+    _patch(monkeypatch, run, model)
+    root = _files(tmp_path)
+    (tmp_path / "config/project.json").write_text(
+        json.dumps({"agents": {"max_model_calls": 2}})
+    )
+    args = ["precise-container-types", "--root", root]
+    if execute:
+        args += ["--execute", "--max-nodes", "2"]
+    assert cli.main(args) == ExitCode.FAILURE
+    captured = capsys.readouterr()
+    path = "scripts/%s.py" % tool
+    assert captured.out == ""
+    assert "refactor_practice: " in captured.err and path in captured.err
+    assert root in captured.err and "tool diagnostic" in captured.err
+    assert "exited 0" in captured.err and "then rerun" in captured.err
+
+
+@pytest.mark.parametrize(
+    "baseline_ok,applied", [(False, False), (True, False), (True, True)]
+)
+def test_readable_nonzero_gate_and_apply_keep_their_verdicts(
+    tmp_path, monkeypatch, baseline_ok, applied
+):
+    runner, model = _Runner(baseline_ok=baseline_ok, gate_ok=applied), _Model()
+
+    def run(args, stdin=None, *, root):
+        rc, out, err = runner(args, stdin, root=root)
+        return (5, out, err) if args[0] != "scripts/query_corpus.py" else (rc, out, err)
+
+    _patch(monkeypatch, run, model)
+    report = refactor(
+        "precise-container-types",
+        root=_files(tmp_path),
+        execute=True,
+        max_model_calls=2,
+        checkpointer=_checkpointer(tmp_path),
+    )
+    assert report.baseline_green is baseline_ok
+    assert report.refactored == (
+        tuple(n["path"] for n in _NODES) if baseline_ok and applied else ()
+    )
+    assert report.skipped == (("n1", "n2") if baseline_ok and not applied else ())
+    assert model.n == (2 if baseline_ok else 0)
 
 
 def test_dry_run_walks_and_previews_but_never_proposes_or_writes(tmp_path, monkeypatch):

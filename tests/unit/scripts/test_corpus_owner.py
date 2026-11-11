@@ -24,6 +24,24 @@ from exit_codes import ExitCode  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
+
+@pytest.mark.parametrize("as_json", [False, True], ids=["text", "json"])
+def test_absent_corpus_is_success_with_a_readable_json_report(
+    tmp_path, capsys, as_json
+):
+    path = tmp_path / "absent.json"
+    args = ["--corpus", str(path)] + (["--json"] if as_json else [])
+    assert ar.main(args) == ExitCode.SUCCESS
+    captured = capsys.readouterr()
+    if as_json:
+        assert captured.out == "[]\n"
+        assert "no corpus at %s" % path in captured.err
+    else:
+        assert "no corpus at %s" % path in captured.out
+        assert captured.err == ""
+    assert not path.exists()
+
+
 _DEFAULT = "ops"
 
 

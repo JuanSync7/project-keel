@@ -3,7 +3,7 @@
 title: Accountability report
 kind: script
 layer: n/a
-summary: Read-only: list corpus nodes with no resolved owner and those that name no owner source, and count those on the default owner.
+summary: Read-only: list corpus nodes with no resolved owner and those that name no owner source, and count those on the default owner. With no corpus, --json emits [] on stdout and a notice on stderr; text mode keeps its stdout notice, both at SUCCESS.
 """
 
 from __future__ import annotations
@@ -12,9 +12,15 @@ import argparse
 import json
 import os
 import sys
+from typing import TYPE_CHECKING
 
 from corpus_vocabulary import OWNER_SOURCES
 from exit_codes import ExitCode, finish, report
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -115,7 +121,12 @@ def main(argv=None) -> int:
         args.corpus if os.path.isabs(args.corpus) else os.path.join(ROOT, args.corpus)
     )
     if not os.path.exists(path):
-        print("no corpus at %s; run build_corpus.py first." % args.corpus)
+        notice = "no corpus at %s; run build_corpus.py first." % args.corpus
+        if args.json:
+            print("[]")
+            print(notice, file=sys.stderr)
+        else:
+            print(notice)
         return ExitCode.SUCCESS
     try:
         corpus = _read_corpus(path)
@@ -164,6 +175,9 @@ def main(argv=None) -> int:
     real = [n for n in _rows(corpus) if n.get("owner_source") in _REAL_SOURCES]
     print("accountability: %d of %d nodes have a real owner" % (len(real), total))
     return ExitCode.SUCCESS
+
+
+register_module(__name__, __file__)
 
 
 if __name__ == "__main__":

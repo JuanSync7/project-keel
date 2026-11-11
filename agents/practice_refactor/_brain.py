@@ -2,7 +2,7 @@
 title: Practice refactor brain
 layer: backend
 public_api: no
-summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk and proposal use the served levels of the checkout whose corpus is read. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. refactor is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; the walk hands query_corpus that root alone as `--root`, so it reads the root's own corpus; a walk query_corpus refuses raises WalkRefused, a RuntimeError carrying report()'s three parts, before the baseline gate or any model call. The apply doer recovers interrupted targets before the next spec; recovered paths are logged, and journal_conflict or lock_busy stops the loop for inspection or retry.
+summary: Plan: walk the corpus KG -> gate a green baseline -> (propose -> apply+gate+rollback) one chunk per step; on a durable Runtime. An execute run needs its approved count of model calls: every call goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to the refactored root's config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`, the root whose make_targets gate keys the gate runner it starts reads, so the time limit is checked against that runner's own limit: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The walk and proposal use the served levels of the checkout whose corpus is read. The walk keeps a chunk only when config_loader.is_served keeps its corpus node and config_loader.is_served_now keeps the level its file states on disk now (scripts/corpus_level.py stated_now), and the propose step asks that level again, so a file reclassified after the corpus was built, or one whose level cannot be read, never reaches a prompt. refactor is given a root or a corpus, never both, and scripts/corpus_level.py checkout derives the other before any step (this checkout when neither; a relative path is the caller's directory's), raising NotACheckout for both, for an empty root, for a corpus that is not some checkout's wiki/corpus.json, or for a corpus that does not exist; the walk hands query_corpus that root alone as `--root`, so it reads the root's own corpus; a walk query_corpus refuses raises WalkRefused, a RuntimeError carrying report()'s three parts, before the baseline gate or any model call. The apply doer recovers interrupted targets before the next spec; recovered paths are logged, and journal_conflict or lock_busy stops the loop for inspection or retry. Blank, non-JSON, too deeply nested or wrong-shaped walk, baseline and apply reports raise the shared scripts/tool_reports.py ToolReportUnreadable, before baseline, proposal or the next chunk respectively; readable nonzero baseline and apply reports keep their verdicts.
 """
 
 from __future__ import annotations
@@ -263,17 +263,10 @@ def propose(
 # execute=True — a dry-run walks the graph and gates the baseline, nothing more.
 
 
-def _tool_report(tool, rc, out, err, root, container):
-    """Raise the agent's reported refusal when a tool gives no readable report."""
-    try:
-        return tool_reports.read_report(tool, rc, out, err, root, container=container)
-    except tool_reports.ToolReportUnreadable as exc:
-        raise WalkRefused(*exc.parts) from exc
-
-
 def _walk(state):
     """Read-only: walk the corpus KG for the practice's neighbourhood
-    (query_corpus). A walk query_corpus refuses raises WalkRefused."""
+    (query_corpus). Nonzero status raises WalkRefused; an unreadable list
+    raises ToolReportUnreadable before baseline."""
     pdef = _load_practice(state["root"], state["practice"])
     query = _practice_query(state["practice"], pdef)
     rc, out, err = _run(
@@ -294,7 +287,9 @@ def _walk(state):
             % (rc, state["root"], err.strip() or "it wrote nothing to stderr"),
             "fix what query_corpus names, then rerun",
         )
-    hits = _tool_report("query_corpus", rc, out, err, state["root"], container=list)
+    hits = tool_reports.read_report(
+        "scripts/query_corpus.py", rc, out, err, state["root"], container=list
+    )
     # The preview prompt carries a chunk's text too, so the cut comes first.
     hits = _served_now(hits, state["root"])
     preview = _propose_prompt(state["practice"], pdef, hits[0]) if hits else ""
@@ -314,12 +309,15 @@ def _baseline(state):
 
     A dirty tree yields a dirty refactor, so if the gate is already red the loop
     predicate (`_wants_refactor`) short-circuits to END and nothing is attempted.
+    An unreadable object raises ToolReportUnreadable before any proposal.
     """
     rc, out, err = _run(
         ["scripts/run_make_target.py", state["gate"], "--json", "--dir", state["root"]],
         root=state["root"],
     )
-    res = _tool_report("run_make_target", rc, out, err, state["root"], container=dict)
+    res = tool_reports.read_report(
+        "scripts/run_make_target.py", rc, out, err, state["root"], container=dict
+    )
     return {"baseline_green": bool(res.get("ok"))}
 
 
@@ -357,7 +355,8 @@ def _apply(state):
     apply_refactor recovers interrupted targets before applying this proposal;
     a journal conflict or busy lock stops the loop, and recovery paths are logged.
     A chunk lands in `refactored` only when the gate stays green; anything
-    else (no spec, unparseable, or gate-red) lands in `skipped`. The agent thus
+    else (no spec or gate-red) lands in `skipped`. An unreadable object raises
+    ToolReportUnreadable before the next chunk. The agent thus
     cannot mark a chunk done unless it satisfies the very `make verify` it gates on.
     """
     node = state["chunks"][state["cursor"]]
@@ -384,8 +383,8 @@ def _apply(state):
             stdin=json.dumps(spec),
             root=state["root"],
         )
-        res = _tool_report(
-            "apply_refactor", rc, out, err, state["root"], container=dict
+        res = tool_reports.read_report(
+            "scripts/apply_refactor.py", rc, out, err, state["root"], container=dict
         )
         for recovered in res.get("recovered", []):
             logging.getLogger(__name__).info("Recovered refactor target: %s", recovered)

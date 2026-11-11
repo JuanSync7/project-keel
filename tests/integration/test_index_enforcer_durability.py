@@ -16,6 +16,7 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.index_enforcer import enforce  # noqa: E402
 from models import CallCapReached, RunNotApproved  # noqa: E402
+from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -74,6 +75,135 @@ def _fake_run(args):
     return (
         (0, "[]", "") if "accountability_report.py" in " ".join(args) else (0, "", "")
     )
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry", "execute"])
+@pytest.mark.parametrize(
+    "rc,out",
+    [
+        (7, "[]"),
+        (0, "not JSON"),
+        (0, ""),
+        (0, " \n"),
+        (0, "{}"),
+        (0, "[1]"),
+        (0, "deep"),
+    ],
+)
+def test_unreadable_owner_report_fails(tmp_path, monkeypatch, execute, rc, out):
+    if out == "deep":
+        out = _deep_report()
+    _project(tmp_path, _corpus())
+    before = (tmp_path / "wiki/corpus.json").read_bytes()
+    calls = []
+
+    def run(args):
+        calls.append(args[0])
+        if args[0] == "scripts/accountability_report.py":
+            return rc, out, "owner diagnostic"
+        return 0, "", ""
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    monkeypatch.setattr(
+        _BRAIN + ".get_model", lambda *args: pytest.fail("model called")
+    )
+    with pytest.raises(ToolReportUnreadable) as raised:
+        enforce(root=str(tmp_path), execute=execute, fix_gaps=True, max_model_calls=3)
+    what, on, next_step = raised.value.parts
+    assert "scripts/accountability_report.py" in what
+    assert "exited %d" % rc in on and str(tmp_path) in on and "owner diagnostic" in on
+    assert "scripts/accountability_report.py" in next_step
+    assert calls[-1] == "scripts/accountability_report.py"
+    assert (tmp_path / "wiki/corpus.json").read_bytes() == before
+
+
+def _deep_report():
+    """Build the shallowest nesting this parser refuses without changing its limit."""
+    text = "0"
+    while True:
+        text = "[" + text + "]"
+        try:
+            json.loads(text)
+        except RecursionError:
+            return text
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_structure_crash_stops_before_build_or_fill(tmp_path, monkeypatch, execute):
+    _project(tmp_path, _corpus())
+    calls = []
+
+    def run(args):
+        calls.append(args[0])
+        return 9, "WARN  interrupted", "gate diagnostic"
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    monkeypatch.setattr(
+        _BRAIN + ".get_model", lambda *args: pytest.fail("model called")
+    )
+    with pytest.raises(ToolReportUnreadable) as raised:
+        enforce(root=str(tmp_path), execute=execute, fix_gaps=True, max_model_calls=3)
+    what, on, next_step = raised.value.parts
+    assert (
+        "scripts/check_structure.py" in what
+        and "scripts/check_structure.py" in next_step
+    )
+    assert "exited 9" in on and str(tmp_path) in on and "gate diagnostic" in on
+    assert calls == ["scripts/check_structure.py"]
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_structure_error_is_a_readable_negative_verdict(tmp_path, monkeypatch, execute):
+    _project(tmp_path, _corpus())
+    calls = []
+
+    def run(args):
+        calls.append(args[0])
+        if args[0] == "scripts/check_structure.py":
+            return 1, "ERROR broken convention\nWARN  advisory\n", ""
+        return 0, '[{"node_id": "owner-gap"}]', ""
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    report = enforce(
+        root=str(tmp_path), execute=execute, fix_gaps=True, max_model_calls=3
+    )
+    assert report.structure_errors == ("broken convention",)
+    assert report.structure_warnings == ("advisory",)
+    assert report.owner_gaps == ("owner-gap",) and report.gaps_filled == 0
+    assert calls == ["scripts/check_structure.py", "scripts/accountability_report.py"]
+
+
+def test_real_absent_corpus_report_feeds_a_write_free_dry_run(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts import accountability_report
+
+    corpus = tmp_path / "wiki/corpus.json"
+    assert accountability_report.main(["--corpus", str(corpus), "--json"]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == [] and "no corpus" in captured.err
+    calls = []
+
+    def run(args):
+        calls.append(args)
+        if args[0] == "scripts/accountability_report.py":
+            return 0, captured.out, captured.err
+        return 0, "", ""
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    (tmp_path / "config").mkdir()
+    config = tmp_path / "config/project.json"
+    config.write_text("{}")
+    report = enforce(root=str(tmp_path), fix_gaps=True)
+    assert report.owner_gaps == () and report.nodes == 0
+    assert calls[-1] == [
+        "scripts/accountability_report.py",
+        "--corpus",
+        str(corpus),
+        "--json",
+    ]
+    assert list(tmp_path.iterdir()) == [tmp_path / "config"]
+    assert list(config.parent.iterdir()) == [config] and config.read_text() == "{}"
 
 
 @pytest.mark.parametrize("engine", ["inprocess", "langgraph"])

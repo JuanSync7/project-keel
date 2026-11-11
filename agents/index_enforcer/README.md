@@ -9,7 +9,7 @@ tags: [agent, enforcer, index, corpus]
 summary: Enforces conventions and builds/maintains the accountable wiki corpus.
 id: agents-index-enforcer-readme
 created: 2026-06-17
-updated: 2026-10-29
+updated: 2026-11-11
 visibility: internal
 canonical: true
 ---
@@ -39,3 +39,13 @@ holds all three. The fill sends only gaps at a level in `config/project.json`
 `corpus.served_visibilities`, decided by `scripts/config_loader.py` `is_served`:
 a confidential gap, or one that states no level, is reported but never
 filled, so its text reaches no prompt (the same test file holds it).
+
+Owner reports pass through `scripts/tool_reports.py` `read_report`: blank,
+non-JSON, deeply nested output or anything but a list of objects raises
+`ToolReportUnreadable`, a `RuntimeError` with the exit helper's three parts,
+naming the tool, status, root, stderr and remedy. A nonzero owner status is
+refused before decoding, fill or commit. A nonzero structure-gate status with
+no `ERROR ` lines raises the same error before build; status 1 with error lines
+remains a readable negative verdict. With no corpus, the owner tool returns
+`[]` and the dry run reports no owner gaps without writing.
+`tests/integration/test_index_enforcer_durability.py` holds these cases.

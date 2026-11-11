@@ -9,7 +9,7 @@ tags: [agent, refactor, practices, corpus, gate]
 summary: Walks the corpus KG and refactors each chunk toward a named practice, gating every edit on make verify.
 id: agents-practice-refactor-readme
 created: 2026-07-07
-updated: 2026-11-07
+updated: 2026-11-11
 visibility: internal
 canonical: true
 ---
@@ -60,3 +60,13 @@ thin CLI entrypoint is `scripts/refactor_practice.py`. See
 The apply doer recovers before applying the next spec and logs recovered paths.
 A `journal_conflict: true` or `lock_busy: true` report stops the loop for
 evidence inspection or retry after the lock is released.
+
+Walk, baseline and apply reports pass through `scripts/tool_reports.py`
+`read_report`. Blank, non-JSON, deeply nested or wrong-shaped reports raise
+`ToolReportUnreadable`, carrying the exit helper's three parts and naming the
+repo-relative tool, status, root, stderr and remedy. Walk requires a list of
+objects; baseline and apply require objects. The refusal stops before baseline,
+proposal or the next chunk respectively. The CLI reports it as FAILURE
+(exit 1); a nonzero query keeps `WalkRefused` and USAGE (exit 2). Readable
+baseline and apply reports keep their `ok` and `applied` verdicts even with
+nonzero status. `tests/integration/test_practice_refactor.py` holds these cases.
