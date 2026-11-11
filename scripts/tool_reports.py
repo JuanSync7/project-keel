@@ -6,13 +6,13 @@ summary: Reads an agent tool's JSON object or list of objects; malformed, deeply
 effect: read-only
 """
 
-import importlib
-import importlib.util
 import json
-import os
-import sys
-from types import ModuleType
-from typing import Any, Dict, List, Type, Union, overload
+from typing import TYPE_CHECKING, Any, Dict, List, Type, Union, overload
+
+if TYPE_CHECKING or __package__:
+    from .module_identity import register_module
+else:
+    from module_identity import register_module
 
 __all__ = ["read_report", "ToolReportUnreadable"]
 
@@ -89,29 +89,4 @@ def read_report(
     return report
 
 
-# Both entry-point and package imports must catch one error class.
-_SELF = sys.modules.get(__name__)
-if _SELF is None:
-    raise ImportError(
-        "tool_reports was executed without being registered in sys.modules; "
-        "import it, or register the module before exec_module"
-    )
-sys.modules.setdefault("tool_reports", _SELF)
-sys.modules.setdefault("scripts.tool_reports", _SELF)
-
-
-def _bind_to_package(module: ModuleType) -> None:
-    """Bind the alias to the scripts package that holds this file, if found."""
-    here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
-    package: Any = sys.modules.get("scripts")
-    if package is None:
-        spec = importlib.util.find_spec("scripts")
-        locations = [] if spec is None else spec.submodule_search_locations or []
-        if here not in [os.path.realpath(path) for path in locations]:
-            return
-        package = importlib.import_module("scripts")
-    if here in [os.path.realpath(path) for path in getattr(package, "__path__", [])]:
-        package.tool_reports = module
-
-
-_bind_to_package(_SELF)
+register_module(__name__, __file__)
