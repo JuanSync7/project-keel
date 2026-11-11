@@ -2,7 +2,7 @@
 title: Unit — refused manifests and actionable launcher errors
 kind: tests
 layer: n/a
-summary: AST reachability independently discovers potential manifest readers across scripts, evals, API, MCP and agents. Cases prove either one-line refusals for eight input kinds or no manifest read; actual job guards are subprocesses. Every listed route pins its absent exit and messages to cf7ca3e. Stop hooks keep their hunk exception, imported readers raise, and launcher errors require a remedy.
+summary: AST reachability independently discovers potential manifest readers across scripts, evals, API, MCP and agents. Cases prove either one-line refusals for eight input kinds or no manifest read; actual job guards are subprocesses. Every listed route pins its absent exit and messages to cf7ca3e, except the seven that raised ChildEnvError there and now report CONFIG through child_env_errors. Stop hooks keep their hunk exception, imported readers raise, and launcher errors require a remedy.
 """
 
 import ast
@@ -92,12 +92,11 @@ _READERS = (
         "collect",
         (".", "--today", "2026-11-05"),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -105,12 +104,11 @@ _READERS = (
         "epoch",
         (".",),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -129,12 +127,11 @@ _READERS = (
         "environment",
         (),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -431,12 +428,11 @@ _READERS = (
         "environment",
         ("--dry-run",),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -501,12 +497,11 @@ _READERS = (
         "date",
         (),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -514,12 +509,11 @@ _READERS = (
         "collect",
         ("--today", "2026-11-05"),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
@@ -527,12 +521,11 @@ _READERS = (
         "epoch",
         (),
         (
-            (
-                "ChildEnvError",
-                "config/project.json does not exist, so no child may start without an allowlist",
-            ),
+            14,
             "",
-            "",
+            "the child environment is refused: config/project.json does not exist, so no child may "
+            "start without an allowlist; correct the named environment variable or config/project.json "
+            "child_env policy, then rerun\n",
         ),
     ),
     (
