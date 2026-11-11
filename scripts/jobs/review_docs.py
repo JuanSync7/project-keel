@@ -26,6 +26,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import markdown_html_data  # noqa: E402
 import run_date  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
@@ -1008,6 +1009,7 @@ def _main(argv=None):
     )
 
 
+@child_env_errors
 def main(argv=None):
     """Report a manifest refusal from any read made during this invocation."""
     try:

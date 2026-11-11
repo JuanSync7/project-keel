@@ -24,6 +24,7 @@ from agents.doc_reviewer import (  # noqa: E402
     ToolReportUnreadable,
     review,
 )
+from child_env_entry import child_env_errors  # noqa: E402
 from models import CallCapReached, ModelUnavailable, RunNotApproved  # noqa: E402
 from scripts.resource_limits import (  # noqa: E402
     ChildOutputTooLarge,
@@ -37,6 +38,7 @@ def _said(what, on, next_step):
     return exit_codes.ExitCode.SUCCESS
 
 
+@child_env_errors
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.strip().splitlines()[-1])
     ap.add_argument(

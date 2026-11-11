@@ -12,6 +12,7 @@ import sys
 import changed_cache
 import config_loader
 import git_tree
+from child_env_entry import child_env_errors
 from exit_codes import ExitCode, finish, passthrough, report
 
 __all__ = ["main"]
@@ -41,6 +42,7 @@ def _loop_plugin(pytest):
     return FailureLoop()
 
 
+@child_env_errors
 def main(argv=None, root=None):
     """Run the failure-only loop, passing pytest's result through the exit helper."""
     args = list(sys.argv[1:] if argv is None else argv)

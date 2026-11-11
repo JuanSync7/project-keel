@@ -24,10 +24,9 @@ sys.path.insert(0, _HERE)
 sys.path.insert(0, _REPO)
 
 import config_loader  # noqa: E402
-
-# The module, not its names: `report` here is the eval report.
-import exit_codes  # noqa: E402
+import exit_codes  # noqa: E402 -- The module, not its names: `report` here is the eval report.
 import git_tree  # noqa: E402 — the one definition of what git ignores
+from child_env_entry import child_env_errors  # noqa: E402
 from evals import (  # noqa: E402
     ConfigError,
     DatasetError,
@@ -173,6 +172,7 @@ def _remove_stale(root: str, report_dir: str | None, mode: str) -> None:
         print("run_evals: removed the earlier %s" % _shown(rel), file=sys.stderr)
 
 
+@child_env_errors
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the eval suites in the requested mode; the exit code is the verdict."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[2])

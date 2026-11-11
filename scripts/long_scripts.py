@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import config_loader
 import git_tree  # the one definition of what git lists
+from child_env import ChildEnvError
 from exit_codes import ExitCode, finish, report
 from launch import (  # the one reader of the config and a record
     LauncherConfigError,
@@ -176,7 +177,15 @@ def main(argv=None):
             "; ".join(exc.lines),
             "repair config/project.json, resolving any hunk, then rerun",
         )
-    unsafe = _unsafe(root, cfg.durations_file)
+    try:
+        unsafe = _unsafe(root, cfg.durations_file)
+    except ChildEnvError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "long_scripts: the child environment is refused",
+            str(exc),
+            "correct the named environment variable or config/project.json child_env policy, then rerun",
+        )
     if unsafe is not None:
         return _refuse(unsafe[0], unsafe[1])
     try:

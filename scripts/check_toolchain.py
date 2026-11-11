@@ -18,6 +18,7 @@ if _SCRIPTS not in sys.path:
 
 import config_loader  # noqa: E402
 from child_env import build_child_env  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
@@ -86,6 +87,7 @@ def _node(major, runner):
     return ExitCode.SUCCESS
 
 
+@child_env_errors
 def main(argv=None, runner=None, loaded=None):
     try:
         args = _parse(sys.argv[1:] if argv is None else argv)

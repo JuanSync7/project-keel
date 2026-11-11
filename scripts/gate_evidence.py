@@ -34,6 +34,7 @@ import child_env  # the environment every goal inherits
 import config_loader  # the one reader of config/project.json
 import git_tree  # the one definition of what git lists
 import run_date  # the one date a whole run calls today
+from child_env_entry import child_env_errors
 from exit_codes import ExitCode, finish, passthrough, report
 
 _MANIFEST = os.path.join("config", "project.json")
@@ -464,6 +465,7 @@ def _git_refusal(policy, exc):
     )
 
 
+@child_env_errors
 def main(argv=None, runner=None, clock=None):
     """Run the gate and write its record; the exit status, which the record's
     `result` always agrees with. *runner* stands in for subprocess.run and

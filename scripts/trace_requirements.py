@@ -27,6 +27,7 @@ import config_loader  # noqa: E402
 import git_tree  # noqa: E402 — the one definition of what git ignores
 import pytest_markers  # noqa: E402
 import traceability  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 _NAME = "trace"
@@ -141,6 +142,7 @@ def _summary(
     print("%s: %s -> %s" % (_NAME, judgement.result, rel))
 
 
+@child_env_errors
 def main(argv: Sequence[str] | None = None) -> int:
     """Judge the project's requirements; the exit code is the verdict. A
     matrix path that cannot be written is exit 2 with one line saying so."""

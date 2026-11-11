@@ -27,6 +27,7 @@ import config_loader  # noqa: E402
 import expiring_tier  # noqa: E402
 import expiring_tier_data  # noqa: E402
 import git_tree  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, passthrough, report  # noqa: E402
 
 __all__ = [
@@ -158,6 +159,7 @@ def _read_record(path):
     return record if isinstance(record, dict) else None
 
 
+@child_env_errors
 def main(argv=None, root=None, runner=run_checks, known=known_to_git):
     """Write the baseline of the project at *root*, the checks run by
     *runner* (root, record path) -> pytest status. With no baseline file,

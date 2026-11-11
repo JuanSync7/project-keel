@@ -48,10 +48,9 @@ if __name__ == "__main__":
 
 import child_env  # noqa: E402
 import config_loader  # noqa: E402
-
-# The module, not its names: `finish` here is this job's own function.
-import exit_codes  # noqa: E402
+import exit_codes  # noqa: E402 -- The module, not its names: `finish` here is this job's own function.
 import review_docs  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 
 # copier's default answers file. A template that names another is refused
 # once its copier.yml is read: the commits below were read from this one.
@@ -371,6 +370,7 @@ def finish(root, template=None, *, dry_run=False):
     return commands
 
 
+@child_env_errors
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=(

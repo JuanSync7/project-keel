@@ -38,6 +38,7 @@ import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
 import run_date  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 from git_tree import PathEscape, confined_path  # noqa: E402
 from template_snapshot import (  # noqa: E402
@@ -435,6 +436,7 @@ def _parse(argv):
     return parser.parse_args(argv)
 
 
+@child_env_errors
 def main(argv=None, runner=None):
     args = _parse(argv)
     try:

@@ -1240,7 +1240,15 @@ def main(argv=None, runner=None, clock=None, nicer=None, loadavg=None):
             "; ".join(exc.lines),
             "repair config/project.json, resolving any hunk, then rerun",
         )
-    unsafe = _unsafe_state(root, cfg)
+    try:
+        unsafe = _unsafe_state(root, cfg)
+    except child_env.ChildEnvError as exc:
+        return report(
+            ExitCode.CONFIG,
+            "launch: the child environment is refused",
+            str(exc),
+            "correct the named environment variable or config/project.json child_env policy, then rerun",
+        )
     if unsafe is not None:
         return _refuse(unsafe[0], unsafe[1])
     adapter = cfg.adapters[cfg.farm_adapter]

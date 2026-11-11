@@ -6,6 +6,7 @@ summary: scripts/check_toolchain.py driven with an injected config object and an
 @covers scripts/check_toolchain.py
 """
 
+import copy
 import sys
 from pathlib import Path
 
@@ -107,3 +108,27 @@ def test_an_unknown_mode_is_a_usage_error(capsys):
         ExitCode.SUCCESS
     )
     assert "node" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("refusal", ["proxy", "manifest"])
+def test_child_environment_refusal_is_config(refusal, monkeypatch, capsys):
+    import config_loader
+
+    manifest = copy.deepcopy(config_loader.read(str(_ROOT)))
+    secret = "http://u:row174-secret@127.0.0.1:9"
+    if refusal == "proxy":
+        monkeypatch.setenv("HTTPS_PROXY", secret)
+        expected = "HTTPS_PROXY"
+    else:
+        manifest["child_env"]["names"].append("GIT_DIR")
+        expected = "GIT_DIR"
+
+    monkeypatch.setattr(config_loader, "read", lambda *args: manifest)
+    status = check_toolchain.main(["node"], loaded=_config())
+    assert status is ExitCode.CONFIG
+    err = capsys.readouterr().err
+    assert expected in err
+    assert secret not in err
+    assert "row174-secret" not in err
+    assert "Traceback" not in err
+    assert ";" in err

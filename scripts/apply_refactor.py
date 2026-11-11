@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config_loader  # the one reader of config/project.json
 import git_tree  # the one definition of what git tracks
 import run_make_target  # the read-only gate runner; tests patch it here
+from child_env_entry import child_env_errors
 from exit_codes import ExitCode, finish, report
 
 # gate_runner(gate, cwd, timeout) -> (ok, combined_output); a timeout of None
@@ -961,6 +962,7 @@ def _recovery_context(error: Exception, recovered: Sequence[str]) -> str:
     return str(error) + ("; recovered: " + ", ".join(recovered) if recovered else "")
 
 
+@child_env_errors
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Recover interrupted edits, then apply one journalled refactor and commit after a green gate."

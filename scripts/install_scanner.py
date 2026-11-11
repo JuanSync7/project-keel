@@ -31,6 +31,7 @@ if _SCRIPTS not in sys.path:
 import config_loader  # noqa: E402
 import git_tree  # noqa: E402
 import scan_secrets  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from exit_codes import ExitCode, finish, report  # noqa: E402
 
 ROOT = os.path.dirname(_SCRIPTS)
@@ -372,6 +373,7 @@ def _run(root, cfg, inst):
     return ExitCode.SUCCESS
 
 
+@child_env_errors
 def main(argv=None, root=None):
     try:
         _parse(sys.argv[1:] if argv is None else argv)

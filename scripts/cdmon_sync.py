@@ -19,12 +19,14 @@ import subprocess
 
 import child_env
 import config_loader
+from child_env_entry import child_env_errors
 from exit_codes import ExitCode, finish, passthrough, report
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG = os.path.join("config", "cdmon", "cdmon.yaml")
 
 
+@child_env_errors
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Run cdmon over the repo (thin adapter).")
     ap.add_argument(

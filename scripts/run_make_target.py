@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import check_structure  # the one owner of the label grammar and policy
 import child_env  # the environment make and git inherit
 import config_loader  # the one reader of config/project.json
+from child_env_entry import child_env_errors
 from exit_codes import ExitCode, finish, report
 
 # One definition of what git lists, shared with scripts/gate_evidence.py. `_git`
@@ -662,6 +663,7 @@ def run_target(
     }
 
 
+@child_env_errors
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI: exit 0 green, 1 red, timed out or the tree changed, 2 refused (never
     run), 14 a time limit config/project.json gets wrong, 130 interrupted."""

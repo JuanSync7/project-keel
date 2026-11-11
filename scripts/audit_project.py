@@ -33,13 +33,12 @@ import check_structure  # noqa: E402
 import child_env  # noqa: E402
 import config_loader  # noqa: E402
 import conflict_guard  # noqa: E402
-
-# The module, not its names: `report` here is the audit's own result.
-import exit_codes  # noqa: E402
+import exit_codes  # noqa: E402 -- The module, not its names: `report` here is the audit's own result.
 import keep_edited_retired  # noqa: E402
 import restamp_docs  # noqa: E402
 import review_docs  # noqa: E402
 import template_snapshot  # noqa: E402
+from child_env_entry import child_env_errors  # noqa: E402
 from git_tree import PathEscape, confined_path  # noqa: E402
 
 # The template checkout whose gates judge DEST: the one this file ships in.
@@ -1735,6 +1734,7 @@ def _main(argv=None):
     )
 
 
+@child_env_errors
 def main(argv=None):
     """Report a manifest refusal from any read made during this invocation."""
     try:
