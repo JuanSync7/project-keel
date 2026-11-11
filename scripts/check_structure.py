@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity and promised pyproject settings in both twins, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on judged errors; warnings never fail the build. The CLI refuses loader-refused project or practices files with exit 2 for a conflict hunk and 14 otherwise, and practices section faults with exit 14. Sections fully match [0-9]{1,4} before conversion; source rerun_proof section faults stay one FAILURE finding. An absent manifest keeps its finding.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity and promised pyproject settings in both twins, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on judged errors; warnings never fail the build. The CLI refuses loader-refused project or practices files with exit 2 for a conflict hunk and 14 otherwise, and practices section or numeric Python floor faults with exit 14. ADR widths are bounded by file-name byte limits before allocation; policy pattern faults are one key-naming FAILURE finding without pattern or exception text. Sections fully match [0-9]{1,4} before conversion; source rerun_proof section faults stay one FAILURE finding. An absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -565,19 +565,17 @@ def _declared_python_floor():
                 break
         parts = version.split(".")
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-            try:
+            if _ASCII_NUMBER.fullmatch(parts[0]) and _ASCII_NUMBER.fullmatch(parts[1]):
                 return int(parts[0]), int(parts[1])
-            except ValueError:
-                # isdigit includes non-decimal digits; Python also limits the
-                # length of an integer string. Neither is a usable floor.
-                finding = (
-                    "config/project.json: layers.backend.python '%s' has a "
-                    "major or minor version that cannot be read as an integer"
-                    % _shown(spec)
-                )
-                if finding not in errors:
-                    err(finding)
-                return _REFUSED
+            finding = (
+                "config/project.json: layers.backend.python '%s' has a "
+                "major or minor version that cannot be read as an integer "
+                "-- use one to four ASCII digits per part" % _shown(spec)
+            )
+            _CONFIG_REFUSALS["config/project.json"] = (False, [finding])
+            if finding not in errors:
+                err(finding)
+            return _REFUSED
     return None
 
 
@@ -3825,7 +3823,7 @@ _HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
 _SECTION_CITE = re.compile(r"(?:`?([A-Za-z0-9_./-]+\.md)`?,?\s+)?§\s*(\d+)")
 # Four digits bound integer conversion; int also accepts underscores and
-# non-ASCII digits, neither of which belongs to the section-number grammar.
+# non-ASCII digits, neither of which belongs to section or Python floor numbers.
 _ASCII_NUMBER = re.compile(r"[0-9]{1,4}")
 _CONVENTIONS_DOC = "CONVENTIONS.md"
 # Where a `§N` may appear: prose, and the code/config whose docstrings and help
@@ -7620,12 +7618,61 @@ _ADR_SLUG = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 _ADR_KIND = re.compile(r"^kind:[ \t]*['\"]?adr['\"]?[ \t]*$", re.MULTILINE)
 
 
-def adr_policy(manifest):
+# 255 bytes is the common NAME_MAX when the platform supplies no known limit.
+_COMMON_NAME_MAX = 255
+_CONFIG_PATTERN_ERRORS = (re.error, RecursionError, OverflowError)
+
+
+class _PolicyPatternRefused(ValueError):
+    """A configured pattern could not compile; its message contains only keys."""
+
+
+def _compile_policy_pattern(pattern, key):
+    """Compile configured text or refuse by key without compiler diagnostics."""
+    try:
+        return re.compile(pattern)
+    except _CONFIG_PATTERN_ERRORS:
+        raise _PolicyPatternRefused(
+            "%s is not a usable regular expression" % key
+        ) from None
+
+
+def _name_max_or_common(limit):
+    """A known positive filename limit, or the common platform fallback."""
+    return limit if isinstance(limit, int) and limit > 0 else _COMMON_NAME_MAX
+
+
+def _adr_name_max(directory):
+    """The nearest existing ancestor's filename limit for an ADR directory."""
+    if (
+        not isinstance(directory, str)
+        or directory.startswith("/")
+        or {"", ".", ".."} & set(directory.rstrip("/").split("/"))
+    ):
+        # adr_policy owns malformed directory findings, before any filesystem read.
+        return _COMMON_NAME_MAX
+    ancestor = os.path.join(ROOT, directory)
+    while not os.path.isdir(ancestor):
+        parent = os.path.dirname(ancestor)
+        if parent == ancestor:
+            return _COMMON_NAME_MAX
+        ancestor = parent
+    try:
+        limit = os.pathconf(ancestor, "PC_NAME_MAX")
+    except (AttributeError, OSError, ValueError):  # noqa: DROP001 -- an unavailable filename limit uses the common NAME_MAX
+        limit = None
+    return _name_max_or_common(limit)
+
+
+def adr_policy(
+    manifest, *, project_name_max=_COMMON_NAME_MAX, template_name_max=_COMMON_NAME_MAX
+):
     """config/project.json's `adr` block -> (policy, errs). Pure.
 
     policy is a dict of _ADR_KEYS (the directories as given, without a trailing
-    slash) or None when errs is not empty: a consumer refuses rather than
-    half-trusting it. Every key is required and an unknown key is an error
+    slash) or None when errs is not empty. Filename limits are measured by
+    the caller; an unknown limit uses the common NAME_MAX. A consumer refuses
+    rather than half-trusting it. Every key is required and an unknown key is an error
     (`_comment` aside), so a typo cannot fall back to a default."""
     if not isinstance(manifest, dict) or _ADR_BLOCK not in manifest:
         return None, [
@@ -7685,8 +7732,26 @@ def adr_policy(manifest):
     digits = block["number_digits"]
     if isinstance(digits, bool) or not isinstance(digits, int) or digits < 1:
         errs.append("%s.number_digits must be an integer >= 1" % _ADR_BLOCK)
-    else:
-        policy["number_digits"] = digits
+    elif prefix is not None:
+        try:
+            prefix_bytes = len(os.fsencode(prefix))
+        except UnicodeError:
+            errs.append(
+                "%s.template_prefix cannot be encoded as a file name" % _ADR_BLOCK
+            )
+        else:
+            # A one-character slug makes -a.md the shortest legal suffix.
+            width_max = min(
+                _name_max_or_common(project_name_max) - len(b"-a.md"),
+                _name_max_or_common(template_name_max) - prefix_bytes - len(b"-a.md"),
+            )
+            if digits > width_max:
+                errs.append(
+                    "%s.number_digits exceeds the file-name byte limit of an ADR space"
+                    % _ADR_BLOCK
+                )
+            else:
+                policy["number_digits"] = digits
     owned = block["template_adrs"]
     if not isinstance(owned, list) or not all(isinstance(n, str) for n in owned):
         errs.append(
@@ -7694,7 +7759,10 @@ def adr_policy(manifest):
             "ships in template_dir" % _ADR_BLOCK
         )
     elif not errs:
-        template_re = _adr_grammars(policy)[1]
+        try:
+            template_re = _adr_grammars(policy)[1]
+        except _PolicyPatternRefused as exc:
+            return None, [str(exc)]
         shape = _shown(policy["template_prefix"]) + "N" * policy["number_digits"]
         errs.extend(
             "%s.template_adrs names %s, not a %s-<slug>.md file name"
@@ -7715,8 +7783,11 @@ def _adr_grammars(policy):
     number = r"([0-9]{%d})" % policy["number_digits"]
     tail = "-" + _ADR_SLUG + r"\.md"
     return (
-        re.compile(number + tail + "$"),
-        re.compile(re.escape(policy["template_prefix"]) + number + tail + "$"),
+        _compile_policy_pattern(number + tail + "$", "adr.number_digits"),
+        _compile_policy_pattern(
+            re.escape(policy["template_prefix"]) + number + tail + "$",
+            "adr.template_prefix",
+        ),
     )
 
 
@@ -7821,7 +7892,17 @@ def check_Y():
     documents = adr_documents()
     if isinstance(manifest, dict) and _ADR_BLOCK not in manifest and not documents:
         return
-    policy, perrs = adr_policy(manifest)
+    block = manifest.get(_ADR_BLOCK)
+    limits = (
+        {key: _adr_name_max(block.get(key)) for key in ("project_dir", "template_dir")}
+        if isinstance(block, dict)
+        else {}
+    )
+    policy, perrs = adr_policy(
+        manifest,
+        project_name_max=limits.get("project_dir"),
+        template_name_max=limits.get("template_dir"),
+    )
     for m in perrs:
         err("config/project.json: " + m)
     if policy is None:
@@ -8097,11 +8178,9 @@ def work_naming_policy(manifest):
         )
     else:
         try:
-            re.compile(pattern)
-        except re.error as e:
-            errs.append(
-                "%s.backlog_id is not a regular expression (%s)" % (_WORK_BLOCK, e)
-            )
+            _compile_policy_pattern(pattern, "work_naming.backlog_id")
+        except _PolicyPatternRefused as exc:
+            errs.append(str(exc))
     boundary = block["adoption_boundary"]
     if boundary is not None and (not isinstance(boundary, str) or not boundary.strip()):
         errs.append(
@@ -8112,6 +8191,10 @@ def work_naming_policy(manifest):
         return None, errs
     policy = {key: block[key] for key in _WORK_KEYS}
     policy["plan_kinds"] = list(kinds)
+    try:
+        id_grammar(policy)
+    except _PolicyPatternRefused as exc:
+        return None, [str(exc)]
     return policy, []
 
 
@@ -8146,12 +8229,17 @@ def id_grammar(policy):
         _WORK_NUMBER_LOOSE,
     )
     return {
-        "campaign": re.compile("^%s\\Z" % campaign),
-        "slice": re.compile("^%s%s\\Z" % (campaign, suffix)),
+        "campaign": _compile_policy_pattern(
+            "^%s\\Z" % campaign, "work_naming.campaign_id"
+        ),
+        "slice": _compile_policy_pattern(
+            "^%s%s\\Z" % (campaign, suffix), "work_naming.slice_id"
+        ),
         # A word character on either side makes the id part of another word.
-        "mention": re.compile(
+        "mention": _compile_policy_pattern(
             "(?<![A-Za-z0-9_])(?:(?P<prefix>[A-Za-z0-9_][A-Za-z0-9_.-]*):)?"
-            "%s(?:%s)?(?![A-Za-z0-9_])" % (loose_campaign, loose_suffix)
+            "%s(?:%s)?(?![A-Za-z0-9_])" % (loose_campaign, loose_suffix),
+            "work_naming.campaign_id and work_naming.slice_id",
         ),
     }
 

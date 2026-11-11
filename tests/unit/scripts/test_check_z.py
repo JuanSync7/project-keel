@@ -65,6 +65,7 @@ def _isolate(monkeypatch, root):
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
     monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_CONFIG_REFUSALS", {})
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
 
 
@@ -521,3 +522,48 @@ def test_id_grammar_compiles_the_templates():
     # CMP-4.S5x is read whole, so it is judged malformed, never as CMP-4.
     assert found == ["x:CMP-1.S2", "CMP-3", "CMP-4.S5x", "CMP-7.S8"], found
     assert grammar["slice"].match("CMP-4.S5x") is None
+
+
+@pytest.mark.parametrize("pattern", ["(" * 1000, "x{4294967296}", "[secret@host"])
+def test_work_pattern_refusal_is_one_private_failure(
+    repo, monkeypatch, capsys, pattern
+):
+    _manifest(repo, dict(_BLOCK, backlog_id=pattern))
+    monkeypatch.setattr(cs, "CHECKS", [("Z", cs.check_Z)])
+    assert cs.main(["--root", str(repo)]) == cs.exit_codes.ExitCode.FAILURE
+    out, error = capsys.readouterr()
+    assert out.count("ERROR ") == 1 and "work_naming.backlog_id" in out
+    assert pattern not in out + error and "secret" not in out + error
+    assert "Traceback" not in out + error and not cs._CONFIG_REFUSALS
+
+
+@pytest.mark.parametrize("fault", [re.error, RecursionError, OverflowError])
+def test_work_pattern_guard_hides_exception_text(monkeypatch, fault):
+    def refuse(*args, **kwargs):
+        raise fault("secret@host")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cs.re, "compile", refuse)
+        policy, faults = cs.work_naming_policy({"work_naming": _BLOCK})
+    assert policy is None and len(faults) == 1
+    assert "work_naming.backlog_id" in faults[0] and "secret" not in faults[0]
+
+
+@pytest.mark.parametrize(
+    "key, marker",
+    [("campaign_id", r"^CMP\-"), ("slice_id", "(?P<m>"), ("campaign_id", "(?<!")],
+)
+@pytest.mark.parametrize("fault", [re.error, RecursionError, OverflowError])
+def test_generated_work_grammar_is_guarded(monkeypatch, key, marker, fault):
+    compile_ = re.compile
+
+    def refuse(pattern, *args, **kwargs):
+        if marker in pattern:
+            raise fault("secret@host")
+        return compile_(pattern, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cs.re, "compile", refuse)
+        policy, faults = cs.work_naming_policy({"work_naming": _BLOCK})
+    assert policy is None and len(faults) == 1
+    assert "work_naming." + key in faults[0] and "secret" not in faults[0]

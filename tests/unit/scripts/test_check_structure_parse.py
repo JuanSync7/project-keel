@@ -33,6 +33,7 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
     monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_CONFIG_REFUSALS", {})
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
     monkeypatch.setattr(cs, "_PARSE_REPORTED", set())
     monkeypatch.setattr(cs, "_PARSE_DEFERRED", set())
@@ -175,6 +176,10 @@ def test_the_floor_is_read_from_the_declared_specifier(repo, spec, floor):
     ids=["major-nondecimal", "minor-nondecimal", "major-long", "minor-long"],
 )
 def test_an_unconvertible_python_floor_is_one_finding(repo, spec):
+    if len(spec) > 1000 and (
+        not hasattr(sys, "get_int_max_str_digits") or sys.get_int_max_str_digits() == 0
+    ):
+        pytest.skip("runtime has no enabled integer-string conversion limit")
     _floor(repo, spec)
     _write(repo, "src/bad.py", _BROKEN)
     cs.check_D()
@@ -225,3 +230,25 @@ def test_keel_parses_whole_under_this_interpreter(monkeypatch):
     found = cs.run_checks(str(_ROOT), project_checks=False)
     assert not [f for f in found if "cannot be parsed" in f[2]], found
     assert not cs._PARSE_DEFERRED, cs._PARSE_DEFERRED
+
+
+@pytest.mark.parametrize("spec", [">=٣.١١", ">=3.١١", ">=12345.11", ">=3.12345"])
+def test_floor_numbers_use_the_shared_ascii_grammar(repo, spec):
+    _floor(repo, spec)
+    assert cs._declared_python_floor() is cs._REFUSED
+    assert len(cs.errors) == 1 and "layers.backend.python" in cs.errors[0]
+
+
+@pytest.mark.parametrize("spec", [">=².11", ">=3.²", ">=٣.١١"])
+def test_floor_fault_main_exits_config_and_resets(repo, monkeypatch, capsys, spec):
+    _floor(repo, spec + ",tok@host")
+    _write(repo, "src/bad.py", _BROKEN)
+    monkeypatch.setattr(cs, "CHECKS", [("D", cs.check_D), ("J", cs.check_J)])
+    assert cs.main(["--root", str(repo)]) == cs.exit_codes.ExitCode.CONFIG
+    out, error = capsys.readouterr()
+    assert out == ""
+    assert "config/project.json" in error and "layers.backend.python" in error
+    assert "tok@host" not in error and "Traceback" not in error
+    _floor(repo, _PAST)
+    assert cs.main(["--root", str(repo)]) == cs.exit_codes.ExitCode.FAILURE
+    assert "cannot be parsed" in capsys.readouterr().out

@@ -80,7 +80,7 @@ everything and therefore expect the project interpreter.
 Judged errors exit **1 = FAILURE** and a clean run exits **0 = SUCCESS**.
 The structure gate refuses a loader-refused project or practices file with
 **14 = CONFIG**, or **2 = USAGE** for a conflict hunk.
-A practices section outside `[0-9]{1,4}` also exits CONFIG.
+A practices section or numeric Python floor part outside `[0-9]{1,4}` also exits CONFIG.
 Warnings (e.g. a missing `owner`) print but never fail the build.
 
 ---
@@ -153,7 +153,9 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   names both versions; `make check-all`, and so `make verify`, which reach `check-python` first (which refuses an interpreter below the floor),
   judge them. `make check` runs `PY`, which is host `python3` when there is no
   `.venv`, so it can defer them too. With no floor to read, the file is the
-  error.
+  error. Major and minor floor parts fully match `[0-9]{1,4}` before integer
+  conversion. Superscript, non-ASCII and overlong numeric parts produce one
+  `layers.backend.python` finding and exit CONFIG through refusal provenance.
 - **E. Authored coverage** — every `__all__`-exported symbol defined in-file has
   a docstring: the corpus's symbol summaries (error since ADR-K-0008).
 - **F. Tool specs governed** (error) + **accountability** (error) — valid
@@ -539,7 +541,14 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   its own file. A missing `adr` block is an error once any Markdown document in
   the tree declares `kind: adr`; a malformed one (a missing or unknown key, the
   two directories equal, a prefix that starts with a digit, a non-integer digit
-  count) is always an error naming the key. Both spaces empty is a WARN. A
+  count) is always an error naming the key. Before compiling patterns or
+  allocating a shape, check_Y bounds `adr.number_digits` by each space's
+  file-name byte limit, subtracting the encoded template prefix in that space
+  and the minimum `-a.md` suffix in both. The limit comes from the nearest
+  existing ancestor of each directory; an unavailable or unknown limit uses
+  the common NAME_MAX of 255 bytes. Width and pattern compilation faults give
+  one key-naming FAILURE finding without CONFIG provenance, pattern text or
+  exception text. Both spaces empty is a WARN. A
   template ADR the project edited and `copier update` retired is kept by
   `scripts/jobs/keep_edited_retired.py`; the kept copy shares its `id:` with
   the template's file, which check_A reports as a duplicate id. See
@@ -565,7 +574,10 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   tree holds a plan doc, the message naming the doc; a malformed block (a
   missing or unknown key, a template without `<n>` or `<m>`, a `slice_id`
   that does not extend `campaign_id`, a `backlog_id` that does not compile) is
-  always an error naming the key. A plan doc that declares no slice is a WARN.
+  always an error naming the key. Configured pattern compilation guards catch
+  syntax, recursion and overflow faults, producing one key-naming FAILURE
+  finding without CONFIG provenance, pattern text or exception text.
+  A plan doc that declares no slice is a WARN.
   Commit trailers are judged by `tests/integration/test_work_trailers.py`,
   because check_structure reads no git (ADR-K-0009).
 

@@ -51,6 +51,7 @@ def _isolate(monkeypatch, root):
     monkeypatch.setattr(cs, "errors", [])
     monkeypatch.setattr(cs, "warnings", [])
     monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "_CONFIG_REFUSALS", {})
     monkeypatch.setattr(cs, "_READ_REPORTED", set())
 
 
@@ -92,7 +93,11 @@ def _tree_inventory_holds(monkeypatch, root):
     assert errs == [] and warns == [], (errs, warns)
     with open(str(root / "config" / "project.json"), encoding="utf-8") as fh:
         config = json.load(fh)
-    policy, perrs = cs.adr_policy(config)
+    policy, perrs = cs.adr_policy(
+        config,
+        project_name_max=cs._adr_name_max(config["adr"]["project_dir"]),
+        template_name_max=cs._adr_name_max(config["adr"]["template_dir"]),
+    )
     assert perrs == [], perrs
     tdir, pdir = policy["template_dir"], policy["project_dir"]
     listed = sorted(
@@ -362,3 +367,116 @@ def test_y_judges_an_upper_case_md_extension(repo, monkeypatch):
     _adr(repo / "docs/adr/0002-a.MD", "ADR-0002: Shouting")
     errs, _w = _rerun(monkeypatch, repo)
     assert len(errs) == 1 and errs[0].startswith("docs/adr/0002-a.MD:"), errs
+
+
+@pytest.mark.parametrize("digits", [2000000000, 4294967296, 10**100])
+def test_adr_width_is_refused_before_compile_or_shape(monkeypatch, digits):
+    def sentinel(*args, **kwargs):
+        pytest.fail("width reached re.compile before its bound")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cs.re, "compile", sentinel)
+        policy, faults = cs.adr_policy({"adr": dict(_BLOCK, number_digits=digits)})
+    assert policy is None and len(faults) == 1
+    assert "adr.number_digits" in faults[0]
+
+
+@pytest.mark.parametrize("fault", [re.error, RecursionError, OverflowError])
+@pytest.mark.parametrize("compile_call", [1, 2])
+def test_adr_pattern_fault_is_one_private_finding(monkeypatch, fault, compile_call):
+    compile_ = re.compile
+    calls = 0
+
+    def refuse(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == compile_call:
+            raise fault("secret@host")
+        return compile_(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(cs.re, "compile", refuse)
+        policy, faults = cs.adr_policy({"adr": _BLOCK})
+    assert policy is None and len(faults) == 1
+    assert "adr." in faults[0] and "secret" not in faults[0]
+
+
+@pytest.mark.parametrize("digits", [2000000000, 4294967296, 10**100])
+def test_adr_width_main_is_one_failure(repo, monkeypatch, capsys, digits):
+    _manifest(repo, dict(_BLOCK, number_digits=digits))
+    monkeypatch.setattr(cs, "CHECKS", [("Y", cs.check_Y)])
+
+    def sentinel(policy):
+        pytest.fail("oversized width reached grammar allocation")
+
+    monkeypatch.setattr(cs, "_adr_grammars", sentinel)
+    assert cs.main(["--root", str(repo)]) == cs.exit_codes.ExitCode.FAILURE
+    out, error = capsys.readouterr()
+    assert out.count("ERROR ") == 1 and "adr.number_digits" in out
+    assert "Traceback" not in out + error and not cs._CONFIG_REFUSALS
+
+
+@pytest.mark.parametrize("digits", [4294967296, 10**100])
+def test_unrepresentable_adr_width_is_one_finding(digits):
+    policy, faults = cs.adr_policy({"adr": dict(_BLOCK, number_digits=digits)})
+    assert policy is None and len(faults) == 1
+    assert "adr.number_digits" in faults[0]
+
+
+@pytest.mark.parametrize(
+    "project_limit, template_limit, prefix, digits, clean",
+    [
+        (10, 12, "K-", 5, True),
+        (10, 12, "K-", 6, False),
+        (20, 10, "K-", 3, True),
+        (20, 10, "K-", 4, False),
+        (20, 12, "é-", 4, True),
+        (20, 12, "é-", 5, False),
+        (-1, -1, "K-", 4, True),
+        (None, None, "K-", 4, True),
+    ],
+)
+def test_width_bound_uses_each_space_and_prefix_bytes(
+    project_limit, template_limit, prefix, digits, clean
+):
+    policy, faults = cs.adr_policy(
+        {
+            "adr": dict(
+                _BLOCK, template_prefix=prefix, number_digits=digits, template_adrs=[]
+            )
+        },
+        project_name_max=project_limit,
+        template_name_max=template_limit,
+    )
+    if clean:
+        assert policy is not None and faults == []
+    else:
+        assert policy is None and len(faults) == 1 and "adr.number_digits" in faults[0]
+
+
+@pytest.mark.parametrize("limit", [255, -1, None, OSError, ValueError, AttributeError])
+def test_y_measures_nearest_existing_ancestors(tmp_path, monkeypatch, limit):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "config").mkdir()
+    _manifest(tmp_path, dict(_BLOCK, template_adrs=[]))
+    _isolate(monkeypatch, tmp_path)
+    measured = []
+
+    def pathconf(path, name):
+        measured.append((Path(path), name))
+        if isinstance(limit, type):
+            raise limit("unavailable")
+        return limit
+
+    monkeypatch.setattr(cs.os, "pathconf", pathconf)
+    assert _ys()[0] == []
+    assert measured == [(tmp_path / "docs", "PC_NAME_MAX")] * 2
+
+
+def test_y_uses_differing_directory_limits(repo, monkeypatch):
+    def pathconf(path, name):
+        return 10 if Path(path) == repo / "docs/adr/keel" else 20
+
+    monkeypatch.setattr(cs.os, "pathconf", pathconf)
+    faults, _ = _ys()
+    assert len(faults) == 1 and "adr.number_digits" in faults[0]

@@ -15,6 +15,12 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Floor and policy conversions refuse safely (KEEL-CFGCRASH-1, CMP-15.S3).**
+  Numeric Python floor parts fully match `[0-9]{1,4}` and faults exit CONFIG.
+  ADR widths fit both spaces' file-name byte limits before allocation.
+  ADR and work-policy pattern syntax, recursion and overflow faults give one
+  key-naming FAILURE finding without pattern or exception text.
+
 - **Wiki retrieval refuses unreadable reports before synthesis (KEEL-ERR-2).**
   The shared `ToolReportUnreadable` names the query tool, status, root, stderr
   and remedy before backend construction in both modes; MCP returns
