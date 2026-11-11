@@ -549,7 +549,8 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   file-name byte limit, subtracting the encoded template prefix in that space
   and the minimum `-a.md` suffix in both. The limit comes from the nearest
   existing ancestor of each directory; an unavailable or unknown limit uses
-  the common NAME_MAX of 255 bytes. Width and pattern compilation faults give
+  the common NAME_MAX of 255 bytes. A width that leaves no room for `-a.md`
+  within that fallback limit is refused. Width and pattern compilation faults give
   one key-naming FAILURE finding without CONFIG provenance, pattern text or
   exception text. Both spaces empty is a WARN. A
   template ADR the project edited and `copier update` retired is kept by
