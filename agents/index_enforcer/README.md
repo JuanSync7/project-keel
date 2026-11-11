@@ -45,7 +45,9 @@ non-JSON, deeply nested output or anything but a list of objects raises
 `ToolReportUnreadable`, a `RuntimeError` with the exit helper's three parts,
 naming the tool, status, root, stderr and remedy. A nonzero owner status is
 refused before decoding, fill or commit. A nonzero structure-gate status with
-no `ERROR ` lines raises the same error before build; status 1 with error lines
-remains a readable negative verdict. With no corpus, the owner tool returns
+no `ERROR ` lines raises the same error before build. Any nonzero status with
+at least one `ERROR ` line is read as a negative verdict, so a crash that
+prints one still reads as a tree that is not clean and stops build and fill.
+With no corpus, the owner tool returns
 `[]` and the dry run reports no owner gaps without writing.
 `tests/integration/test_index_enforcer_durability.py` holds these cases.
