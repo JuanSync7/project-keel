@@ -6,6 +6,7 @@ summary: check_P errors when a Makefile target carries a `## ` help annotation t
 """
 
 import inspect
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -138,6 +139,41 @@ def test_a_pattern_this_check_cannot_compile_warns_unverified(
     assert "Makefile" in warns[0] and "help recipe grep pattern" in warns[0]
     assert "unverified" in warns[0] and "Python" in warns[0]
     assert "PRIVATE" not in warns[0] and pattern not in warns[0]
+
+
+def test_a_credentialed_proxy_warns_help_parity_unverified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    proxy = "http://u:secret@127.0.0.1:9"
+    monkeypatch.setenv("HTTPS_PROXY", proxy)
+    errs, warns = _find(_HELP_WIDE + "e2e: ## a\n\tx\n")
+    assert errs == []
+    assert len(warns) == 1, warns
+    assert "Makefile: help parity unverified -- " in warns[0]
+    assert "HTTPS_PROXY" in warns[0] and "rerun" in warns[0]
+    assert proxy not in warns[0] and "secret" not in warns[0]
+
+
+def test_a_refused_child_env_manifest_warns_help_parity_unverified(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = cs.config_loader.read(str(_ROOT))
+    manifest["child_env"]["names"].append("GIT_DIR")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        cs.bounded_match,
+        "build_child_env",
+        lambda: cs.child_env.build_child_env(root=str(tmp_path)),
+    )
+    errs, warns = _find(_HELP_WIDE + "e2e: ## a\n\tx\n")
+    assert errs == []
+    assert len(warns) == 1, warns
+    assert "Makefile: help parity unverified -- " in warns[0]
+    assert 'child_env.names lists "GIT_DIR"' in warns[0]
+    assert "rerun" in warns[0]
 
 
 @pytest.mark.parametrize("excluded", [False, True], ids=["select", "exclude"])

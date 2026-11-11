@@ -3647,7 +3647,8 @@ def _help_parity_findings(makefiles):
     """makefiles: ordered [(relpath, text)] — the root Makefile then its includes,
     i.e. what `$(MAKEFILE_LIST)` would hold. Returns (errs, warns); the walk
     and include resolution are check_P's. Each grep searches its batch in
-    one deadline-bounded child; a child failure is an error, never parity.
+    one deadline-bounded child; a child failure is an error, never parity,
+    while an environment refusal warns that parity is unverified.
 
     Silent when no makefile declares a `help` target (nothing lists the
     annotations, so nothing can hide one). WARNs, never errs, for every shape
@@ -3746,6 +3747,13 @@ def _help_parity_findings(makefiles):
         for exclusion in hidden_on_purpose:
             matches = _grep_matches(exclusion, [t[2] for t in missed], help_in)
             missed = [t for i, t in enumerate(missed) if not matches[i]]
+    except child_env.ChildEnvError as exc:
+        # The gate judges the tree; the doer refuses the caller's environment.
+        warns.append(
+            unverified + str(exc) + "; correct the child environment or its "
+            "allowlist, then rerun to verify help parity"
+        )
+        return errs, warns
     except AssertionError as exc:
         # A child without a verdict cannot establish help parity.
         errs.append(str(exc))
