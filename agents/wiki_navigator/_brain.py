@@ -117,7 +117,11 @@ def _answer_prompt(question, nodes):
 
 
 def _retrieve(state):
-    """Read-only: query_corpus, fail closed on error, filter by visibility, cite."""
+    """Read query_corpus's list of objects, filter by visibility, and cite.
+
+    Nonzero status raises RuntimeError; unreadable stdout raises
+    ToolReportUnreadable before synthesis or backend construction.
+    """
     rc, out, err = _run(
         [
             "scripts/query_corpus.py",
@@ -247,6 +251,11 @@ def answer(
     raises corpus_level.NotACheckout, a ValueError, before any step; a root
     that does not exist fails retrieval, so this raises RuntimeError before
     any model call, dry run included.
+    A successful query with blank, non-JSON, too deeply nested or wrong-shaped
+    stdout raises scripts.tool_reports.ToolReportUnreadable with the tool,
+    status, root, stderr and remedy before backend construction in either mode.
+    An empty list is readable: dry-run previews no hits, while execute raises
+    ContextRefused before building a backend.
     """
     if execute and max_model_calls is None:
         raise ValueError(

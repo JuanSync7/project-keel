@@ -9,7 +9,7 @@ tags: [agent, wiki, retrieval, qa]
 summary: Answers questions from the wiki corpus with citations and provenance.
 id: agents-wiki-navigator-readme
 created: 2026-06-17
-updated: 2026-10-29
+updated: 2026-11-11
 visibility: internal
 canonical: true
 ---
@@ -22,6 +22,19 @@ An example agent that answers a question by traversing the wiki corpus the
 `index_enforcer` built. It retrieves a connected neighbourhood of nodes (tree +
 entity/keyword links) with the read-only `query_corpus` tool, then synthesizes
 an answer via `models/` -- citing every source.
+
+Retrieval reads a successful query's stdout through `scripts/tool_reports.py`
+`read_report(..., container=list)`.
+Blank, non-JSON, too deeply nested or wrong-shaped output raises the shared
+`ToolReportUnreadable` before backend construction in both modes.
+Its three diagnostic parts name the tool, status, root, stderr and remedy.
+The MCP `wiki_answer` tool returns this refusal with `isError=true` and calls
+no model.
+A readable `[]` keeps an empty dry-run preview; an execute run raises
+`ContextRefused` before building a backend.
+A nonzero query status raises plain `RuntimeError` before stdout is decoded.
+`tests/unit/agents/test_wiki_navigator_step.py` and
+`tests/integration/test_mcp_servers.py` check these refusals and served citations.
 
 It is thin: policy + prompt only. The entry point is `answer(...)`,
 returning an `Answer` whose `citations` carry each source's `summary_source`

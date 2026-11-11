@@ -128,6 +128,41 @@ class _Counted(FakeModel):
 
 
 @pytest.mark.parametrize(
+    "out",
+    ["not JSON", "", " \n\t", "{}", "[1]"],
+    ids=["non-JSON", "blank", "whitespace", "object", "non-object-member"],
+)
+def test_qa_unreadable_retrieval_is_a_tool_error(tmp_path, monkeypatch, out):
+    """An unreadable query report reaches MCP without building a backend."""
+    built = []
+
+    def factory(name):
+        built.append(name)
+        return _Counted(name)
+
+    monkeypatch.setattr(qa_server, "get_model", factory)
+    monkeypatch.setattr(_Counted, "prompts", [])
+    monkeypatch.setattr(
+        "agents.wiki_navigator._brain._run",
+        lambda *a, **k: (0, out, "retrieval diagnostic"),
+    )
+    server = build_qa_server(
+        model="fake",
+        corpus=_tiny_corpus(tmp_path),
+        max_model_calls=1,
+        max_session_model_calls=1,
+    )
+    result = server.call_tool("wiki_answer", {"question": "what is keel"})
+    assert result["isError"] is True
+    text = result["content"][0]["text"]
+    assert text.startswith("ToolReportUnreadable:")
+    assert "scripts/query_corpus.py" in text and str(tmp_path) in text
+    assert "exited 0" in text and "retrieval diagnostic" in text
+    assert "then rerun" in text
+    assert built == [] and _Counted.prompts == []
+
+
+@pytest.mark.parametrize(
     "fault, message",
     [
         ("missing-corpus", "the corpus named does not exist"),

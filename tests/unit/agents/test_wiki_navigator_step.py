@@ -27,11 +27,13 @@ pytestmark = pytest.mark.unit
 @pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
 @pytest.mark.parametrize(
     "out",
-    ["not JSON", "", "{}", "[1]"],
-    ids=["non-JSON", "blank", "object", "non-object-member"],
+    ["not JSON", "", " \n\t", "{}", "[1]", None],
+    ids=["non-JSON", "blank", "whitespace", "object", "non-object-member", "deep"],
 )
-def test_unreadable_retrieval_report_fails_the_run(tmp_path, monkeypatch, execute, out):
+def test_unreadable_retrieval_fails_before_model(tmp_path, monkeypatch, execute, out):
     """A broken retrieval raises the shared refusal before building a model."""
+    if out is None:
+        out = _nested_report()
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
     seen = _Seen("should not be called")
@@ -57,6 +59,89 @@ def test_unreadable_retrieval_report_fails_the_run(tmp_path, monkeypatch, execut
     assert "exited 0" in raised.value.parts[1]
     assert "retrieval diagnostic" in raised.value.parts[1]
     assert all(part.strip() for part in raised.value.parts)
+    assert built == [] and seen.prompts == []
+
+
+def _nested_report():
+    """The shallowest array nesting json.loads refuses at this call depth."""
+    out = "0"
+    while True:
+        out = "[" + out + "]"
+        try:
+            json.loads(out)
+        except RecursionError:
+            return out
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_empty_retrieval_is_readable(tmp_path, monkeypatch, execute):
+    """An empty list is readable; only executing without context is refused."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
+    factory, built, seen = _never_called()
+    monkeypatch.setattr(
+        "agents.wiki_navigator._brain._run", lambda *a, **k: (0, "[]", "")
+    )
+    options = {
+        "root": str(tmp_path),
+        "execute": execute,
+        "max_model_calls": 1,
+        "backend_factory": factory,
+    }
+    if execute:
+        with pytest.raises(ContextRefused):
+            answer("alpha", **options)
+    else:
+        got = answer("alpha", **options)
+        assert got.citations == () and got.dry_run
+        assert "(nothing retrieved)" in got.text
+    assert built == [] and seen.prompts == []
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+def test_served_retrieval_keeps_citations(tmp_path, monkeypatch, execute):
+    """Only served hits become citations and context in either mode."""
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "project.json").write_text("{}", "utf-8")
+    seen = _Seen("Alpha reply")
+    monkeypatch.setattr(
+        "agents.wiki_navigator._brain._run",
+        lambda *a, **k: (0, json.dumps(_NODES), ""),
+    )
+    got = answer(
+        "alpha",
+        root=str(tmp_path),
+        execute=execute,
+        max_model_calls=1,
+        backend_factory=lambda name: seen,
+    )
+    assert [c.node_id for c in got.citations] == ["docs/a.md"]
+    assert got.citations[0].summary_source == "authored"
+    prompt = seen.prompts[0] if execute else got.text
+    assert "Alpha is the ingest service." in prompt
+    assert "docs/secret.md" not in prompt and "docs/r.md" not in prompt
+    assert len(seen.prompts) == int(execute)
+
+
+@pytest.mark.parametrize("execute", [False, True], ids=["dry-run", "execute"])
+@pytest.mark.parametrize("out", ["[]", "not JSON"], ids=["readable", "unreadable"])
+def test_nonzero_query_keeps_plain_runtime_error(tmp_path, monkeypatch, execute, out):
+    """The query's failed status takes precedence over decoding its stdout."""
+    factory, built, seen = _never_called()
+    monkeypatch.setattr(
+        "agents.wiki_navigator._brain._run",
+        lambda *a, **k: (7, out, "query diagnostic"),
+    )
+    with pytest.raises(RuntimeError, match="query_corpus failed") as caught:
+        answer(
+            "alpha",
+            root=str(tmp_path),
+            execute=execute,
+            max_model_calls=1,
+            backend_factory=factory,
+        )
+    assert type(caught.value) is RuntimeError
+    assert "rc=7" in str(caught.value) and "query diagnostic" in str(caught.value)
     assert built == [] and seen.prompts == []
 
 

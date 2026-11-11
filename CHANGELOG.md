@@ -15,6 +15,12 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Wiki retrieval refuses unreadable reports before synthesis (KEEL-ERR-2).**
+  The shared `ToolReportUnreadable` names the query tool, status, root, stderr
+  and remedy before backend construction in both modes; MCP returns
+  `isError=true` without a model call. Empty lists, served citations and plain
+  `RuntimeError` for a nonzero query remain covered by controls.
+
 - **Refactor recovery and human discard are explicit (KEEL-ROLLBACK-2).**
   `--recover` replays or cleans the journal without reading stdin or a spec.
   Human-only `--discard-journal --yes` abandons evidence without touching targets.
