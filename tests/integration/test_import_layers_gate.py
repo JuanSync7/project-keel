@@ -6,8 +6,10 @@ summary: A tree-wide gate over every Python file tests/source_tree.py `python_fi
 
 The dual-import gate uses one site reader for statements and literal calls to
 importlib.import_module, import_module imported from importlib, and __import__.
-Relative import_module(".x", "scripts") names scripts.x. A non-literal first
-argument is not judged, including in scripts/, tests/integration/ or evals/ files
+The name and package parameters accept positional or keyword string literals,
+including f-strings without placeholders. Relative import_module(".x", "scripts")
+names scripts.x. A non-literal name or package is not judged, including in
+scripts/, tests/integration/ or evals/ files
 that also name a scripts/ module: its runtime value cannot be resolved statically
 without executing arbitrary code, so guessing could invent or miss an import.
 """
@@ -129,35 +131,42 @@ def test_every_layer_entry_matches_a_file():
     assert not findings, "\n".join(findings)
 
 
+def _literal_argument(node: ast.Call, position: int, parameter: str) -> str | None:
+    """Read a positional or keyword parameter only when its string is literal."""
+    value = (
+        node.args[position]
+        if len(node.args) > position
+        else next((kw.value for kw in node.keywords if kw.arg == parameter), None)
+    )
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
+    if isinstance(value, ast.JoinedStr):
+        parts = []
+        for part in value.values:
+            if not isinstance(part, ast.Constant) or not isinstance(part.value, str):
+                return None
+            parts.append(part.value)
+        return "".join(parts)
+    return None
+
+
 def _import_names(node: ast.AST, importer: str, calls: set[str]) -> list[str]:
     """Absolute module spellings a statement or literal import call can load."""
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
     if isinstance(node, ast.Call):
         function = ast.unparse(node.func)
-        if function not in calls or not node.args:
+        if function not in calls:
             return []
-        first = node.args[0]
-        if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+        name = _literal_argument(node, 0, "name")
+        if name is None:
             return []
-        name = first.value
         if name.startswith("."):
-            package = (
-                node.args[1]
-                if len(node.args) > 1
-                else next(
-                    (kw.value for kw in node.keywords if kw.arg == "package"), None
-                )
-            )
-            if (
-                function == "__import__"
-                or not isinstance(package, ast.Constant)
-                or not isinstance(package.value, str)
-                or not package.value
-            ):
+            package = _literal_argument(node, 1, "package")
+            if function == "__import__" or not package:
                 return []
             try:
-                name = importlib.util.resolve_name(name, package.value)
+                name = importlib.util.resolve_name(name, package)
             except ImportError:
                 # An invalid relative name cannot load a module at runtime.
                 return []
@@ -333,6 +342,45 @@ def test_dual_import_gate_names_both_sites(tmp_path: Path, imports: str) -> None
             "import fresh",
             'import importlib as loader\nloader.import_module("scripts.fresh")',
         ),
+        (
+            "import fresh",
+            'import importlib\nimportlib.import_module(name="scripts.fresh")',
+        ),
+        ("import fresh", '__import__(name="scripts.fresh")'),
+        (
+            "import fresh",
+            'from importlib import import_module\nimport_module(name="scripts.fresh")',
+        ),
+        (
+            "import fresh",
+            'from importlib import import_module as load\nload(name="scripts.fresh")',
+        ),
+        (
+            "import fresh",
+            'import importlib as loader\nloader.import_module(name="scripts.fresh")',
+        ),
+        (
+            "import fresh",
+            'import importlib\nimportlib.import_module(name=".fresh", package="scripts")',
+        ),
+        (
+            "import fresh",
+            'import importlib\nimportlib.import_module(".fresh", package="scripts")',
+        ),
+        (
+            "import fresh",
+            'import importlib\nimportlib.import_module(f"scripts.fresh")',
+        ),
+        ("import fresh", '__import__(name=f"scripts.fresh")'),
+        (
+            "import fresh",
+            "from importlib import import_module as load\n"
+            'load(package=f"scripts", name=f".fresh")',
+        ),
+        (
+            "import fresh",
+            'import importlib\nimportlib.import_module(".fresh", f"scripts")',
+        ),
     ],
 )
 def test_dual_import_gate_counts_literal_calls(
@@ -367,15 +415,27 @@ def test_dual_import_gate_accepts_registered_literal_calls(tmp_path: Path) -> No
 
 
 @pytest.mark.parametrize("caller", ["scripts", "tests/integration", "evals"])
+@pytest.mark.parametrize(
+    "call",
+    [
+        "importlib.import_module(name)",
+        "importlib.import_module(name=name)",
+        'importlib.import_module(f"scripts.{suffix}")',
+        'importlib.import_module(name=f"scripts.{suffix}")',
+        'importlib.import_module(name=".fresh", package=f"{package}")',
+    ],
+)
 def test_dual_import_gate_leaves_nonliteral_calls_unjudged(
-    tmp_path: Path, caller: str
+    tmp_path: Path, caller: str, call: str
 ) -> None:
     root = _project(
         tmp_path,
         {
             "scripts/fresh.py": "class Value: pass\n",
             caller + "/caller.py": "import fresh\nimport importlib\n"
-            'name = "scripts.fresh"\nimportlib.import_module(name)\n',
+            'name = "scripts.fresh"\nsuffix = "fresh"\npackage = "scripts"\n'
+            + call
+            + "\n",
         },
     )
     assert dual_import_findings(root) == []
