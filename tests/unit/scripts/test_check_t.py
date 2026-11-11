@@ -46,6 +46,8 @@ def _find(*enforced, pid="p"):
         "make:fmt-check",
         "doc:docs/guides/style.md",
         "doc:docs/guides/style.md " + _S + "2",
+        "doc:docs/guides/style.md " + _S + "3 ",
+        "doc:docs/guides/style.md " + _S + "3\t",
         "ruff:B904",
         "mypy:strict",
     ],

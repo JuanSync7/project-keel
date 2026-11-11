@@ -336,10 +336,13 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   is registered in `scripts/checks_data.py` `CHECKS`, the script/test/doc exists
   (and has that numbered section), the make target is a rule.
   A bare check letter is refused with the id spelling to write.
+  Mechanism values are stripped of surrounding whitespace before section
+  validation and resolution.
   A section fully matches `[0-9]{1,4}` before integer conversion; any other
   section text gives one finding and a CONFIG exit. A missing check, file,
   target or valid numeric section stays a FAILURE finding. Non-string practice
-  ids and references give grammar findings before text conversion.
+  ids are refused with one FAILURE finding even when they can be displayed.
+  Non-string references give grammar findings before text conversion.
   `ruff:`/`mypy:` codes are accepted as written —
   the tools themselves reject an unknown one. `mechanism` stays as prose for a
   reader; this is the same claim a machine can hold. Silent without a

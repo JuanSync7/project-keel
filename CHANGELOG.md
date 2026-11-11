@@ -15,6 +15,11 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Practices sections share mechanism whitespace rules (KEEL-CFGCRASH-18).**
+  Trailing spaces and tabs resolve; inner non-digits still exit CONFIG.
+  Reachable non-string practice ids are refused with one FAILURE finding,
+  including ids that can be displayed safely.
+
 - **Floor and policy conversions refuse safely (KEEL-CFGCRASH-1, CMP-15.S3).**
   Numeric Python floor parts fully match `[0-9]{1,4}` and faults exit CONFIG.
   ADR widths fit both spaces' file-name byte limits before allocation.

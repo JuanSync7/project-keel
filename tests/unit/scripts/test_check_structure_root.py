@@ -195,6 +195,55 @@ def test_doc_mechanism_uses_the_heading_readers_decimal_grammar(
     assert cs.run_checks(str(root), project_checks=False) == []
 
 
+@pytest.mark.parametrize(
+    "section, expected", [("3 ", 0), ("3\t", 0), ("3x3 ", 14), ("3\t3", 14)]
+)
+def test_practice_section_whitespace_uses_the_mechanism_rule(
+    tmp_path, monkeypatch, capsys, section, expected
+):
+    root = _tree(tmp_path)
+    (root / "docs/target.md").write_text("## 3. Target\n", encoding="utf-8")
+    (root / "AGENT.md").write_text("Read `docs/target.md`.\n", encoding="utf-8")
+    (root / "config/practices.json").write_text(
+        json.dumps(
+            {
+                "practices": [
+                    {"id": "probe", "enforced_by": ["doc:docs/target.md §" + section]}
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cs, "CHECKS", (("T", cs.check_T), ("U", cs.check_U)))
+    assert cs.main(["--root", str(root)]) == expected
+    out, err = capsys.readouterr()
+    if expected:
+        assert "practices section cannot be used" in err
+        assert len(cs.errors) == 1
+    else:
+        assert err == "" and "0 error(s)" in out
+    assert "Traceback" not in out + err
+
+
+@pytest.mark.parametrize("pid", [5, True, None, [], {}])
+def test_loaded_nonstring_practice_ids_fail_once(tmp_path, monkeypatch, capsys, pid):
+    root = _tree(tmp_path)
+    (root / "AGENT.md").write_text("Read `docs/target.md`.\n", encoding="utf-8")
+    (root / "docs/target.md").write_text("# Target\n", encoding="utf-8")
+    (root / "config/practices.json").write_text(
+        json.dumps({"practices": [{"id": pid, "enforced_by": ["doc:docs/target.md"]}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cs, "CHECKS", (("T", cs.check_T), ("U", cs.check_U)))
+    assert cs.main(["--root", str(root)]) == 1
+    out, err = capsys.readouterr()
+    assert "the tree breaks the conventions" in err and "1 error(s)" in out
+    assert len(cs.errors) == 1
+    assert "practice id" in cs.errors[0] and "write a string id" in cs.errors[0]
+    assert cs._load_practices()["practices"][0]["id"] == pid
+    assert not cs._CONFIG_REFUSALS and not cs._PRACTICE_SECTION_FAULTS
+
+
 @pytest.mark.parametrize("filename", cs.JSON_CONFIGS)
 def test_a_directory_at_a_config_path_is_one_refusal_per_run(tmp_path, filename):
     root = _tree(tmp_path)

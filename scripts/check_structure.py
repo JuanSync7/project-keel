@@ -4887,11 +4887,20 @@ def _registered_check_ids(path=None):
     return refuse("the check-id registry declares no literal CHECKS")
 
 
+def _mechanism_parts(ref: object) -> Optional[Tuple[str, str]]:
+    """A mechanism's form and whitespace-trimmed value, or None outside its grammar."""
+    match = _MECHANISM_RE.fullmatch(ref) if isinstance(ref, str) else None
+    return (match.group(1), match.group(2).strip()) if match else None
+
+
 def _section_reason(ref: object) -> Optional[str]:
-    """The section grammar fault in a doc mechanism, before trimming or reading."""
+    """The section grammar fault using the mechanism reader's whitespace rule."""
     if not isinstance(ref, str) or not ref.startswith("doc:"):
         return None
-    path, separator, section = ref[len("doc:") :].partition(" §")
+    parts = _mechanism_parts(ref)
+    # An invalid outer grammar must not hide a malformed section's CONFIG exit.
+    value = parts[1] if parts is not None else ref[len("doc:") :]
+    path, separator, section = value.partition(" §")
     if separator and not _ASCII_NUMBER.fullmatch(section):
         return "claims %s §%s, which names no numbered section -- use [0-9]{1,4}" % (
             _shown(path),
@@ -4909,7 +4918,7 @@ def _mechanism_grammar_reason(ref: object) -> str:
 
 
 def _practice_id_reason(pid: object) -> Optional[str]:
-    """A non-string practice id is a grammar fault, even when it renders safely."""
+    """Refuse a non-string practice id with one FAILURE finding, even if displayable."""
     if not isinstance(pid, str):
         return (
             "config/practices.json: practice id '%s' is not in the string grammar "
@@ -4936,10 +4945,10 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     section_reason = _section_reason(ref)
     if section_reason:
         return section_reason
-    m = _MECHANISM_RE.fullmatch(ref) if isinstance(ref, str) else None
-    if not m:
+    parts = _mechanism_parts(ref)
+    if parts is None:
         return _mechanism_grammar_reason(ref)
-    form, value = m.group(1), m.group(2).strip()
+    form, value = parts
     if form == "check":
         if re.fullmatch(r"[A-Z]", value):
             return "names '%s'; write check:CHECK-%s to cite its registry id" % (
@@ -4964,7 +4973,7 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
         if path not in tree:
             return "claims doc '%s', which does not exist" % _shown(path)
         if separator:
-            # _section_reason fully matched the raw section before any read.
+            # _section_reason matched the same trimmed value before any read.
             present = sections_of(path)
             if present is None:
                 return None  # A failed read cannot prove a section is absent.
@@ -5015,6 +5024,7 @@ def _mechanism_findings(practices, check_ids, tree, make_targets, sections_of):
 
 def check_T():
     """ERROR when a practice's `enforced_by` names a mechanism that does not exist.
+    Non-string practice ids are refused with one FAILURE finding.
     Silent when there is no practices registry (a generated project may drop it)."""
     practices = _load_practices()
     if not practices:
