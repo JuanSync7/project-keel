@@ -27,7 +27,7 @@ _TREE = {
     "docs/guides/style.md",
 }
 _TARGETS = {"check", "fmt-check", "verify"}
-_SECTIONS = {"docs/guides/style.md": {0, 1, 2}}
+_SECTIONS = {"docs/guides/style.md": {0, 1, 2, 3}}
 
 
 def _find(*enforced, pid="p"):
@@ -144,3 +144,74 @@ def test_an_unusable_check_registry_is_one_named_error(
     assert cs._registered_check_ids(str(path)) == set()
     assert len(cs.errors) == 1, cs.errors
     assert "checks_data.py" in cs.errors[0] and why in cs.errors[0], cs.errors
+
+
+@pytest.mark.parametrize(
+    "section", ["x", "0_3", "٣", "²", "", "12345", "1\n", "2@private"]
+)
+def test_a_section_outside_the_ascii_grammar_is_one_finding(section):
+    errs = _find("doc:docs/guides/style.md " + _S + section)
+    assert len(errs) == 1 and "section" in errs[0], errs
+    assert "private" not in errs[0], errs
+
+
+@pytest.mark.parametrize("section", ["0", "0002", "9999"])
+def test_ascii_section_boundaries_resolve(section):
+    reg = {"practices": [{"id": "p", "enforced_by": ["doc:d.md " + _S + section]}]}
+    assert (
+        cs._mechanism_findings(reg, set(), {"d.md"}, set(), lambda _: {int(section)})
+        == []
+    )
+
+
+@pytest.mark.parametrize("section", ["٣", "３", "𝟛"])
+@pytest.mark.parametrize("reader", ["heading", "citation"])
+def test_nonascii_document_numbers_are_refused(section, reader):
+    if reader == "heading":
+        numbers, errs = cs._numbered_sections("## " + section + ". Section\n")
+        assert numbers == set()
+    else:
+        errs = cs._citation_findings(
+            "use.md", "d.md " + _S + section, {}, {"d.md"}, lambda _: {3}
+        )
+    assert len(errs) == 1 and "ASCII" in errs[0], errs
+
+
+def _deep_member():
+    member = []
+    for _ in range(sys.getrecursionlimit() * 2):
+        member = [member]
+    with pytest.raises(RecursionError):
+        str(member)
+    return member
+
+
+def test_a_deep_nonstring_reference_gets_one_grammar_finding():
+    errs = _find(_deep_member())
+    assert len(errs) == 1 and "grammar" in errs[0], errs
+
+
+def test_a_nonstring_practice_id_gets_one_grammar_finding():
+    errs = _find("doc:docs/guides/style.md", pid=_deep_member())
+    assert len(errs) == 1 and "id" in errs[0] and "grammar" in errs[0], errs
+
+
+@pytest.mark.parametrize("reader", ["T", "U"])
+@pytest.mark.parametrize("member", ["ref", "id"])
+def test_deep_practice_members_already_render_without_a_traceback(reader, member):
+    """Control: the base's guarded readers and shown() already avoid raw str."""
+    value = _deep_member()
+    reg = {
+        "practices": [
+            {
+                "id": value if member == "id" else "p",
+                "enforced_by": [value if member == "ref" else "doc:d.md"],
+            }
+        ]
+    }
+    if reader == "T":
+        errs = cs._mechanism_findings(reg, set(), set(), set(), lambda _: None)
+    else:
+        errs = cs._policy_reachability_findings(reg, {"AGENT.md": "", "d.md": ""})
+    assert len(errs) <= 1, errs
+    assert all("config/practices.json" in err for err in errs), errs

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 title: check_structure — the deterministic conventions gate
-summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity and promised pyproject settings in both twins, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on any judged error; warnings never fail the build. The CLI refuses an existing manifest before judging, exit 2 for a hunk and 14 for another loader refusal, with one stderr line; an absent manifest keeps its finding.
+summary: Stdlib-only, 3.6-safe enforcement of CONVENTIONS.md — labeling, taxonomy, package boundaries, tool/agent governance, manifest and ruleset parity, twin parity and promised pyproject settings in both twins, the machine-readable module contract, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environments, ADR number spaces, and work naming (checks A-Z), then the project's own checks: each top-level module in the directory config/project.json structure.project_checks names (a key the template never ships), whose check(root) findings, returned or reported through err()/warn(), are reported as project:<stem> and whose every failure, a module name that is not a readable file included, is an error naming it (docs/adr/keel/K-0014-project-owned-structure-checks.md). A finding checks A-Z build from configured text never shows a value, member, key name or path segment that holds an `@`: each passes through config_loader.shown. Shared Markdown scanning follows CommonMark containers, fence boundaries and HTML blocks of types 1 to 7; inline comments are blanked outside fences. Exit 1 on judged errors; warnings never fail the build. The CLI refuses loader-refused project or practices files with exit 2 for a conflict hunk and 14 otherwise, and practices section faults with exit 14. Sections fully match [0-9]{1,4} before conversion; source rerun_proof section faults stay one FAILURE finding. An absent manifest keeps its finding.
 
 check_structure.py - enforce the project conventions (see CONVENTIONS.md).
 
@@ -465,6 +465,8 @@ def _loop_cache_path(checkout):
 
 _CONFIG_READ = {}  # relpath -> parsed JSON, _NO_DATA or _REFUSED (read once)
 _READ_REPORTED = set()  # absolute paths already reported unreadable (report once)
+_CONFIG_REFUSALS: Dict[str, Tuple[bool, List[str]]] = {}
+_PRACTICE_SECTION_FAULTS: Dict[Tuple[str, int, int], str] = {}
 
 # Absence keeps the checks' historical defaults; refusal cannot stand for an
 # empty declaration, because no conclusion about that declaration is provable.
@@ -527,6 +529,7 @@ def _read_json_config(relpath):
         data = _NO_DATA
     except config_loader.ConfigError as e:
         data = _REFUSED
+        _CONFIG_REFUSALS[relpath] = (config_loader.is_conflict(e), e.lines)
         _READ_REPORTED.add(path)
         for line in e.lines:
             err(line)
@@ -3821,8 +3824,9 @@ _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
 _SECTION_CITE = re.compile(r"(?:`?([A-Za-z0-9_./-]+\.md)`?,?\s+)?§\s*(\d+)")
-# Ten thousand sections exceed a navigable document and stay below int's digit limit.
-_DOCUMENT_NUMBER = re.compile(r"\d{1,4}\Z")
+# Four digits bound integer conversion; int also accepts underscores and
+# non-ASCII digits, neither of which belongs to the section-number grammar.
+_ASCII_NUMBER = re.compile(r"[0-9]{1,4}")
 _CONVENTIONS_DOC = "CONVENTIONS.md"
 # Where a `§N` may appear: prose, and the code/config whose docstrings and help
 # strings cite the conventions (check_structure's own header does).
@@ -4160,11 +4164,11 @@ def _numbered_sections(text, relpath="<document>"):
     for lineno, line in enumerate(_unfenced_lines(text), 1):
         m = _NUMBERED_HEADING.match(line)
         if m:
-            if _DOCUMENT_NUMBER.fullmatch(m.group(1)):
+            if _ASCII_NUMBER.fullmatch(m.group(1)):
                 found.add(int(m.group(1)))
             else:
                 findings.append(
-                    "%s:%d: numbered section exceeds four digits -- shorten the number"
+                    "%s:%d: numbered section must match [0-9]{1,4} -- use one to four ASCII digits"
                     % (relpath, lineno)
                 )
     return found, findings
@@ -4236,9 +4240,9 @@ def _citation_findings(relpath, text, files, tree, sections_of):
     base = posixpath.dirname(relpath)
     for m in _SECTION_CITE.finditer(text):
         lineno = text.count("\n", 0, m.start(2)) + 1
-        if not _DOCUMENT_NUMBER.fullmatch(m.group(2)):
+        if not _ASCII_NUMBER.fullmatch(m.group(2)):
             errs.append(
-                "%s:%d: cited section exceeds four digits -- shorten the number"
+                "%s:%d: cited section must match [0-9]{1,4} -- use one to four ASCII digits"
                 % (relpath, lineno)
             )
             continue
@@ -4885,6 +4889,45 @@ def _registered_check_ids(path=None):
     return refuse("the check-id registry declares no literal CHECKS")
 
 
+def _section_reason(ref: object) -> Optional[str]:
+    """The section grammar fault in a doc mechanism, before trimming or reading."""
+    if not isinstance(ref, str) or not ref.startswith("doc:"):
+        return None
+    path, separator, section = ref[len("doc:") :].partition(" §")
+    if separator and not _ASCII_NUMBER.fullmatch(section):
+        return "claims %s §%s, which names no numbered section -- use [0-9]{1,4}" % (
+            _shown(path),
+            _shown(section),
+        )
+    return None
+
+
+def _mechanism_grammar_reason(ref: object) -> str:
+    """A grammar finding rendered without converting a raw practices member."""
+    return "names '%s', which is not in the mechanism grammar (%s)" % (
+        _shown(ref),
+        _MECHANISM_FORMS,
+    )
+
+
+def _practice_id_reason(pid: object) -> Optional[str]:
+    """A non-string practice id is a grammar fault, even when it renders safely."""
+    if not isinstance(pid, str):
+        return (
+            "config/practices.json: practice id '%s' is not in the string grammar "
+            "-- write a string id" % _shown(pid)
+        )
+    return None
+
+
+def _practice_mechanism_finding(pid: str, reason: str) -> str:
+    """The shared finding for a practice's malformed mechanism."""
+    return "config/practices.json: practice '%s' enforced_by %s" % (
+        _shown(pid),
+        reason,
+    )
+
+
 def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     """Why `ref` does not name a real mechanism, as the clause that follows the
     claimant -- or None when it resolves. Shared with check_V so that "name the
@@ -4892,12 +4935,12 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
     practice's `enforced_by`, a writer's `rerun_proof:`. Split out of
     _mechanism_findings rather than duplicated, because two graders of the same
     grammar drift and the drift is invisible until one of them is wrong."""
+    section_reason = _section_reason(ref)
+    if section_reason:
+        return section_reason
     m = _MECHANISM_RE.fullmatch(ref) if isinstance(ref, str) else None
     if not m:
-        return "names '%s', which is not in the mechanism grammar (%s)" % (
-            _shown(ref),
-            _MECHANISM_FORMS,
-        )
+        return _mechanism_grammar_reason(ref)
     form, value = m.group(1), m.group(2).strip()
     if form == "check":
         if re.fullmatch(r"[A-Z]", value):
@@ -4923,13 +4966,7 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
         if path not in tree:
             return "claims doc '%s', which does not exist" % _shown(path)
         if separator:
-            # Match the heading reader's bounded decimal grammar, including
-            # section zero, before any conversion or document read.
-            if not _DOCUMENT_NUMBER.fullmatch(section):
-                return "claims %s §%s, which names no numbered section" % (
-                    _shown(path),
-                    _shown(section),
-                )
+            # _section_reason fully matched the raw section before any read.
             present = sections_of(path)
             if present is None:
                 return None  # A failed read cannot prove a section is absent.
@@ -4950,10 +4987,14 @@ def _mechanism_findings(practices, check_ids, tree, make_targets, sections_of):
     entries = practices.get("practices") if isinstance(practices, dict) else None
     if not isinstance(entries, list):
         return errs
-    for entry in entries:
+    for practice_index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             continue
         pid = entry.get("id", "?")
+        id_reason = _practice_id_reason(pid)
+        if id_reason:
+            errs.append(id_reason)
+            continue
         refs = entry.get("enforced_by")
         if not isinstance(refs, list) or not refs:
             errs.append(
@@ -4962,13 +5003,15 @@ def _mechanism_findings(practices, check_ids, tree, make_targets, sections_of):
                 % (_shown(pid), _MECHANISM_FORMS)
             )
             continue
-        for ref in refs:
+        for ref_index, ref in enumerate(refs):
             reason = _mechanism_reason(ref, check_ids, tree, make_targets, sections_of)
             if reason:
-                errs.append(
-                    "config/practices.json: practice '%s' enforced_by %s"
-                    % (_shown(pid), reason)
-                )
+                finding = _practice_mechanism_finding(pid, reason)
+                errs.append(finding)
+                if _section_reason(ref):
+                    _PRACTICE_SECTION_FAULTS[
+                        ("config/practices.json", practice_index, ref_index)
+                    ] = finding
     return errs
 
 
@@ -5055,26 +5098,37 @@ def _policy_reachability_findings(practices, docs):
     if not isinstance(entries, list) or _AGENT_RULES not in docs:
         return []
     cited = {}
+    errs = []
     for entry in entries:
         if not isinstance(entry, dict):
+            continue
+        pid = entry.get("id", "?")
+        id_reason = _practice_id_reason(pid)
+        if id_reason:
+            errs.append(id_reason)
             continue
         refs = entry.get("enforced_by")
         if not isinstance(refs, list):
             continue  # check_T reports the malformed mechanism list.
         for ref in refs:
-            if not isinstance(ref, str) or not ref.startswith("doc:"):
+            if not isinstance(ref, str):
+                errs.append(
+                    _practice_mechanism_finding(pid, _mechanism_grammar_reason(ref))
+                )
+                continue
+            if not ref.startswith("doc:") or _section_reason(ref):
+                # check_T owns a section fault; it cannot also prove reachability.
                 continue
             path = ref[len("doc:") :].partition(" ")[0].strip()
             if path in docs:
-                cited.setdefault(path, []).append(_shown(entry.get("id", "?")))
+                cited.setdefault(path, []).append(_shown(pid))
     if not cited:
-        return []
+        return errs
     known = set(docs)
     hop0 = _document_references(_AGENT_RULES, docs[_AGENT_RULES], known)
     reachable = set(hop0)
     for doc in sorted(hop0):
         reachable |= _document_references(doc, docs[doc], known)
-    errs = []
     for path in sorted(cited):
         if path in reachable:
             continue
@@ -5111,7 +5165,9 @@ def check_U():
             if text is not None:
                 docs[f if reldir == "." else reldir + "/" + f] = text
     for m in _policy_reachability_findings(practices, docs):
-        err(m)
+        if m not in errors:
+            # Both readers reject non-string members; check_T already named it.
+            err(m)
 
 
 # --- check_V: a writer says what a second run does -----------------------------
@@ -8740,12 +8796,15 @@ def run_checks(root, *, project_checks=True):
     False: a project check is the audited project's code."""
     global ROOT, errors, warnings, GOVERNED, _CONFIG_READ, _READ_REPORTED
     global _PROJECT_CHECKS, _PARSE_REPORTED, _PARSE_DEFERRED
+    global _CONFIG_REFUSALS, _PRACTICE_SECTION_FAULTS
     ROOT = os.path.abspath(root)
     errors = []
     warnings = []
     GOVERNED = []
     _CONFIG_READ = {}
     _READ_REPORTED = set()
+    _CONFIG_REFUSALS = {}
+    _PRACTICE_SECTION_FAULTS = {}
     _PARSE_REPORTED = set()
     _PARSE_DEFERRED = set()
     _PROJECT_CHECKS = None
@@ -8802,10 +8861,30 @@ def main(argv=None):
         found = run_checks(args.root)
     except config_loader.ConfigError as exc:
         return exit_codes.report(
-            exit_codes.ExitCode.CONFIG,
+            exit_codes.ExitCode.USAGE
+            if config_loader.is_conflict(exc)
+            else exit_codes.ExitCode.CONFIG,
             "check_structure: configured input cannot be used",
             "; ".join(exc.lines),
             "repair the named input and key, then rerun",
+        )
+    if _CONFIG_REFUSALS:
+        return exit_codes.report(
+            exit_codes.ExitCode.USAGE
+            if any(conflict for conflict, _lines in _CONFIG_REFUSALS.values())
+            else exit_codes.ExitCode.CONFIG,
+            "check_structure: configured input cannot be used",
+            "; ".join(
+                line for _conflict, lines in _CONFIG_REFUSALS.values() for line in lines
+            ),
+            "repair the named config file, resolving any hunk, then rerun",
+        )
+    if _PRACTICE_SECTION_FAULTS:
+        return exit_codes.report(
+            exit_codes.ExitCode.CONFIG,
+            "check_structure: practices section cannot be used",
+            "; ".join(_PRACTICE_SECTION_FAULTS.values()),
+            "write each section as one to four ASCII digits, then rerun",
         )
     for _letter, tier, m in found:
         if tier == "warning":

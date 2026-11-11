@@ -9,7 +9,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-10
+updated: 2026-11-11
 visibility: internal
 canonical: true
 ---
@@ -77,8 +77,11 @@ everything and therefore expect the project interpreter.
 | Generic-solution advisor | `scripts/check_generic.py` | report | 3.6-safe | Distinctive literals asserted as golden in tests **and** hardcoded in `src/` logic (the "answer-key" overfit smell, §18). Advisory only — never fails the build |
 | Coding-practices advisor | `scripts/check_practices.py` | report | 3.6-safe | Coding-practice smells (a provider constructed inline instead of injected, a ≥3-branch `isinstance` chain, a `# hot-path` class without `__slots__`, a resource acquired outside a `with`). Reads `config/practices.json`; advisory only — never fails the build (see [coding-practices](coding-practices.md)) |
 
-All gates exit **0 = clean, 1 = failure**. Warnings (e.g. a missing `owner`)
-print but never fail the build.
+Judged errors exit **1 = FAILURE** and a clean run exits **0 = SUCCESS**.
+The structure gate refuses a loader-refused project or practices file with
+**14 = CONFIG**, or **2 = USAGE** for a conflict hunk.
+A practices section outside `[0-9]{1,4}` also exits CONFIG.
+Warnings (e.g. a missing `owner`) print but never fail the build.
 
 ---
 
@@ -331,6 +334,10 @@ print but never fail the build.
   is registered in `scripts/checks_data.py` `CHECKS`, the script/test/doc exists
   (and has that numbered section), the make target is a rule.
   A bare check letter is refused with the id spelling to write.
+  A section fully matches `[0-9]{1,4}` before integer conversion; any other
+  section text gives one finding and a CONFIG exit. A missing check, file,
+  target or valid numeric section stays a FAILURE finding. Non-string practice
+  ids and references give grammar findings before text conversion.
   `ruff:`/`mypy:` codes are accepted as written —
   the tools themselves reject an unknown one. `mechanism` stays as prose for a
   reader; this is the same claim a machine can hold. Silent without a
@@ -347,6 +354,8 @@ print but never fail the build.
   this repository names a document; fenced code does not, being an illustration.
   A `doc:` path absent from the tree is `check_T`'s finding and is not reported
   twice here. Silent without a practices registry or without a root `AGENT.md`.
+  A non-list `enforced_by` is left to check_T's list finding. Non-string ids
+  and references give grammar findings; a run reports each shared fault once.
   The live instance this closed: `docs/guides/doc-style.md` shipped as the
   canonical statement of how documentation is written, was cited by four
   practices, and was named by nothing an agent reads by default.
@@ -355,7 +364,9 @@ print but never fail the build.
   `tool_effect` vocabulary, reused rather than re-invented) and says what
   re-running it does (`rerun:` from `fixed-point` / `append-only` / `unsafe`); a
   `fixed-point` claim names a `rerun_proof:` in the same closed grammar
-  `check_T` holds `enforced_by` to. Every doer here already reached a fixed
+  `check_T` holds `enforced_by` to. Python and shell proof sections fully match
+  `[0-9]{1,4}`; a bad section gives one FAILURE finding, without practices
+  CONFIG provenance. Every doer here already reached a fixed
   point when it was measured — generation, the corpus, both schemas, the static
   snapshot — and nothing held it there: the property was a habit, and a habit is
   exactly what a generated project does not inherit. The detector resolves the

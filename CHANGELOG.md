@@ -21,6 +21,12 @@ version rather than a bare commit:
   `isError=true` without a model call. Empty lists, served citations and plain
   `RuntimeError` for a nonzero query remain covered by controls.
 
+- **Practices section faults refuse safely (KEEL-CFGCRASH-1, CMP-15.S2).**
+  Sections fully match `[0-9]{1,4}` before conversion. Invalid practices sections
+  and loader-refused practices files exit CONFIG, or USAGE for a conflict hunk;
+  source proof sections stay one FAILURE finding. Non-string ids and references
+  get grammar findings, and refusal provenance resets on every run.
+
 - **Refactor recovery and human discard are explicit (KEEL-ROLLBACK-2).**
   `--recover` replays or cleans the journal without reading stdin or a spec.
   Human-only `--discard-journal --yes` abandons evidence without touching targets.

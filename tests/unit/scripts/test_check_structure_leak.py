@@ -848,9 +848,6 @@ def test_a_deep_non_string_mechanism_is_a_finding(monkeypatch, leaf, letter):
         letter,
         [(_PRACTICES, ("practices", 0, "enforced_by", 0), "V", value)],
     )
-    if letter == "U":
-        assert errors == []  # T owns malformed claims; U cannot prove reachability.
-        return
     assert len(errors) == 1, errors
     assert "config/practices.json" in errors[0] and "enforced_by" in errors[0]
     assert "not in the mechanism grammar" in errors[0]

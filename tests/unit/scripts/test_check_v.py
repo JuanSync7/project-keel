@@ -176,6 +176,28 @@ def test_a_proof_outside_the_mechanism_grammar_errors():
     assert len(errs) == 1 and "grammar" in errs[0], errs
 
 
+@pytest.mark.parametrize("shell", [False, True])
+@pytest.mark.parametrize("section", ["x", "0_3", "٣", "12345", "2@private"])
+def test_a_bad_doc_proof_section_is_one_failure_finding(shell, section):
+    keys = {
+        "effect": "writes",
+        "rerun": "fixed-point",
+        "rerun_proof": "doc:docs/guides/idempotency.md " + _S + section,
+    }
+    source = _sh(**keys) if shell else _header(**keys) + "open(p, 'w')\n"
+    find = cs._shell_effect_findings if shell else cs._effect_declaration_findings
+    errs, warns = find(
+        {"scripts/w.sh" if shell else "scripts/w.py": source},
+        _IDS,
+        _TREE,
+        _TARGETS,
+        lambda _: {3},
+    )
+    assert warns == [] and len(errs) == 1, (errs, warns)
+    assert "rerun_proof" in errs[0] and "section" in errs[0], errs
+    assert "private" not in errs[0], errs
+
+
 def test_the_other_rerun_values_need_no_proof():
     """`append-only` and `unsafe` are admissions, not claims: there is nothing to
     prove, and requiring a proof would push an honest author toward the

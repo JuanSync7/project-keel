@@ -156,3 +156,39 @@ def test_no_agent_rules_file_is_silent():
         _find(_registry("doc:docs/guides/style.md"), {"docs/guides/style.md": "# S\n"})
         == []
     )
+
+
+@pytest.mark.parametrize("has_policy", [False, True])
+def test_a_nonstring_ref_gets_a_grammar_finding_before_prefix_or_path(has_policy):
+    member = []
+    for _ in range(sys.getrecursionlimit() * 2):
+        member = [member]
+    with pytest.raises(RecursionError):
+        str(member)
+    docs = {"AGENT.md": ""}
+    if has_policy:
+        docs["docs/guides/style.md"] = "# S\n"
+    errs = _find(_registry(member), docs)
+    assert len(errs) == 1 and "grammar" in errs[0], errs
+
+
+def test_a_nonstring_id_gets_a_grammar_finding_before_collection():
+    member = []
+    for _ in range(sys.getrecursionlimit() * 2):
+        member = [member]
+    with pytest.raises(RecursionError):
+        str(member)
+    reg = {"practices": [{"id": member, "enforced_by": ["doc:d.md"]}]}
+    errs = _find(reg, {"AGENT.md": "", "d.md": "# D\n"})
+    assert len(errs) == 1 and "id" in errs[0] and "grammar" in errs[0], errs
+
+
+def test_a_nonlist_enforced_by_is_owned_by_check_t():
+    reg = {"practices": [{"id": "p", "enforced_by": 1}]}
+    assert _find(reg, {"AGENT.md": ""}) == []
+    errs = cs._mechanism_findings(reg, set(), set(), set(), lambda _: None)
+    assert len(errs) == 1 and "list" in errs[0], errs
+
+
+def test_a_section_fault_does_not_also_report_an_unreachable_policy():
+    assert _find(_registry("doc:d.md " + _S + "x"), {"AGENT.md": "", "d.md": ""}) == []

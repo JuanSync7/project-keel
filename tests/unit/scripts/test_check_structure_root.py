@@ -125,16 +125,16 @@ def test_bad_numbered_heading_is_reported_once_across_checks(tmp_path):
         messages = [
             message
             for _, tier, message in findings
-            if tier == "error" and "numbered section exceeds" in message
+            if tier == "error" and "numbered section must match" in message
         ]
         assert messages == [
-            "docs/target.md:1: numbered section exceeds four digits -- shorten the number"
+            "docs/target.md:1: numbered section must match [0-9]{1,4} -- use one to four ASCII digits"
         ]
 
 
 @pytest.mark.parametrize(
     "section",
-    ["x", "tok@host", "²", "9" * 5000, "-1", "1.5", "", "+1", "1_0"],
+    ["x", "tok@host", "²", "9" * 5000, "-1", "1.5", "", "+1", "1_0", "١"],
     ids=[
         "text",
         "hidden",
@@ -145,6 +145,7 @@ def test_bad_numbered_heading_is_reported_once_across_checks(tmp_path):
         "empty",
         "sign",
         "underscore",
+        "nonascii",
     ],
 )
 def test_bad_doc_mechanism_section_is_a_finding(tmp_path, monkeypatch, section):
@@ -174,7 +175,7 @@ def test_bad_doc_mechanism_section_is_a_finding(tmp_path, monkeypatch, section):
     assert cs.run_checks(str(root), project_checks=False) == findings
 
 
-@pytest.mark.parametrize("section", ["0", "1", "0001", "١", "9999"])
+@pytest.mark.parametrize("section", ["0", "1", "0001", "9999"])
 def test_doc_mechanism_uses_the_heading_readers_decimal_grammar(
     tmp_path, monkeypatch, section
 ):
