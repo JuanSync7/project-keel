@@ -73,6 +73,41 @@ def test_a_policy_nothing_names_errors_naming_the_practice_and_the_remedy():
     assert "p0" in errs[0] and "docs/guides/doc-style.md" in errs[0] and "--" in errs[0]
 
 
+@pytest.mark.parametrize("path", ["x.md", "policy guide.md"])
+def test_a_leading_space_preserves_the_unreachable_policy_finding(path):
+    docs = {"AGENT.md": "Nothing here.\n", path: "# Policy\n"}
+    expected = _find(_registry("doc:" + path), docs)
+    assert len(expected) == 1 and path in expected[0], expected
+    assert _find(_registry("doc:  " + path), docs) == expected
+
+
+@pytest.mark.parametrize("path", ["x.md", "policy guide.md"])
+def test_a_reachable_leading_space_policy_passes(path):
+    docs = {"AGENT.md": "Read [policy](<" + path + ">).\n", path: "# Policy\n"}
+    assert path in cs._document_references("AGENT.md", docs["AGENT.md"], set(docs))
+    assert _find(_registry("doc:  " + path), docs) == []
+
+
+@pytest.mark.parametrize("path", ["x.md", "policy guide.md"])
+def test_check_t_and_u_resolve_the_same_whitespace_and_section_path(path):
+    docs = {"AGENT.md": "Nothing here.\n", path: "## 4. Policy\n"}
+    ref = "doc:  " + path + " " + _S + "4\t"
+    read_paths = []
+
+    def sections_of(document):
+        read_paths.append(document)
+        return {4}
+
+    assert (
+        cs._mechanism_findings(_registry(ref), set(), set(docs), set(), sections_of)
+        == []
+    )
+    assert read_paths == [path]
+    expected = _find(_registry("doc:" + path), docs)
+    assert len(expected) == 1 and path in expected[0], expected
+    assert _find(_registry(ref), docs) == expected
+
+
 def test_the_section_suffix_is_not_part_of_the_path():
     docs = {
         "AGENT.md": "Read `docs/guides/style.md`.\n",

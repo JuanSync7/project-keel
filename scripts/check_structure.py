@@ -4893,15 +4893,28 @@ def _mechanism_parts(ref: object) -> Optional[Tuple[str, str]]:
     return (match.group(1), match.group(2).strip()) if match else None
 
 
-def _section_reason(ref: object) -> Optional[str]:
-    """The section grammar fault using the mechanism reader's whitespace rule."""
+def _doc_target(value: str) -> Tuple[str, Optional[str]]:
+    """A trimmed `doc:` value's path and section (None when it names no section)."""
+    path, separator, section = value.partition(" §")
+    return path, section if separator else None
+
+
+def _doc_mechanism_parts(ref: object) -> Optional[Tuple[str, Optional[str]]]:
+    """Return a doc mechanism's path and section (None if absent), or None for non-docs."""
     if not isinstance(ref, str) or not ref.startswith("doc:"):
         return None
     parts = _mechanism_parts(ref)
     # An invalid outer grammar must not hide a malformed section's CONFIG exit.
-    value = parts[1] if parts is not None else ref[len("doc:") :]
-    path, separator, section = value.partition(" §")
-    if separator and not _ASCII_NUMBER.fullmatch(section):
+    return _doc_target(parts[1] if parts is not None else ref[len("doc:") :])
+
+
+def _section_reason(ref: object) -> Optional[str]:
+    """The section grammar fault using the mechanism reader's whitespace rule."""
+    parts = _doc_mechanism_parts(ref)
+    if parts is None:
+        return None
+    path, section = parts
+    if section is not None and not _ASCII_NUMBER.fullmatch(section):
         return "claims %s §%s, which names no numbered section -- use [0-9]{1,4}" % (
             _shown(path),
             _shown(section),
@@ -4969,10 +4982,10 @@ def _mechanism_reason(ref, check_ids, tree, make_targets, sections_of):
                 value
             )
     elif form == "doc":
-        path, separator, section = value.partition(" §")
+        path, section = _doc_target(value)
         if path not in tree:
             return "claims doc '%s', which does not exist" % _shown(path)
-        if separator:
+        if section is not None:
             # _section_reason matched the same trimmed value before any read.
             present = sections_of(path)
             if present is None:
@@ -5124,10 +5137,11 @@ def _policy_reachability_findings(practices, docs):
                     _practice_mechanism_finding(pid, _mechanism_grammar_reason(ref))
                 )
                 continue
-            if not ref.startswith("doc:") or _section_reason(ref):
+            parts = _doc_mechanism_parts(ref)
+            if parts is None or _section_reason(ref):
                 # check_T owns a section fault; it cannot also prove reachability.
                 continue
-            path = ref[len("doc:") :].partition(" ")[0].strip()
+            path, _section = parts
             if path in docs:
                 cited.setdefault(path, []).append(_shown(pid))
     if not cited:

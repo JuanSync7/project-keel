@@ -15,6 +15,10 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **Document mechanisms share path and section parsing (KEEL-CFGCRASH-19).**
+  Checks T and U resolve whitespace and paths containing spaces alike, so a
+  leading space cannot hide an unreachable policy. Writer proofs share the parser.
+
 - **Practices sections share mechanism whitespace rules (KEEL-CFGCRASH-18).**
   Trailing spaces and tabs resolve; inner non-digits still exit CONFIG.
   Reachable non-string practice ids are refused with one FAILURE finding,
