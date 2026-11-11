@@ -167,8 +167,7 @@ def _import_names(node: ast.AST, importer: str, calls: set[str]) -> list[str]:
                 return []
             try:
                 name = importlib.util.resolve_name(name, package)
-            except ImportError:
-                # An invalid relative name cannot load a module at runtime.
+            except ImportError:  # noqa: DROP001 -- an invalid relative name cannot load a module at runtime
                 return []
         return [name]
     if not isinstance(node, ast.ImportFrom):
