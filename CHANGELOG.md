@@ -15,6 +15,12 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **The gRPC judge test runs in every project (KEEL-GRPC-2).**
+  `test_an_enabled_grpc_transport_judges_its_packages` no longer skips without
+  `api/grpc`, because every project carries the `grpc` extra; a generated REST-only
+  project must collect and pass it. The generated README's `.[dev]` comment names
+  the gRPC packages when the project answers gRPC.
+
 - **A shipped document may not report a change (KEEL-VOCAB-1).**
   `doc_drift.forbidden_phrases` refuses the compound forms "now uses", "no longer
   accepts" and "was renamed to" in shipped prose, and the gate reads the block

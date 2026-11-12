@@ -302,10 +302,6 @@ def test_every_transport_with_a_requirements_file_names_an_equal_extra():
     assert judged, "no transport directory holds a requirements.txt -- zero items"
 
 
-@pytest.mark.skipif(
-    not (_ROOT / "api" / "grpc").is_dir(),
-    reason="this project did not select the grpc transport, so it ships no grpc extra",
-)
 def test_an_enabled_grpc_transport_judges_its_packages(tmp_path, capsys):
     """With gRPC enabled and its extra named, a venv without grpcio fails and
     the pip command names the extra; with the packages, or with gRPC not
