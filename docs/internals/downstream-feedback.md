@@ -3746,6 +3746,22 @@ Will not do in CMP-23: CI path filters, because a documentation-only change stil
 | CMP-23.S3 | `make test` reports the slowest tests with `--durations` sized from config, and a `slow` marker lets `make unit` skip a test that the full gate still runs. | implemented — on main, delivered by 9c04a481; the done-condition is not re-audited |
 | CMP-23.S4 | CI caches pip downloads keyed on the dependency files, in the keel workflow and the template workflow. | implemented — on main, delivered by 32f015ac; the done-condition is not re-audited |
 
+## CMP-24 — a shipped document that reports a change fails the prose gate
+
+KEEL-VOCAB-1 (row 47) is partly open.
+`tests/integration/test_doc_drift.py` refuses `doc_drift.forbidden_phrases` in shipped prose, but those phrases name only one host or one person.
+`change_comments.phrases` holds code comments only, and `make doc-review` reports a change opener in prose as an advisory that never fails.
+The campaign adds a reviewed set of compound report phrases to `forbidden_phrases` and reads the block through `scripts/config_loader.py`.
+It does not promote the advisory openers, because a past participle or "now" at an opener is as often a present claim as a report.
+The cap is two slices, one pass each and three review fix rounds each under CONVENTIONS §17.
+Stop at CMP-24.S2 green or the cap.
+Will not do in CMP-24: duplicate a phrase literal in Python, change the fence grammar, or repair config decoders that the drift test does not read.
+
+| Slice | Gap | Status |
+|-------|-----|--------|
+| CMP-24.S1 | `tests/integration/test_doc_drift.py` refuses a reviewed set of compound report phrases that `doc_drift.forbidden_phrases` declares in both manifest twins, and reads the block through `scripts/config_loader.py` `KEYS`. | planned |
+| CMP-24.S2 | A generated project's own prose gate gives the same verdict on a planted report phrase (`tests/integration/test_copier_generation.py`), and CONVENTIONS §15 states the two collections' scopes. | planned |
+
 ## Queued after Campaign 6
 
 A queue id becomes a `CMP-<n>.S<m>` name only when an approved slice table
