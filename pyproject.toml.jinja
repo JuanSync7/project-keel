@@ -46,7 +46,7 @@ dev = [
   # and are named here because the check imports them itself.
   "packaging",
   "tomli; python_version < '3.11'",
-  "{{ project_slug }}[transport{% if "grpc" in transports %},grpc{% endif %}]",
+  "{{ project_slug }}[transport{% if 'grpc' in transports %},grpc{% endif %}]",
 ]
 # The REST transport's runtime packages (api/rest_fastapi). A deployment that
 # serves the API without the gate's tools installs this extra alone;

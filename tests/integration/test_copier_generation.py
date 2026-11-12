@@ -86,7 +86,10 @@ _TWIN_ANSWERS_BLOCK = (
 # answers gRPC, its `grpc` extra too: every install command a project ships names
 # `dev`, so the `dev` closure is how those commands reach the extras the gate judges
 # (test_shipped_install_command_reaches_every_extra_check_venv_judges). Everything else in that file shapes the
-# gate and must be identical, so it is pinned as text below.
+# gate and must be identical, so it is pinned as text below. A Jinja string
+# literal inside a TOML string is single-quoted: a double quote ends the TOML
+# string, and the unrendered template must still parse as TOML
+# (test_requirement_traceability reads its pytest ini from it).
 _PYPROJECT_ANSWER_FIELDS = (
     (
         "# Python src-layout. Distribution metadata for Project Keel.",
@@ -96,7 +99,7 @@ _PYPROJECT_ANSWER_FIELDS = (
     ('requires-python = ">=3.10"', 'requires-python = "{{ backend_python }}"'),
     (
         '"project_keel[transport]",',
-        '"{{ project_slug }}[transport{% if "grpc" in transports %},grpc{% endif %}]",',
+        "\"{{ project_slug }}[transport{% if 'grpc' in transports %},grpc{% endif %}]\",",
     ),
 )
 
