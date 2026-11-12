@@ -723,6 +723,12 @@ def _is_any_reason_map(value: Any) -> bool:
     return isinstance(value, dict) and all(_is_nonempty_str(v) for v in value.values())
 
 
+def _is_nonempty_map(value: Any) -> bool:
+    # Only the count is judged here: a consumer that echoes no hostile entry
+    # checks each entry's reason itself, since a refused entry is named.
+    return bool(value)
+
+
 def _bare_names(value: Any) -> bool:
     # A bare file name or a glob over one: a `/` would make it a path, and `.`
     # or `..` name a directory, never a file a rule can protect or carve out.
@@ -1219,6 +1225,15 @@ KEYS = tuple(
                 "nonempty_str",
                 NONE,
                 "the make target whose scripts the exit-code table lists",
+            ),
+            _row(
+                ("doc_drift", "forbidden_phrases"),
+                "object",
+                NONE,
+                "the regular expressions, each mapped to its reason, that a "
+                "shipped document's prose may not match: the gate "
+                "tests/integration/test_doc_drift.py refuses a match",
+                accepts=(_is_nonempty_map, "a non-empty map from regex to reason"),
             ),
             _row(
                 ("doc_drift", "history_paths"),

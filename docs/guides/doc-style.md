@@ -9,7 +9,7 @@ tags: [documentation, style, rosters, citations, freshness, guide]
 summary: The canonical statement of how documentation is written in this repo — the judgment half above the gated floor. What a document is for, one claim per sentence, the discriminator between siblings (rosters and NOT lines), the citation grammar, freshness as a fact, the plain imperative over BCP 14, idempotency stated and proven, and what the gate checks versus what a reviewer must judge. The twin of python-style.md.
 id: docs-guides-doc-style
 created: 2026-09-02
-updated: 2026-11-10
+updated: 2026-11-12
 visibility: internal
 canonical: true
 ---
@@ -247,9 +247,9 @@ edit that leaves the decision untouched, and that edit restamps `updated:`.
 | `updated:` no earlier than the last commit's author date; today when modified | `scripts/jobs/review_docs.py`, `tests/integration/test_doc_freshness.py`; fixed by `scripts/jobs/restamp_docs.py` | gate |
 | Every practice's `enforced_by` names a mechanism that exists | `check_T` | gate |
 | A practice enforced by a document names it where an agent reads it | `check_U` | gate |
-| No concrete campaign or slice id, host-specific phrase or undeclared loopback port in a shipped document's prose; no path under unconditional `docs/` exclusions only in any shipped text source, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), except a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` | `tests/integration/test_doc_drift.py` (CONVENTIONS §15, `doc_drift`) | gate |
+| No concrete campaign or slice id, host-specific phrase, compound report of a change (`doc_drift.forbidden_phrases`: `now uses`, `no longer accepts`, `was renamed to` and their siblings) or undeclared loopback port in a shipped document's prose; no path under unconditional `docs/` exclusions only in any shipped text source, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), except a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` | `tests/integration/test_doc_drift.py` (CONVENTIONS §15, `doc_drift`) | gate |
 | A cited check runs: a `check_<LETTER>` or prose "check X" is a letter of `check_structure.CHECKS`, and any other `check_<name>` is a Python file or definition in the tree | `tests/integration/test_doc_drift.py` (`check_citation_findings`) | gate |
-| No thought in a shipped document (paragraph, list item, heading, table cell, sentence) opens by reporting a change; a `change_comments.phrases` phrase at an opener is reported, since a past participle or "now" there is as often a present claim as a report | `scripts/jobs/review_docs.py` (`OPENER` lines), judged under `make doc-review` | advisory |
+| No thought in a shipped document (paragraph, list item, heading, table cell, sentence) opens by reporting a change; a `change_comments.phrases` phrase at an opener is reported, since a past participle or "now" there is as often a present claim as a report; only the compound forms named above fail the gate | `scripts/jobs/review_docs.py` (`OPENER` lines), judged under `make doc-review` | advisory |
 | The README and `docs/README.md` link directly to each document `doc_drift.one_hop` names; the README layout tree lists every top-level directory that ships | `tests/integration/test_doc_drift.py` (`doc_drift.one_hop`, `layout_heading`) | gate |
 | Every guide roster row names its audiences from `doc_drift.audiences`, in that order | `tests/integration/test_doc_drift.py` (`doc_drift.roster`, `audiences`) | gate |
 | The limits guide names every waiver the checkers, the child-process allowlist and the drift test grant, and every exit code of a script `make verify` runs | `tests/integration/test_doc_drift.py` (`doc_drift.limits_guide`, `gate_target`) | gate |

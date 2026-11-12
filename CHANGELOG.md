@@ -15,6 +15,11 @@ version rather than a bare commit:
 
 ## [Unreleased]
 
+- **A shipped document may not report a change (KEEL-VOCAB-1).**
+  `doc_drift.forbidden_phrases` refuses the compound forms "now uses", "no longer
+  accepts" and "was renamed to" in shipped prose, and the gate reads the block
+  through `scripts/config_loader.py`. Bare change openers stay advisory.
+
 - **Document mechanisms share path and section parsing (KEEL-CFGCRASH-19).**
   Checks T and U resolve whitespace and paths containing spaces alike, so a
   leading space cannot hide an unreachable policy. Writer proofs share the parser.

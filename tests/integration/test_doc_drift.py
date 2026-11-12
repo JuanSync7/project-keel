@@ -6,6 +6,7 @@ summary: The shipped-doc drift gate. A shipped document is any Markdown file (or
 """
 
 import ast
+import io
 import json
 import os
 import posixpath
@@ -86,6 +87,8 @@ _EXCLUSION_TABLE = ("Path", "Arrives")
 _PASSES_THROUGH = "passes through"
 # The key whose prefixes exempt a document from this gate: a waiver too.
 _HISTORY_KEY = "history_paths"
+_HISTORY_PATH = (_BLOCK, _HISTORY_KEY)
+_PHRASES_PATH = (_BLOCK, "forbidden_phrases")
 # The child-process allowlist module and the names of its config block and of
 # the tuple of keys it reads; every key there widens or narrows what a child
 # inherits, so each is a lever the limits guide names.
@@ -105,42 +108,30 @@ class DocDriftConfigError(AssertionError):
 
 
 def load_manifest(root):
-    path = Path(root) / "config" / "project.json"
-    if not path.is_file():
-        raise DocDriftConfigError("config/project.json is missing")
-    with path.open(encoding="utf-8") as fh:
-        manifest = json.load(fh)
-    if not isinstance(manifest, dict):
-        raise DocDriftConfigError("config/project.json: top level is not an object")
+    try:
+        manifest = config_loader.read(str(root))
+    except config_loader.ConfigError as exc:
+        raise DocDriftConfigError(str(exc)) from None
     return manifest
 
 
 def drift_policy(manifest: dict[str, Any]) -> dict[str, Any]:
-    """The `doc_drift` keys this file reads, validated. Raises
-    DocDriftConfigError naming the key, so a typo cannot fall back to nothing."""
-    block = manifest.get(_BLOCK)
-    if not isinstance(block, dict):
-        raise DocDriftConfigError(
-            "config/project.json: `%s` is missing or not an object" % _BLOCK
+    """The `doc_drift` keys this file reads, validated. The loader judges the
+    block against its `KEYS` rows; a refusal, or a reason that is not a
+    non-empty string, raises DocDriftConfigError naming the key, so a typo
+    cannot fall back to nothing."""
+    try:
+        values = config_loader.resolve(
+            manifest,
+            config_loader.rows(_HISTORY_PATH, _PHRASES_PATH),
+            config_loader.CONFIG_FILE,
+            environ={},
+            stream=io.StringIO(),
         )
-    history = block.get(_HISTORY_KEY)
-    if (
-        not isinstance(history, list)
-        or not history
-        or not all(isinstance(p, str) and p.strip() for p in history)
-    ):
-        raise DocDriftConfigError(
-            "config/project.json: `%s.%s` must be a non-empty list of "
-            "path prefixes" % (_BLOCK, _HISTORY_KEY)
-        )
-    phrases = block.get("forbidden_phrases")
-    if not isinstance(phrases, dict) or not phrases:
-        raise DocDriftConfigError(
-            "config/project.json: `%s.forbidden_phrases` must be a non-empty map "
-            "from regex to reason" % _BLOCK
-        )
+    except config_loader.ConfigError as exc:
+        raise DocDriftConfigError(str(exc)) from None
     compiled = []
-    for pattern, reason in sorted(phrases.items()):
+    for pattern, reason in sorted(values[_PHRASES_PATH].items()):
         if not isinstance(reason, str) or not reason.strip():
             raise DocDriftConfigError(
                 "config/project.json: `%s.forbidden_phrases` has an entry without "
@@ -153,7 +144,7 @@ def drift_policy(manifest: dict[str, Any]) -> dict[str, Any]:
         except config_loader.ConfigError as exc:
             raise DocDriftConfigError(str(exc)) from None
         compiled.append((regex, reason))
-    return {_HISTORY_KEY: tuple(history), "forbidden_phrases": compiled}
+    return {_HISTORY_KEY: tuple(values[_HISTORY_PATH]), "forbidden_phrases": compiled}
 
 
 def work_mention(manifest):
@@ -1609,6 +1600,156 @@ def test_a_planted_work_id_host_phrase_or_undeclared_port_reds_the_scan(
         port = _LOOPBACK_PORT.search(planted).group(1)
         (tmp_path / "serve.py").write_text("PORT = %s\n" % port, encoding="utf-8")
         assert scan(source + "\n" + planted + "\n") == []
+
+
+# A report of a change names the moment it describes, so it is history. The
+# patterns are the manifest's; each planted form pairs with a reason fragment.
+_REPORT_PATTERNS = [
+    (
+        r"(?i)\bnow\s+(?:uses|reads|accepts|rejects|supports|requires|ships)\b",
+        "temporal implementation claim",
+    ),
+    (
+        r"(?i)\bno longer\s+(?:uses|accepts|rejects|supports|requires)\b",
+        "temporal negative implementation claim",
+    ),
+    (
+        r"(?i)\b(?:was|were)\s+(?:changed|renamed|moved)\s+(?:to|from)\b",
+        "passive modification report",
+    ),
+]
+_REPORT_FORMS = [
+    ("The loader now uses a stricter reader.", "temporal implementation claim"),
+    ("Now reads the manifest first.", "temporal implementation claim"),
+    ("Since the rewrite the gate no longer accepts blank paths.", "temporal negative"),
+    ("No longer rejects a blank path.", "temporal negative"),
+    ("The key was renamed to timeout.", "passive modification report"),
+    ("Was moved from the old file.", "passive modification report"),
+]
+
+
+@pytest.mark.parametrize(
+    "planted, reason",
+    _REPORT_FORMS,
+    ids=[
+        "now-lower",
+        "now-upper",
+        "no-longer-mid",
+        "no-longer-upper",
+        "renamed",
+        "moved",
+    ],
+)
+def test_a_planted_report_of_a_change_reds_the_scan_with_path_line_and_reason(
+    tmp_path, manifest, policy, docs, planted, reason
+):
+    assert policy["forbidden_phrases"], "a scan with no phrase judges nothing"
+    mention = work_mention(manifest)
+    source = dict(docs)["CONTRIBUTING.md"]
+    assert source.strip(), "the planted guide must be non-empty"
+    doc = tmp_path / "CONTRIBUTING.md"
+
+    def scan(text):
+        doc.write_text(text, encoding="utf-8")
+        found = shipped_docs(tmp_path, policy["history_paths"])
+        assert found, "a pass over zero documents is a failure"
+        return moment_and_host_findings(found, policy, mention, tmp_path)
+
+    assert scan(source) == [], "the unplanted copy must be clean"
+    text = source + "\n" + planted
+    line = len(text.split("\n"))
+    findings = scan(text + "\n")
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("CONTRIBUTING.md:%d:" % line), findings
+    assert reason in findings[0], findings
+    for exempt in (
+        "`%s`" % planted,
+        "```\n%s\n```" % planted,
+        "~~~\n%s\n~~~" % planted,
+    ):
+        assert scan(source + "\n" + exempt + "\n") == [], exempt
+    history = tmp_path / "docs" / "design"
+    history.mkdir(parents=True)
+    (history / "plan.md").write_text(planted + "\n", encoding="utf-8")
+    assert scan(source) == [], "a history document may report a change"
+
+
+def test_the_patterns_are_data_two_synthetic_policies_give_two_verdicts(tmp_path):
+    def policy_for(pattern):
+        return drift_policy(
+            {
+                "doc_drift": {
+                    "history_paths": ["history/"],
+                    "forbidden_phrases": {pattern: "a synthetic reason"},
+                }
+            }
+        )
+
+    found = [("guide.md", "A widget sits beside a gadget.\n")]
+    never = re.compile("never")
+    widget = moment_and_host_findings(found, policy_for(r"\bwidget\b"), never, tmp_path)
+    gadget = moment_and_host_findings(found, policy_for(r"\bgadget\b"), never, tmp_path)
+    assert [f.split(" -- ")[0] for f in widget] == ["guide.md:1: 'widget'"], widget
+    assert [f.split(" -- ")[0] for f in gadget] == ["guide.md:1: 'gadget'"], gadget
+
+
+@pytest.mark.parametrize(
+    "path, phrase",
+    [
+        ("docs/reference/settings.md", "no longer reads"),
+        ("docs/guides/limits-and-troubleshooting.md", "nothing was changed"),
+    ],
+    ids=["settings", "limits"],
+)
+def test_a_real_present_claim_in_the_corpus_stays_accepted(
+    manifest, policy, path, phrase
+):
+    text = (_ROOT / path).read_text(encoding="utf-8")
+    prose = "\n".join(cs._prose_lines(text))
+    assert phrase in prose, "the present claim must sit in prose, not a span"
+    found = [(path, text)]
+    assert moment_and_host_findings(found, policy, work_mention(manifest), _ROOT) == []
+
+
+def test_the_report_patterns_ship_in_both_manifest_twins(policy):
+    on_tree = {regex.pattern: reason for regex, reason in policy["forbidden_phrases"]}
+    assert len(_REPORT_PATTERNS) == 3
+    for name in ("project.json", "project.json.jinja"):
+        text = (_ROOT / "config" / name).read_text(encoding="utf-8")
+        for pattern, reason in _REPORT_PATTERNS:
+            assert on_tree[pattern].startswith(reason), pattern
+            entry = "%s: %s" % (json.dumps(pattern), json.dumps(on_tree[pattern]))
+            assert entry in text, "%s lacks %s" % (name, pattern)
+
+
+def test_the_policy_is_read_through_the_loader(monkeypatch):
+    resolved = []
+    read = []
+    real_resolve = config_loader.resolve
+    real_read = config_loader.read
+
+    def resolve_spy(loaded, keys, where, *args, **kwargs):
+        keys = tuple(keys)
+        resolved.append({key.path for key in keys})
+        return real_resolve(loaded, keys, where, *args, **kwargs)
+
+    def read_spy(root, relpath=config_loader.CONFIG_FILE):
+        read.append(relpath)
+        return real_read(root, relpath)
+
+    monkeypatch.setattr(config_loader, "resolve", resolve_spy)
+    monkeypatch.setattr(config_loader, "read", read_spy)
+    drift_policy(load_manifest(_ROOT))
+    assert read == [config_loader.CONFIG_FILE]
+    assert resolved == [{(_BLOCK, _HISTORY_KEY), (_BLOCK, "forbidden_phrases")}]
+    assert resolved[0] <= {key.path for key in config_loader.KEYS}
+
+
+def test_a_loader_refusal_is_a_doc_drift_config_error():
+    with pytest.raises(DocDriftConfigError, match="doc_drift.forbidden_phrases"):
+        drift_policy(
+            {"doc_drift": {"history_paths": ["h/"], "forbidden_phrases": ["x"]}}
+        )
 
 
 def test_no_shipped_doc_cites_a_document_the_template_never_ships():
