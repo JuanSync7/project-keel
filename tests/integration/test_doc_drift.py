@@ -1602,22 +1602,8 @@ def test_a_planted_work_id_host_phrase_or_undeclared_port_reds_the_scan(
         assert scan(source + "\n" + planted + "\n") == []
 
 
-# A report of a change names the moment it describes, so it is history. The
-# patterns are the manifest's; each planted form pairs with a reason fragment.
-_REPORT_PATTERNS = [
-    (
-        r"(?i)\bnow\s+(?:uses|reads|accepts|rejects|supports|requires|ships)\b",
-        "temporal implementation claim",
-    ),
-    (
-        r"(?i)\bno longer\s+(?:uses|accepts|rejects|supports|requires)\b",
-        "temporal negative implementation claim",
-    ),
-    (
-        r"(?i)\b(?:was|were)\s+(?:changed|renamed|moved)\s+(?:to|from)\b",
-        "passive modification report",
-    ),
-]
+# A report of a change names the moment it describes, so it is history. Each
+# planted form pairs with a fragment of the manifest reason that refuses it.
 _REPORT_FORMS = [
     ("The loader now uses a stricter reader.", "temporal implementation claim"),
     ("Now reads the manifest first.", "temporal implementation claim"),
@@ -1711,15 +1697,22 @@ def test_a_real_present_claim_in_the_corpus_stays_accepted(
     assert moment_and_host_findings(found, policy, work_mention(manifest), _ROOT) == []
 
 
-def test_the_report_patterns_ship_in_both_manifest_twins(policy):
-    on_tree = {regex.pattern: reason for regex, reason in policy["forbidden_phrases"]}
-    assert len(_REPORT_PATTERNS) == 3
-    for name in ("project.json", "project.json.jinja"):
-        text = (_ROOT / "config" / name).read_text(encoding="utf-8")
-        for pattern, reason in _REPORT_PATTERNS:
-            assert on_tree[pattern].startswith(reason), pattern
-            entry = "%s: %s" % (json.dumps(pattern), json.dumps(on_tree[pattern]))
-            assert entry in text, "%s lacks %s" % (name, pattern)
+def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
+    """A generated project refuses what keel refuses: each `forbidden_phrases`
+    entry keel reads appears, byte for byte, in the `.jinja` twin copier
+    renders. The expected set is the policy itself, never retyped here."""
+    twin = _ROOT / "config" / "project.json.jinja"
+    if not twin.is_file():
+        pytest.skip(_TEMPLATE_ONLY)
+    entries = policy["forbidden_phrases"]
+    assert entries, "a parity check over zero phrases proves nothing"
+    text = twin.read_text(encoding="utf-8")
+    missing = [
+        regex.pattern
+        for regex, reason in entries
+        if "%s: %s" % (json.dumps(regex.pattern), json.dumps(reason)) not in text
+    ]
+    assert missing == [], "config/project.json.jinja lacks %s" % missing
 
 
 def test_the_policy_is_read_through_the_loader(monkeypatch):
@@ -2016,6 +2009,11 @@ def test_a_missing_or_malformed_doc_drift_block_fails_closed(manifest):
     bad = dict(manifest, doc_drift={"history_paths": [], "forbidden_phrases": {}})
     with pytest.raises(DocDriftConfigError, match="history_paths"):
         drift_policy(bad)
+    # The empty map alone, beside valid history paths: paired with an empty
+    # history list above, the history guard fails first and hides this one.
+    block = dict(manifest[_BLOCK], forbidden_phrases={})
+    with pytest.raises(DocDriftConfigError, match="forbidden_phrases"):
+        drift_policy(dict(manifest, doc_drift=block))
     for key in (
         "one_hop",
         "audiences",
