@@ -9,7 +9,7 @@ tags: [tool, documentation, freshness, rosters, review]
 summary: Read-only documentation review — stale `updated:` stamps, backticked paths that resolve to nothing, thoughts that open with a change phrase, and every roster row, as JSON.
 id: tool-review-docs
 created: 2026-09-02
-updated: 2026-11-10
+updated: 2026-11-12
 visibility: internal
 canonical: true
 tool_command: python3 scripts/jobs/review_docs.py --json

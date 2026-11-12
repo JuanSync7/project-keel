@@ -551,6 +551,15 @@ def _paragraphs(
     return out
 
 
+def _line_of(match: re.Match[str], starts: list[int]) -> int:
+    """The 0-based line, within its paragraph, of *match*'s first non-space
+    character. A pattern may open on the whitespace before its word, and in a
+    joined paragraph that whitespace can be the previous line's break."""
+    text = match.group(0)
+    offset = match.start() + len(text) - len(text.lstrip())
+    return bisect.bisect_right(starts, offset) - 1
+
+
 def moment_and_host_findings(
     docs: list[tuple[str, str]],
     policy: dict[str, Any],
@@ -599,7 +608,7 @@ def moment_and_host_findings(
                     "%s:%d: %r -- %s"
                     % (
                         relpath,
-                        first + bisect.bisect_right(starts, m.start()) - 1,
+                        first + _line_of(m, starts),
                         " ".join(m.group(0).split()),
                         reason,
                     )
@@ -1816,6 +1825,24 @@ def test_every_report_in_one_paragraph_is_a_finding_at_its_own_line(
         where = "CONTRIBUTING.md:%d:" % (first + offset)
         hit = [f for f in findings if f.startswith(where)]
         assert len(hit) == 1 and reason in hit[0], (form, findings)
+
+
+def test_a_match_opening_on_a_line_break_is_reported_at_its_word(
+    tmp_path, manifest, policy, docs
+):
+    """A home-directory pattern opens on the whitespace before the path; when a
+    wrap puts the path at a line start, the finding names the path's line, not
+    the line the break ends."""
+    source = dict(docs)["CONTRIBUTING.md"]
+    path_line = len(source.split("\n")) + 2
+    doc = tmp_path / "CONTRIBUTING.md"
+    doc.write_text(source + "\nSee\n/home/someone/notes for it.\n", encoding="utf-8")
+    found = shipped_docs(tmp_path, policy["history_paths"])
+    assert found, "a pass over zero documents is a failure"
+    findings = moment_and_host_findings(found, policy, work_mention(manifest), tmp_path)
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("CONTRIBUTING.md:%d:" % path_line), findings
+    assert "home-directory" in findings[0], findings
 
 
 def test_the_patterns_are_data_two_synthetic_policies_give_two_verdicts(tmp_path):
