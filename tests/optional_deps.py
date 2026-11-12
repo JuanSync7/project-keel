@@ -58,6 +58,7 @@ SURFACES = {
     "template": 'pip install -e ".[dev,template]"',  # copier + its yaml
     "dev": 'pip install -e ".[dev,template]"',  # pytest, jsonschema, httpx
     "transport": 'pip install -e ".[dev,template]"',  # dev names transport
+    "grpc": 'pip install -e ".[grpc]"',  # grpcio, grpcio-tools, protobuf
     "secrets": "make secrets-install",  # the pinned secret scanner, recorded
 }
 

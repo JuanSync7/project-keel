@@ -33,3 +33,26 @@ def test_required_import_still_raises(monkeypatch):
 def test_available_optional_import_returns_module(monkeypatch):
     monkeypatch.setattr(optional_deps, "required_extras", lambda loaded: set())
     assert optional_deps.importorskip("sys", extra="template") is sys
+
+
+def test_every_transport_extra_the_config_names_is_a_known_surface():
+    """A transport extra missing from SURFACES makes required_extras raise the
+    moment that transport is enabled, so the pair is held at rest."""
+    import config_loader
+
+    named = config_loader.read(optional_deps._ROOT)["transports"]["extras"]
+    assert named, "transports.extras names nothing -- zero items"
+    assert set(named.values()) <= set(optional_deps.SURFACES)
+
+
+def test_an_enabled_grpc_transport_owes_the_grpc_surface(monkeypatch):
+    monkeypatch.delenv(optional_deps.ENV_VAR, raising=False)
+    loaded = {
+        "transports": {
+            "enabled": ["rest", "grpc"],
+            "extras": {"rest": "transport", "grpc": "grpc"},
+        }
+    }
+    assert optional_deps.required_extras(loaded) == {"transport", "grpc"}
+    loaded["transports"]["enabled"] = ["rest"]
+    assert optional_deps.required_extras(loaded) == {"transport"}

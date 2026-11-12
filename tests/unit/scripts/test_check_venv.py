@@ -2,7 +2,7 @@
 title: Unit — check_venv (the venv holds what pyproject.toml declares)
 kind: tests
 layer: n/a
-summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The pip command carries `--index-url <url>` when config/project.json `install_sources.python_index` sets one and no flag when it is null, quoted as one shell word, and an index holding an `@` in any spelling of a user part is CONFIG that never shows it; the hint for a missing TOML reader carries the same flag. The transport extra and api/rest_fastapi/requirements.txt are held equal.
+summary: scripts/check_venv.py driven with a scratch pyproject.toml, an injected config object and an injected view of the installed distributions, so no case reads this checkout's config or venv. Every requirement of the core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is judged, an extra that names its own project is followed, an extra a requirement asks of another distribution judges that extra's own requirements, and a requirement whose marker excludes this interpreter is not judged; an absent distribution, a version outside the specifier or an unparsable version is FAILURE naming the package, the interpreter and the exact pip command, whose extras are the fewest that reach every judged one; an extra the config names and pyproject.toml lacks is CONFIG, an unreadable pyproject.toml is USAGE, and nothing to judge is NOTHING_JUDGED. The pip command carries `--index-url <url>` when config/project.json `install_sources.python_index` sets one and no flag when it is null, quoted as one shell word, and an index holding an `@` in any spelling of a user part is CONFIG that never shows it; the hint for a missing TOML reader carries the same flag. Each transport directory's requirements.txt and the extra `transports.extras` names for it are held equal, and an enabled gRPC transport judges grpcio, grpcio-tools and protobuf.
 @covers scripts/check_venv.py
 """
 
@@ -271,18 +271,61 @@ def test_nothing_to_judge_is_not_a_pass(tmp_path, capsys):
     assert "empty" in capsys.readouterr().err
 
 
-def test_the_transport_extra_and_the_rest_requirements_file_agree():
-    """api/rest_fastapi/requirements.txt serves an install outside the project;
-    the `transport` extra serves the gate. Two lists of the same packages drift
-    unless something holds them equal."""
-    project = check_venv.read_project(str(_ROOT))
-    listed = (_ROOT / "api" / "rest_fastapi" / "requirements.txt").read_text()
-    lines = [
+def _requirement_lines(path):
+    return [
         ln.strip()
-        for ln in listed.splitlines()
+        for ln in path.read_text().splitlines()
         if ln.strip() and not ln.startswith("#")
     ]
-    assert sorted(project["optional-dependencies"]["transport"]) == sorted(lines)
+
+
+def test_every_transport_with_a_requirements_file_names_an_equal_extra():
+    """A transport directory's requirements.txt serves an install outside the
+    project; the extra `transports.extras` names serves the gate. Two lists of
+    the same packages drift unless something holds them equal, and a transport
+    whose file has no extra is one check_venv never judges."""
+    import config_loader
+
+    loaded = config_loader.read(str(_ROOT))
+    project = check_venv.read_project(str(_ROOT))
+    declared = project["optional-dependencies"]
+    transports = loaded["transports"]
+    judged = 0
+    for name, directory in transports["available"].items():
+        path = _ROOT / directory / "requirements.txt"
+        if not path.is_file():
+            continue
+        extra = transports["extras"].get(name)
+        assert extra, "%s ships %s but transports.extras has no entry" % (name, path)
+        assert sorted(declared[extra]) == sorted(_requirement_lines(path)), name
+        judged += 1
+    assert judged, "no transport directory holds a requirements.txt -- zero items"
+
+
+@pytest.mark.skipif(
+    not (_ROOT / "api" / "grpc").is_dir(),
+    reason="this project did not select the grpc transport, so it ships no grpc extra",
+)
+def test_an_enabled_grpc_transport_judges_its_packages(tmp_path, capsys):
+    """With gRPC enabled and its extra named, a venv without grpcio fails and
+    the pip command names the extra; with the packages, or with gRPC not
+    enabled, the same venv passes."""
+    text = (_ROOT / "pyproject.toml").read_text()
+    rest_only = {k: _INSTALLED[k] for k in ("fastapi", "uvicorn", "uvloop")} | {
+        "pydantic": "2.10"
+    }
+    both = {"rest": "transport", "grpc": "grpc"}
+    on = _config(extras=("transport",), enabled=("rest", "grpc"), transport_extras=both)
+    result = _run(tmp_path, config=on, installed=rest_only, text=text)
+    assert result is ExitCode.FAILURE
+    err = capsys.readouterr().err
+    assert "grpcio" in err and "protobuf" in err and "grpc]" in err, err
+    off = _config(extras=("transport",), enabled=("rest",), transport_extras=both)
+    assert (
+        _run(tmp_path, config=off, installed=rest_only, text=text) is ExitCode.SUCCESS
+    )
+    full = rest_only | {"grpcio": "1.70", "grpcio-tools": "1.70", "protobuf": "5.29"}
+    assert _run(tmp_path, config=on, installed=full, text=text) is ExitCode.SUCCESS
 
 
 def test_this_checkouts_config_names_extras_its_pyproject_declares():

@@ -20,6 +20,12 @@ version rather than a bare commit:
   accepts" and "was renamed to" in shipped prose, and the gate reads the block
   through `scripts/config_loader.py`. Bare change openers stay advisory.
 
+- **The gRPC transport's packages are a `grpc` extra (KEEL-GRPC-1).**
+  `grpcio`, `grpcio-tools` and `protobuf` join `pyproject.toml` as the `grpc`
+  extra and `transports.extras` maps `grpc` to it, so `make check-venv` judges
+  them and `tests/optional_deps.py` owes them while gRPC is enabled. A test holds
+  every transport's `requirements.txt` equal to its extra.
+
 - **Document mechanisms share path and section parsing (KEEL-CFGCRASH-19).**
   Checks T and U resolve whitespace and paths containing spaces alike, so a
   leading space cannot hide an unreachable policy. Writer proofs share the parser.

@@ -2,7 +2,7 @@
 title: E2E — a server stops cleanly on SIGTERM
 kind: tests
 layer: backend
-summary: Each server entry point is started as a real process on loopback or its own stdio, sent SIGTERM while it serves, and must exit 0 with its shutdown owner's `<name>: stopping on SIGTERM` line and its memory-cap line on stderr - the REST transport through api/rest_fastapi/serve.py on a port the OS picks, and the MCP action server after one JSON-RPC exchange with its stdin still open. The gRPC owner has no scenario here, since grpcio is not a dependency; tests/unit/api/test_grpc_server.py drives it against a fake server.
+summary: Each server entry point is started as a real process on loopback or its own stdio, sent SIGTERM while it serves, and must exit 0 with its shutdown owner's `<name>: stopping on SIGTERM` line and its memory-cap line on stderr - the REST transport through api/rest_fastapi/serve.py on a port the OS picks, and the MCP action server after one JSON-RPC exchange with its stdin still open. The gRPC owner has no scenario here, since no gate generates its stubs; tests/unit/api/test_grpc_server.py drives it against a fake server.
 """
 
 import json
