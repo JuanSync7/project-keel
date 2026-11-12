@@ -27,8 +27,8 @@ about the docs. Freshness — every governed document's `updated:` is no earlier
 than the author date (`%as`) of its last commit, and a document modified in the
 working tree carries today's date (CONVENTIONS §1). The advisory that stays advisory — a backticked
 repository path that resolves to nothing, and a thought in a shipped document
-that opens with a config/project.json `change_comments.phrases` phrase ("Now
-runs X" reports a change; "2. Now run X" is a step, so a reader judges it). And
+that opens with a config/project.json `change_comments.phrases` phrase
+(`Now runs X` reports a change; "2. Now run X" is a step, so a reader judges it). And
 every roster row (`## What ships
 here`: path, member, line, the `Not for` cell), so the `doc_reviewer` can judge
 each cell against `docs/guides/doc-style.md §2`.

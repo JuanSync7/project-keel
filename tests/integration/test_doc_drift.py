@@ -6,6 +6,7 @@ summary: The shipped-doc drift gate. A shipped document is any Markdown file (or
 """
 
 import ast
+import bisect
 import io
 import json
 import os
@@ -512,6 +513,44 @@ def check_citation_findings(docs, letters, names):
     return sorted(findings)
 
 
+# A line that opens a block of its own, so the line above it ends a paragraph.
+_BLOCK_OPENER = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
+_QUOTE_MARK = re.compile(r"\s{0,3}(?:>\s?)+")
+
+
+def _paragraphs(
+    prose: list[tuple[str, int, str]],
+) -> list[tuple[str, int, str, list[int]]]:
+    """Prose lines joined into paragraphs: `(relpath, first line, text, line
+    start offsets)`. A report of a change is a sentence, and a hard wrap may
+    fall inside it, so the phrase scan reads a paragraph, not a line. A blank
+    line (a fence or span blanks to one), a heading, a list item or a table
+    row starts a new paragraph, and a quote mark is dropped from each line."""
+    out: list[tuple[str, int, str, list[int]]] = []
+    current: tuple[str, int, list[str], list[int]] | None = None
+    size = 0
+    for relpath, number, line in prose:
+        line = _QUOTE_MARK.sub("", line, count=1)
+        continues = (
+            current is not None
+            and current[0] == relpath
+            and current[1] + len(current[2]) == number
+            and line.strip()
+            and not _BLOCK_OPENER.match(line)
+        )
+        if not continues:
+            if current is not None:
+                out.append((current[0], current[1], "\n".join(current[2]), current[3]))
+            current, size = (relpath, number, [], []), 0
+        assert current is not None
+        current[3].append(size)
+        current[2].append(line)
+        size += len(line) + 1
+    if current is not None:
+        out.append((current[0], current[1], "\n".join(current[2]), current[3]))
+    return out
+
+
 def moment_and_host_findings(
     docs: list[tuple[str, str]],
     policy: dict[str, Any],
@@ -538,21 +577,26 @@ def moment_and_host_findings(
         for i, line in enumerate(text.split("\n"), 1):
             for m in _LOOPBACK_PORT.finditer(line):
                 ports.setdefault(m.group(1), []).append((relpath, i, m.group(0)))
+    paragraphs = _paragraphs(prose)
     for regex, reason in policy["forbidden_phrases"]:
         matched = match_values(
             regex.pattern,
             "doc_drift.forbidden_phrases",
-            [line for _path, _number, line in prose],
+            [text for _path, _number, text, _starts in paragraphs],
             "search",
             timeout=timeout,
         )
-        for (relpath, i, line), did_match in zip(prose, matched, strict=True):
+        for (relpath, first, text, starts), did_match in zip(
+            paragraphs, matched, strict=True
+        ):
             if did_match:
                 # Only replay proven matches to retain the exact finding excerpt.
-                m = regex.search(line)
+                m = regex.search(text)
                 assert m is not None
+                line = first + bisect.bisect_right(starts, m.start()) - 1
                 findings.append(
-                    "%s:%d: %r -- %s" % (relpath, i, m.group(0).strip(), reason)
+                    "%s:%d: %r -- %s"
+                    % (relpath, line, " ".join(m.group(0).split()), reason)
                 )
     declared, decode_findings = declared_ports(port_root, set(ports))
     findings.extend(decode_findings)
@@ -1611,6 +1655,12 @@ _REPORT_FORMS = [
     ("No longer rejects a blank path.", "temporal negative"),
     ("The key was renamed to timeout.", "passive modification report"),
     ("Was moved from the old file.", "passive modification report"),
+    ("The flag has been renamed to timeout.", "passive modification report"),
+    ("Has been moved from the old file.", "passive modification report"),
+    ("The flag is no longer used.", "temporal negative"),
+    ("IS NO LONGER USED by the gate.", "temporal negative"),
+    ("The job now runs the gate first.", "temporal implementation claim"),
+    ("NOW RUNS the gate first.", "temporal implementation claim"),
 ]
 
 
@@ -1624,6 +1674,12 @@ _REPORT_FORMS = [
         "no-longer-upper",
         "renamed",
         "moved",
+        "has-been-renamed",
+        "has-been-moved-upper",
+        "no-longer-used",
+        "no-longer-used-upper",
+        "now-runs",
+        "now-runs-upper",
     ],
 )
 def test_a_planted_report_of_a_change_reds_the_scan_with_path_line_and_reason(
@@ -1658,6 +1714,77 @@ def test_a_planted_report_of_a_change_reds_the_scan_with_path_line_and_reason(
     history.mkdir(parents=True)
     (history / "plan.md").write_text(planted + "\n", encoding="utf-8")
     assert scan(source) == [], "a history document may report a change"
+
+
+@pytest.mark.parametrize(
+    "planted, reason",
+    [
+        ("The loader now\nuses a stricter reader.", "temporal implementation"),
+        ("The loader NOW\n  USES a stricter reader.", "temporal implementation"),
+        ("The gate no\nlonger accepts blanks.", "temporal negative"),
+        ("The flag is no longer\nused.", "temporal negative"),
+        ("The key has been\nrenamed to timeout.", "passive modification"),
+        ("The job now\nruns the gate.", "temporal implementation"),
+        ("- The job now\n  runs the gate.", "temporal implementation"),
+        ("> The job now\n> runs the gate.", "temporal implementation"),
+    ],
+    ids=[
+        "now-uses",
+        "now-uses-upper-indented",
+        "no-longer-accepts",
+        "no-longer-used",
+        "has-been-renamed",
+        "now-runs",
+        "list-item",
+        "quote",
+    ],
+)
+def test_a_report_hard_wrapped_across_two_lines_reds_at_its_first_line(
+    tmp_path, manifest, policy, docs, planted, reason
+):
+    """The scan reads each paragraph with its line breaks joined, so where a
+    hard wrap falls cannot hide a report; the finding names the line the
+    match starts on."""
+    source = dict(docs)["CONTRIBUTING.md"]
+    first = len(source.split("\n")) + 1
+    doc = tmp_path / "CONTRIBUTING.md"
+
+    def scan(text):
+        doc.write_text(text, encoding="utf-8")
+        found = shipped_docs(tmp_path, policy["history_paths"])
+        assert found, "a pass over zero documents is a failure"
+        return moment_and_host_findings(found, policy, work_mention(manifest), tmp_path)
+
+    assert scan(source) == [], "the unplanted copy must be clean"
+    findings = scan(source + "\n" + planted + "\n")
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("CONTRIBUTING.md:%d:" % first), findings
+    assert reason in findings[0], findings
+    assert "\n" not in findings[0], "a finding is one line"
+    fenced = scan(source + "\n```\n" + planted + "\n```\n")
+    assert fenced == [], "a fence is an illustration"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "A widget that is now\n\nUses are listed below.",
+        "The step now\n## Uses of the gate",
+        "The step now\n- uses nothing here",
+        "A cell reads now\n| uses | x |",
+    ],
+    ids=["blank-line", "heading", "list-item", "table-row"],
+)
+def test_a_paragraph_break_between_two_words_is_not_a_hard_wrap(
+    tmp_path, manifest, policy, docs, text
+):
+    """Joining stops at a blank line, heading, list item, table row or fence."""
+    doc = tmp_path / "CONTRIBUTING.md"
+    doc.write_text(dict(docs)["CONTRIBUTING.md"] + "\n" + text + "\n", encoding="utf-8")
+    found = shipped_docs(tmp_path, policy["history_paths"])
+    assert (
+        moment_and_host_findings(found, policy, work_mention(manifest), tmp_path) == []
+    )
 
 
 def test_the_patterns_are_data_two_synthetic_policies_give_two_verdicts(tmp_path):
@@ -1697,22 +1824,98 @@ def test_a_real_present_claim_in_the_corpus_stays_accepted(
     assert moment_and_host_findings(found, policy, work_mention(manifest), _ROOT) == []
 
 
+def _twin_phrases(source: str) -> dict[str, str]:
+    """The `doc_drift.forbidden_phrases` map of the manifest twin *source*
+    as copier renders it under the question defaults, parsed.
+
+    A substring search of the source would credit an entry kept only in a
+    `{# #}` comment or an `{% if %}` block, which the render lacks; the
+    render is what a generated project reads. Raises on a name the defaults
+    leave undefined (StrictUndefined) and on a render that is not JSON."""
+    jinja2 = optional_deps.importorskip("jinja2", extra="template")
+    yaml = optional_deps.importorskip("yaml", extra="template")
+    env = jinja2.Environment(
+        keep_trailing_newline=True, undefined=jinja2.StrictUndefined
+    )
+    cfg = yaml.safe_load((_ROOT / "copier.yml").read_text(encoding="utf-8"))
+    answers: dict[str, Any] = {}
+    for name, spec in cfg.items():
+        if name.startswith("_"):
+            continue
+        default = spec.get("default") if isinstance(spec, dict) else spec
+        if isinstance(default, str) and "{{" in default:
+            default = env.from_string(default).render(**answers)
+        answers[name] = default
+    rendered = json.loads(env.from_string(source).render(**answers))
+    return dict(rendered[_BLOCK]["forbidden_phrases"])
+
+
+def _twin_phrase_findings(source: str, entries: list[tuple[Any, str]]) -> list[str]:
+    """Differences between keel's `forbidden_phrases` and the twin's render,
+    both directions: an entry the render lacks or words differently, and an
+    entry the render holds that keel does not."""
+    ours = {regex.pattern: reason for regex, reason in entries}
+    theirs = _twin_phrases(source)
+    findings = [
+        "twin lacks or rewords %r" % p for p in sorted(ours) if theirs.get(p) != ours[p]
+    ]
+    findings += ["twin adds %r" % p for p in sorted(set(theirs) - set(ours))]
+    return findings
+
+
 def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
-    """A generated project refuses what keel refuses: each `forbidden_phrases`
-    entry keel reads appears, byte for byte, in the `.jinja` twin copier
-    renders. The expected set is the policy itself, never retyped here."""
+    """A generated project refuses what keel refuses: the parsed render of the
+    `.jinja` twin holds exactly the `forbidden_phrases` keel reads, pattern and
+    reason, in both directions. The expected set is the policy itself."""
     twin = _ROOT / "config" / "project.json.jinja"
     if not twin.is_file():
         pytest.skip(_TEMPLATE_ONLY)
     entries = policy["forbidden_phrases"]
     assert entries, "a parity check over zero phrases proves nothing"
-    text = twin.read_text(encoding="utf-8")
-    missing = [
-        regex.pattern
-        for regex, reason in entries
-        if "%s: %s" % (json.dumps(regex.pattern), json.dumps(reason)) not in text
-    ]
-    assert missing == [], "config/project.json.jinja lacks %s" % missing
+    found = _twin_phrase_findings(twin.read_text(encoding="utf-8"), entries)
+    assert found == [], "config/project.json.jinja renders %s" % found
+
+
+@pytest.mark.parametrize(
+    "plant",
+    [
+        "comment",
+        "if-false",
+        "extra-entry",
+        "reworded",
+    ],
+)
+def test_a_twin_entry_outside_the_render_reds_the_parity_check(policy, plant):
+    """Each fault is invisible to a substring search of the source and red to
+    the render: an entry kept only in a Jinja comment or a false block, an
+    entry only the twin holds, and an entry whose reason the twin rewords."""
+    twin = _ROOT / "config" / "project.json.jinja"
+    if not twin.is_file():
+        pytest.skip(_TEMPLATE_ONLY)
+    entries = policy["forbidden_phrases"]
+    source = twin.read_text(encoding="utf-8")
+    assert _twin_phrase_findings(source, entries) == [], "the unplanted twin is clean"
+    regex, reason = entries[-1]
+    line = "%s: %s" % (json.dumps(regex.pattern), json.dumps(reason))
+    assert source.count(line) == 1, "the planted line must be in the twin once"
+    # The comma that joins the last entry to the one before it moves with it,
+    # so the planted twin still renders as JSON.
+    joined = re.search(r",\s*" + re.escape(line), source)
+    assert joined, "the last entry must follow another"
+    held = joined.group(0)
+    if plant == "comment":
+        bad = source.replace(held, "{# " + held + " #}")
+    elif plant == "if-false":
+        bad = source.replace(held, "{% if false %}" + held + "{% endif %}")
+    elif plant == "extra-entry":
+        bad = source.replace(held, held + ', "(?i)\\\\bplanted\\\\b": "r"')
+    else:
+        bad = source.replace(
+            line, "%s: %s" % (json.dumps(regex.pattern), json.dumps(reason + " x"))
+        )
+    assert bad != source, "the plant must change the twin"
+    found = _twin_phrase_findings(bad, entries)
+    assert len(found) == 1, found
 
 
 def test_the_policy_is_read_through_the_loader(monkeypatch):

@@ -730,7 +730,7 @@ A thought that opens with a config/project.json `change_comments.phrases`
 phrase, the list the Python comment gate reads, is not this test's: a past
 participle or "now" at an opener is as often a present claim ("2. Now run `make
 verify`", "Removed entries are reported", a `fixed-point` cell) as a report
-("Now runs X"). `scripts/jobs/review_docs.py` reports each one, in a paragraph,
+(`Now runs X`). `scripts/jobs/review_docs.py` reports each one, in a paragraph,
 list item, heading, table cell or sentence, as an `OPENER` line that fails no
 mode, and `make doc-review` sends it to the doc reviewer to judge; a phrase in
 mid-sentence is read by neither. The period after a step's number quoted or

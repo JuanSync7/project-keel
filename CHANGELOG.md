@@ -21,6 +21,12 @@ version rather than a bare commit:
   project must collect and pass it. The generated README's `.[dev]` comment names
   the gRPC packages when the project answers gRPC.
 
+- **The report-of-a-change scan reads wrapped sentences and more forms
+  (KEEL-VOCAB-2).** `doc_drift.forbidden_phrases` now also refuses "has been
+  renamed to", "is no longer used" and "now runs", and the gate reads each
+  paragraph with its line breaks joined, so a hard wrap cannot hide a report.
+  The manifest-twin parity test compares the parsed render in both directions.
+
 - **A shipped document may not report a change (KEEL-VOCAB-1).**
   `doc_drift.forbidden_phrases` refuses the compound forms "now uses", "no longer
   accepts" and "was renamed to" in shipped prose, and the gate reads the block

@@ -155,9 +155,9 @@
       "(?i)\\bon this host\\b": "a claim about one machine; name the condition instead",
       "(?i)\\bthis host's\\b": "a claim about one machine; name the condition instead",
       "(?:^|[\\s(`'\"])/home/[^/\\s]+/": "a personal home-directory path; name the directory's role instead",
-      "(?i)\\bnow\\s+(?:uses|reads|accepts|rejects|supports|requires|ships)\\b": "temporal implementation claim; say what is true, not what changed",
-      "(?i)\\bno longer\\s+(?:uses|accepts|rejects|supports|requires)\\b": "temporal negative implementation claim; say what is true, not what changed",
-      "(?i)\\b(?:was|were)\\s+(?:changed|renamed|moved)\\s+(?:to|from)\\b": "passive modification report; say what is true, not what changed"
+      "(?i)\\bnow\\s+(?:uses|reads|accepts|rejects|supports|requires|ships|runs)\\b": "temporal implementation claim; say what is true, not what changed",
+      "(?i)\\b(?:no\\s+longer\\s+(?:uses|accepts|rejects|supports|requires)|is\\s+no\\s+longer\\s+used)\\b": "temporal negative implementation claim; say what is true, not what changed",
+      "(?i)\\b(?:was|were|has\\s+been|have\\s+been)\\s+(?:changed|renamed|moved)\\s+(?:to|from)\\b": "passive modification report; say what is true, not what changed"
     },
     "one_hop": {
       "README.md": [

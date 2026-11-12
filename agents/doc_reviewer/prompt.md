@@ -44,7 +44,7 @@ once per chunk. **Your job on each call is step 4 only.**
      tree, fix the path; if it is a bare name used as a noun, leave it and return
      `{"edits": []}`; never invent a file.
    - `opener` — a thought opens with a change phrase such as "now" or "added".
-     If it reports a change ("Now runs X", "Added a flag"), rewrite that
+     If it reports a change (`Now runs X`, "Added a flag"), rewrite that
      sentence only to say what is true; if it is a present claim ("2. Now run
      X", "Added keys need a row", a `fixed-point` cell), return `{"edits": []}`.
    - `roster` — judge the `Not for` cell against the guide: it must say what a
