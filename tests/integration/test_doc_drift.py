@@ -591,12 +591,19 @@ def moment_and_host_findings(
         ):
             if did_match:
                 # Only replay proven matches to retain the exact finding excerpt.
-                m = regex.search(text)
-                assert m is not None
-                line = first + bisect.bisect_right(starts, m.start()) - 1
-                findings.append(
+                # A paragraph holds many lines, so every match is a finding:
+                # stopping at the first would hide a second report beside it.
+                hits = list(regex.finditer(text))
+                assert hits, (relpath, first, regex.pattern)
+                findings.extend(
                     "%s:%d: %r -- %s"
-                    % (relpath, line, " ".join(m.group(0).split()), reason)
+                    % (
+                        relpath,
+                        first + bisect.bisect_right(starts, m.start()) - 1,
+                        " ".join(m.group(0).split()),
+                        reason,
+                    )
+                    for m in hits
                 )
     declared, decode_findings = declared_ports(port_root, set(ports))
     findings.extend(decode_findings)
@@ -1648,7 +1655,9 @@ def test_a_planted_work_id_host_phrase_or_undeclared_port_reds_the_scan(
 
 # A report of a change names the moment it describes, so it is history. Each
 # planted form pairs with a fragment of the manifest reason that refuses it.
-_REPORT_FORMS = [
+# test_copier_generation.py plants this same list in a generated project, so a
+# form added here is one its own gate must refuse too.
+REPORT_FORMS = [
     ("The loader now uses a stricter reader.", "temporal implementation claim"),
     ("Now reads the manifest first.", "temporal implementation claim"),
     ("Since the rewrite the gate no longer accepts blank paths.", "temporal negative"),
@@ -1666,7 +1675,7 @@ _REPORT_FORMS = [
 
 @pytest.mark.parametrize(
     "planted, reason",
-    _REPORT_FORMS,
+    REPORT_FORMS,
     ids=[
         "now-lower",
         "now-upper",
@@ -1785,6 +1794,28 @@ def test_a_paragraph_break_between_two_words_is_not_a_hard_wrap(
     assert (
         moment_and_host_findings(found, policy, work_mention(manifest), tmp_path) == []
     )
+
+
+def test_every_report_in_one_paragraph_is_a_finding_at_its_own_line(
+    tmp_path, manifest, policy, docs
+):
+    """One paragraph may hold several reports that one expression refuses, so
+    each match is a finding, not only the paragraph's first."""
+    source = dict(docs)["CONTRIBUTING.md"]
+    first = len(source.split("\n")) + 1
+    doc = tmp_path / "CONTRIBUTING.md"
+    doc.write_text(
+        source + "\n" + "\n".join(form for form, _ in REPORT_FORMS) + "\n",
+        encoding="utf-8",
+    )
+    found = shipped_docs(tmp_path, policy["history_paths"])
+    assert found, "a pass over zero documents is a failure"
+    findings = moment_and_host_findings(found, policy, work_mention(manifest), tmp_path)
+    assert len(findings) == len(REPORT_FORMS), findings
+    for offset, (form, reason) in enumerate(REPORT_FORMS):
+        where = "CONTRIBUTING.md:%d:" % (first + offset)
+        hit = [f for f in findings if f.startswith(where)]
+        assert len(hit) == 1 and reason in hit[0], (form, findings)
 
 
 def test_the_patterns_are_data_two_synthetic_policies_give_two_verdicts(tmp_path):

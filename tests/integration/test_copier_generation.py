@@ -49,6 +49,7 @@ from child_env import build_child_env  # noqa: E402
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_reference_drift as reference_drift  # noqa: E402
+from test_doc_drift import REPORT_FORMS  # noqa: E402
 from test_scratch_root_gate import child_timeout  # noqa: E402
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
@@ -1687,16 +1688,10 @@ _DRIFT_GATE_TEST = "test_no_shipped_doc_cites_a_work_id_or_a_host_specific_strin
 _DRIFT_NODE = "%s::%s" % (_DRIFT_GATE, _DRIFT_GATE_TEST)
 _DRIFT_GUIDE = "docs/guides/dev-loops.md"
 _DRIFT_HISTORY_DOC = "docs/design/planted-history.md"
-# The report forms keel's own gate refuses (test_doc_drift.py _REPORT_FORMS),
-# each with the fragment of the manifest reason that must reach the output.
-_DRIFT_REPORTS = (
-    ("The loader now uses a stricter reader.", "temporal implementation claim"),
-    ("Now reads the manifest first.", "temporal implementation claim"),
-    ("Since the rewrite the gate no longer accepts blank paths.", "temporal negative"),
-    ("No longer rejects a blank path.", "temporal negative"),
-    ("The key was renamed to timeout.", "passive modification report"),
-    ("Was moved from the old file.", "passive modification report"),
-)
+# The report forms keel's own gate refuses, each with the fragment of the
+# manifest reason that must reach the output; read, not copied, so a form keel
+# adds is one the generated gate must refuse too.
+_DRIFT_REPORTS = tuple(REPORT_FORMS)
 # Present claims the corpus makes (settings.md, limits-and-troubleshooting.md).
 _DRIFT_PRESENT = (
     "The loader no longer reads the file twice.",
