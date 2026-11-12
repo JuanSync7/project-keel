@@ -1013,7 +1013,9 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     reader acts on since KEEL-VIS-2, the `test_quality` block the
     test-quality gates read since KEEL-TESTQ-1, and
     `doc_drift.check_name_guide`, the style guide whose check-name sentence
-    tests/integration/test_doc_drift.py holds since KEEL-DOC-2, and the
+    tests/integration/test_doc_drift.py holds since KEEL-DOC-2, each
+    `doc_drift.forbidden_phrases` entry the same test refuses since
+    KEEL-VOCAB-1, and the
     `audit_project` block a generated project carries so its config loader
     stays silent, arrive too. The audit
     reports exactly those keys as
@@ -1041,7 +1043,13 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         f for f in report["groups"]["config"] if f.get("file") == "config/project.json"
     ]
     arrived = {f["key"] for f in manifest if f["kind"] == "arrives"}
-    assert arrived == {
+    # The phrases are regexes keel's manifest owns; retyping them here would
+    # be a second copy to drift. Only those the old project lacks arrive.
+    phrases = set(keel["doc_drift"]["forbidden_phrases"]) - set(
+        old["doc_drift"]["forbidden_phrases"]
+    )
+    assert phrases, "an arrival check over zero phrases proves nothing"
+    assert arrived == {"doc_drift.forbidden_phrases." + p for p in phrases} | {
         "accountability",
         "agents",
         "audit_project",
