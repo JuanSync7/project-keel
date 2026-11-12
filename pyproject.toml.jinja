@@ -46,7 +46,7 @@ dev = [
   # and are named here because the check imports them itself.
   "packaging",
   "tomli; python_version < '3.11'",
-  "{{ project_slug }}[transport]",
+  "{{ project_slug }}[transport{% if "grpc" in transports %},grpc{% endif %}]",
 ]
 # The REST transport's runtime packages (api/rest_fastapi). A deployment that
 # serves the API without the gate's tools installs this extra alone;
@@ -57,7 +57,6 @@ transport = [
   "uvicorn[standard]>=0.32",
   "pydantic>=2.9",
 ]
-{% if "grpc" in transports %}
 # The gRPC transport's runtime packages (api/grpc). A project that serves gRPC
 # names this extra in config/project.json transports.extras, so make check-venv
 # judges it and tests/optional_deps.py owes it; api/grpc/requirements.txt lists
@@ -68,7 +67,6 @@ grpc = [
   "grpcio-tools>=1.68",
   "protobuf>=5.28",
 ]
-{% endif %}
 # Optional agent-runtime engines. The default 'inprocess' runtime is pure
 # stdlib (no install); install an engine only if you select it by name, e.g.
 # get_runtime("langgraph"). Keeps the default install dependency-free.

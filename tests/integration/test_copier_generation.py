@@ -42,6 +42,7 @@ import review_docs  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 
 import check_structure  # noqa: E402
+import check_venv  # noqa: E402
 import child_exec  # noqa: E402
 from child_env import build_child_env  # noqa: E402
 
@@ -81,7 +82,10 @@ _TWIN_ANSWERS_BLOCK = (
 
 # The ONLY licensed differences between pyproject.toml and its .jinja twin: the three
 # fields that are answers rather than policy, and the `dev` extra's reference to
-# the project's own `transport` extra, which names the project. Everything else in that file shapes the
+# the project's own `transport` extra, which names the project and, when the project
+# answers gRPC, its `grpc` extra too: every install command a project ships names
+# `dev`, so the `dev` closure is how those commands reach the extras the gate judges
+# (test_shipped_install_command_reaches_every_extra_check_venv_judges). Everything else in that file shapes the
 # gate and must be identical, so it is pinned as text below.
 _PYPROJECT_ANSWER_FIELDS = (
     (
@@ -90,7 +94,10 @@ _PYPROJECT_ANSWER_FIELDS = (
     ),
     ('name = "project_keel"', 'name = "{{ project_slug }}"'),
     ('requires-python = ">=3.10"', 'requires-python = "{{ backend_python }}"'),
-    ('"project_keel[transport]",', '"{{ project_slug }}[transport]",'),
+    (
+        '"project_keel[transport]",',
+        '"{{ project_slug }}[transport{% if "grpc" in transports %},grpc{% endif %}]",',
+    ),
 )
 
 
@@ -281,6 +288,15 @@ def test_selected_addon_transport_ships_and_is_declared(tmp_path, generate):
     assert manifest["transports"]["enabled"] == ["rest", "mcp", "grpc"]
     assert set(manifest["transports"]["available"]) == {"rest", "mcp", "grpc"}
     assert (dest / "api" / "grpc").is_dir()  # selected -> ships
+    # the extra check-venv judges is both declared and named, so removing either
+    # half of the pair (pyproject.toml.jinja or project.json.jinja) fails here
+    assert manifest["transports"]["extras"] == {"rest": "transport", "grpc": "grpc"}
+    declared = check_venv.read_project(str(dest))["optional-dependencies"]
+    assert set(declared["grpc"]) == {
+        "grpcio>=1.68",
+        "grpcio-tools>=1.68",
+        "protobuf>=5.28",
+    }
     assert not (dest / "api" / "edge_nginx").exists()  # un-selected -> pruned
     # the tailored tree still passes its own structural gate
     r = subprocess.run(
@@ -290,6 +306,39 @@ def test_selected_addon_transport_ships_and_is_declared(tmp_path, generate):
         text=True,
     )
     assert r.returncode == 0, r.stdout + r.stderr
+
+
+_INSTALL_EXTRAS = re.compile(r'pip install -e "\.\[([^\]]*)\]"')
+
+
+@pytest.mark.parametrize("transports", [[], ["grpc"]], ids=["rest", "grpc"])
+def test_shipped_install_command_reaches_every_extra_check_venv_judges(
+    tmp_path, generate, transports
+):
+    """The install step a generated project's CI runs (config/project.json
+    ci_pipeline.steps, which every CI adapter is held to) installs every extra
+    that `make check-venv` then demands for the enabled transports. REST
+    reaches its extra through `dev`; a gRPC project once demanded `grpc` that
+    `.[dev,template]` never installed, so its CI failed at check-all."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj", transports=transports)
+    manifest = json.loads((dest / "config" / "project.json").read_text())
+    installs = [
+        m.group(1).split(",")
+        for step in manifest["ci_pipeline"]["steps"]
+        for m in [_INSTALL_EXTRAS.search(step["run"])]
+        if m
+    ]
+    assert len(installs) == 1, "expected one install step, got %r" % installs
+    project = check_venv.read_project(str(dest))
+    installed = check_venv.reachable(project, installs[0])
+    demanded = set(check_venv.wanted_extras(manifest))
+    assert ("grpc" in demanded) == bool(transports), demanded
+    assert demanded, "check-venv demands no extra -- zero items"
+    assert demanded <= installed, (
+        "check-venv demands %s but the shipped install reaches %s"
+        % (sorted(demanded), sorted(installed))
+    )
 
 
 def test_nondefault_name_and_python_propagate_and_stay_valid(tmp_path, generate):

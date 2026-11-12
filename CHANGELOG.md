@@ -24,7 +24,9 @@ version rather than a bare commit:
   `grpcio`, `grpcio-tools` and `protobuf` join `pyproject.toml` as the `grpc`
   extra and `transports.extras` maps `grpc` to it, so `make check-venv` judges
   them and `tests/optional_deps.py` owes them while gRPC is enabled. A test holds
-  every transport's `requirements.txt` equal to its extra.
+  every transport's `requirements.txt` equal to its extra. A project that answers
+  gRPC has its `dev` extra reach `grpc`, so the CI install step covers what
+  check-venv demands.
 
 - **Document mechanisms share path and section parsing (KEEL-CFGCRASH-19).**
   Checks T and U resolve whitespace and paths containing spaces alike, so a

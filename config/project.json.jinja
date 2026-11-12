@@ -474,7 +474,7 @@
     "mcp_env": {
       "KEEL_MCP_MODEL": "fake"
     },
-    "exempt": {% if "grpc" in transports %}{"grpc /thing.v1.ThingService/CreateThing": "No gate generates the gRPC stubs (make -C api/grpc gen) or installs grpcio, so no scenario can call this method. Add a scenario and delete this entry once they ship."}{% else %}{}{% endif %},
+    "exempt": {% if "grpc" in transports %}{"grpc /thing.v1.ThingService/CreateThing": "No gate generates the gRPC stubs (make -C api/grpc gen), so no scenario can call this method. Add a scenario and delete this entry once they ship."}{% else %}{}{% endif %},
     "server": {
       "host": "127.0.0.1",
       "app": "app:app",
