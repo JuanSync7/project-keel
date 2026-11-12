@@ -9,7 +9,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-10
+updated: 2026-11-12
 visibility: internal
 canonical: true
 ---
@@ -1022,6 +1022,20 @@ It is keyed **by layer/concern, never one global `language`**:
   concrete `work_naming` id with any prefix, a forbidden phrase, a loopback
   port that no non-Markdown file declares, while the excluded-path rule scans every shipped text source for paths under unconditional `docs/` exclusions only, without a history or table waiver, and exempts only the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule). It fails when the block is missing or malformed.
   A project moves its own dated prose under a history prefix, or adds one.
+  Two collections refuse a report of a change, and each has one scope.
+  `change_comments.phrases` covers the code comments of Python files, and
+  `tests/integration/test_change_comment_gate.py` enforces it; it reads no
+  Markdown.
+  `doc_drift.forbidden_phrases` covers the prose of shipped documents, and
+  `tests/integration/test_doc_drift.py` enforces it; it reads no code comment,
+  no code span or fence, and no document under `history_paths`.
+  A bare opener such as "now" or "added" is in the first collection only,
+  because in prose it is as often a present claim as a report;
+  `scripts/jobs/review_docs.py` lists it as an advisory that never fails.
+  `tests/integration/test_copier_generation.py` holds a generated project's own
+  `test_doc_drift.py` to the same verdict: it fails on each planted compound
+  report form, naming the guide and line, and stays green on a present claim, a
+  code span, a fence and a history document.
   The same block names the documents a newcomer reads, and the same test holds
   each: `one_hop` (an entry document mapped to the documents it must link to
   directly), `layout_heading` (the root README section whose tree lists every

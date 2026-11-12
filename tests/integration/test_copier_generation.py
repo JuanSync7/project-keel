@@ -1682,6 +1682,98 @@ def test_a_generated_project_passes_the_realness_gate(tmp_path, generate):
     )
 
 
+_DRIFT_GATE = "tests/integration/test_doc_drift.py"
+_DRIFT_GATE_TEST = "test_no_shipped_doc_cites_a_work_id_or_a_host_specific_string"
+_DRIFT_NODE = "%s::%s" % (_DRIFT_GATE, _DRIFT_GATE_TEST)
+_DRIFT_GUIDE = "docs/guides/dev-loops.md"
+_DRIFT_HISTORY_DOC = "docs/design/planted-history.md"
+# The report forms keel's own gate refuses (test_doc_drift.py _REPORT_FORMS),
+# each with the fragment of the manifest reason that must reach the output.
+_DRIFT_REPORTS = (
+    ("The loader now uses a stricter reader.", "temporal implementation claim"),
+    ("Now reads the manifest first.", "temporal implementation claim"),
+    ("Since the rewrite the gate no longer accepts blank paths.", "temporal negative"),
+    ("No longer rejects a blank path.", "temporal negative"),
+    ("The key was renamed to timeout.", "passive modification report"),
+    ("Was moved from the old file.", "passive modification report"),
+)
+# Present claims the corpus makes (settings.md, limits-and-troubleshooting.md).
+_DRIFT_PRESENT = (
+    "The loader no longer reads the file twice.",
+    "On a refusal nothing was changed.",
+)
+
+
+def _drift_project(tmp_path, generate):
+    """A generated project whose shipped prose the gate has judged non-empty:
+    returns it with the generated manifest's phrase map."""
+    dest = tmp_path / "proj"
+    generate(dest, project_name="demo_proj")
+    block = json.loads((dest / "config" / "project.json").read_text("utf-8"))[
+        "doc_drift"
+    ]
+    assert block["forbidden_phrases"], "a gate with no phrase judges nothing"
+    history = tuple(block["history_paths"])
+    shipped = [
+        p
+        for p in dest.rglob("*.md")
+        if not p.relative_to(dest).as_posix().startswith(history)
+        and ".git" not in p.relative_to(dest).parts
+    ]
+    assert shipped, "a pass over zero generated documents is a failure"
+    return dest, block["forbidden_phrases"]
+
+
+def _plant(dest, lines):
+    """Append *lines* to the generated guide; return their 1-based numbers."""
+    guide = dest / _DRIFT_GUIDE
+    text = guide.read_text(encoding="utf-8").rstrip("\n") + "\n"
+    first = text.count("\n") + 1
+    guide.write_text(text + "\n".join(lines) + "\n", encoding="utf-8")
+    return list(range(first, first + len(lines)))
+
+
+def test_a_generated_project_refuses_a_planted_report_of_a_change(tmp_path, generate):
+    """The generated project's own prose gate refuses each compound report form
+    keel's gate refuses, naming the planted guide and line; the unplanted render
+    is green with one collected, passing gate test."""
+    dest, _phrases = _drift_project(tmp_path, generate)
+    clean = _quality_gate(dest, _DRIFT_NODE)
+    assert clean.returncode == 0, clean.stdout[-6000:] + clean.stderr[-2000:]
+    assert "SKIPPED" not in clean.stdout, clean.stdout[-6000:]
+    assert "%s PASSED" % _DRIFT_GATE_TEST in clean.stdout, clean.stdout[-6000:]
+    assert [int(n) for n in _PASSED.findall(clean.stdout)] == [1], clean.stdout[-6000:]
+
+    numbers = _plant(dest, [form for form, _reason in _DRIFT_REPORTS])
+    red = _quality_gate(dest, _DRIFT_NODE)
+    assert red.returncode == 1, red.stdout[-6000:] + red.stderr[-2000:]
+    for number, (form, reason) in zip(numbers, _DRIFT_REPORTS, strict=True):
+        where = "%s:%d:" % (_DRIFT_GUIDE, number)
+        hit = [line for line in red.stdout.splitlines() if where in line]
+        assert hit and reason in hit[0], (form, red.stdout[-6000:])
+
+
+def test_a_generated_project_accepts_what_keel_accepts_beside_a_report(
+    tmp_path, generate
+):
+    """A present claim, a report inside a code span or a fence, and a report in
+    a history document stay green in a generated project, so the refusal above
+    is the phrase map's verdict and not a blanket one."""
+    dest, _phrases = _drift_project(tmp_path, generate)
+    report = _DRIFT_REPORTS[0][0]
+    _plant(
+        dest,
+        list(_DRIFT_PRESENT)
+        + ["`%s`" % report, "```", report, "```", "~~~", report, "~~~"],
+    )
+    history = dest / _DRIFT_HISTORY_DOC
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_text("# Plan\n\n%s\n" % report, encoding="utf-8")
+    ran = _quality_gate(dest, _DRIFT_NODE)
+    assert ran.returncode == 0, ran.stdout[-6000:] + ran.stderr[-2000:]
+    assert "%s PASSED" % _DRIFT_GATE_TEST in ran.stdout, ran.stdout[-6000:]
+
+
 _EXIT_GATE = "tests/integration/test_exit_gate.py"
 _EXIT_GATE_TEST = "test_no_process_in_the_tree_ends_outside_the_helper"
 _EXIT_HELPER = "scripts/exit_codes.py"

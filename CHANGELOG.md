@@ -25,6 +25,10 @@ version rather than a bare commit:
   `doc_drift.forbidden_phrases` refuses the compound forms "now uses", "no longer
   accepts" and "was renamed to" in shipped prose, and the gate reads the block
   through `scripts/config_loader.py`. Bare change openers stay advisory.
+  A generated project's own prose gate gives the same verdict on a planted report
+  (CMP-24.S2, `tests/integration/test_copier_generation.py`), and CONVENTIONS
+  section 15 states the scope of `change_comments.phrases` and of
+  `doc_drift.forbidden_phrases`.
 
 - **The gRPC transport's packages are a `grpc` extra (KEEL-GRPC-1).**
   `grpcio`, `grpcio-tools` and `protobuf` join `pyproject.toml` as the `grpc`
