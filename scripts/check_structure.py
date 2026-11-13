@@ -4134,28 +4134,58 @@ _ONE_LINE_BLOCK = re.compile(r"(?:#{1,6}(?:\s|$)|\|)")
 # the text lines above it as a heading; a thematic break is a block of its own
 # either way.
 _THEMATIC_BREAK = re.compile(r"(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
-# Read with .match: a `>` later in a line is text, not a quote mark. A quote's
-# content may sit up to 3 spaces past its mark, so `>  >` nests two deep.
-_QUOTE_MARK = re.compile(r"> ?(?: {0,3}> ?)*")
+# A `>` later in a line is text, not a quote mark: the helpers below read it
+# only at the start of a line's text, 0 to 3 columns past the content column
+# of the container the line sits in.
+_QUOTE_MARK = re.compile(r"> ?")
 _LIST_MARKER = re.compile(r"([-*+]|\d{1,9}[.)])( *)")
 _BACKTICK_RUN = re.compile(r"`+")
 # A block starts 0 to 3 columns past its container's content column; 4 or
-# more is an indented continuation (CommonMark).
+# more is an indented continuation, or indented code where no paragraph with
+# text is open (CommonMark).
 _BLOCK_INDENT = 3
 # markdown_paragraphs expands each line's tabs to this stop from the line's
 # own start, so the column helpers below read spaces only.
 _TAB_STOP = 4
 
 
-def _block_start(line, columns):
+def _block_start(line, column):
     """`(text, indent, inside)` of *line*: its text without the indent, the
-    indent in columns, and whether it is 0 to 3 columns past the content
-    column of a container in *columns* (ascending, 0 first), so the text may
-    open a block."""
+    indent in columns, and whether it is 0 to 3 columns past *column*, the
+    content column of its innermost container, so the text may open a block."""
     text = line.lstrip(" ")
     indent = len(line) - len(text)
-    column = max(c for c in columns if c <= indent)
     return text, indent, indent - column <= _BLOCK_INDENT
+
+
+def _after_quote_mark(text):
+    """*text* (a line without its indent, starting `>`) without the mark and
+    the one space that may follow it."""
+    mark = _QUOTE_MARK.match(text)
+    assert mark is not None
+    return text[mark.end() :]
+
+
+def _continued(line, stack):
+    """`(matched, rest, column)` for *line* against *stack*, the open
+    containers `(is_quote, content column)` outermost first: how many it
+    continues, from the outside in and stopping at the first it does not; the
+    line without the quote marks it continued; and the content column of the
+    innermost list item it continued in that quote (0 if none). A blank line
+    continues a list item but not a quote, and a line needs a quote's mark
+    0 to 3 columns past the item column it sits in."""
+    column = 0
+    for index, (is_quote, content) in enumerate(stack):
+        text, indent, inside = _block_start(line, column)
+        if is_quote:
+            if not inside or not text.startswith(">"):
+                return index, line, column
+            line, column = _after_quote_mark(text), 0
+        elif text and indent < content:
+            return index, line, column
+        else:
+            column = content
+    return len(stack), line, column
 
 
 def _item_column(line, indent):
@@ -4179,76 +4209,85 @@ def markdown_paragraphs(prose):
     is a run of plain text lines, as in CommonMark: a blank line (a fence
     blanks to one), a heading, a table row, a setext underline or a thematic
     break ends it, so the next line starts a new one; a list item starts one
-    and keeps its continuation lines. A line opens a block only 0 to 3
-    columns past the content column of the list item it sits in, so a break,
-    item or heading nested 4 or more columns in is judged against its own
-    item, not column 0. A line that starts a paragraph or follows a blank line
-    closes every item whose content column it sits left of. A tab counts to
-    the next multiple of 4 columns of its line, and the paragraph text holds
-    it expanded. A quote mark is dropped from the start of each line;
-    a quoted line after an unquoted one, or a deeper quote under a shallower
-    one, starts a paragraph, and an unquoted line after a quoted one
-    continues it (a lazy continuation). A line's indent before its quote mark,
-    and an unquoted line under a quote, are judged outside the quote's items."""
+    and keeps its continuation lines. The open list items and quotes are a
+    stack, each with its content column. A line continues the containers it
+    sits in from the outside in and closes the rest, unless it is a lazy
+    continuation: plain text under a paragraph that holds text, which keeps
+    every container open (a blank line, even a quoted one, ends that
+    paragraph). A line opens a block only 0 to 3 columns past the content
+    column of its innermost container, so a break, item or heading nested 4
+    or more columns in is judged against its own item, not column 0. A line 4
+    or more columns past it, where no paragraph with text is open, is indented
+    code: a paragraph of its own, so a span in it pairs with nothing outside
+    it, though the scans still read its text; it ends at the first line under
+    4 columns past its container (a blank line does not end it). A tab counts to the next multiple of 4 columns of its
+    line, and the paragraph text holds it expanded. A quote mark is dropped
+    from the start of each line; a quote that opens on a line, as a quote
+    under a plain line or a deeper quote, starts a paragraph."""
     out = []
-    current = None  # [relpath, first, lines, offsets, kind, quote depth]
+    current = None  # [relpath, first, lines, offsets, kind]
     size = 0
-    columns = [0]  # content columns of the open list items, in this quote
+    stack = []  # open containers: (is_quote, content column)
     for relpath, number, line in prose:
         line = line.expandtabs(_TAB_STOP)
         if current is None or current[0] != relpath:
-            columns = [0]
-        # `columns` belong to the open quote, if any; its mark, or a line
-        # without one, sits outside it, where only column 0 is known.
-        quoted = current is not None and current[0] == relpath and current[5] > 0
-        text, indent, inside = _block_start(line, [0] if quoted else columns)
-        mark = _QUOTE_MARK.match(text) if inside else None
-        depth = 0
-        if mark is not None:
-            depth = mark.group().count(">")
-            line = text[mark.end() :]
-            if current is None or depth != current[5]:
-                columns = [0]
-            text, indent, inside = _block_start(line, columns)
+            stack = []
+        matched, line, column = _continued(line, stack)
+        full = matched == len(stack)
+        text, indent, inside = _block_start(line, column)
+        fresh = []
+        while inside and text.startswith(">"):
+            fresh.append((True, 0))
+            line = _after_quote_mark(text)
+            text, indent, inside = _block_start(line, 0)
+        blank = not text
         opener = inside and _BLOCK_OPENER.match(text) is not None
         breaks = inside and _THEMATIC_BREAK.fullmatch(text) is not None
-        open_ = (
+        adjacent = (
             current is not None
             and current[0] == relpath
             and current[1] + len(current[2]) == number
-            and current[4] != "closed"
-            and (mark is None or current[5] > 0)
-            and depth <= current[5]
-            and line.strip()
         )
+        para = adjacent and current[4] in ("text", "item") and not fresh
+        holds = para and bool(current[2][-1].strip())
+        plain = not (blank or opener or breaks)
         underline = (
-            open_
+            para
             and current[4] == "text"
             and inside
             and _SETEXT_UNDERLINE.fullmatch(text) is not None
         )
-        continues = underline or (open_ and not opener and not breaks)
-        # A blank line opens a paragraph that the next text line continues, so
-        # that line must close the items it sits left of as a new paragraph does.
-        after_blank = current is not None and not current[2][-1].strip()
+        in_code = (
+            adjacent
+            and current[4] == "code"
+            and not fresh
+            and full
+            and (blank or not inside)
+        )
+        # Plain text under a paragraph with text is its continuation, lazy
+        # when a container it sits in is not continued. A blank line leaves
+        # a blank-headed paragraph that the next line may continue, but the
+        # text of 4 or more columns past it is indented code.
+        continues = (
+            underline or in_code or (para and plain and (holds or (inside and full)))
+        )
         if not continues:
             if current is not None:
                 out.append((current[0], current[1], "\n".join(current[2]), current[3]))
-            if inside and _ONE_LINE_BLOCK.match(text) or breaks:
+            if plain and not inside:
+                kind = "code"
+            elif inside and _ONE_LINE_BLOCK.match(text) or breaks:
                 kind = "closed"
             elif opener:
                 kind = "item"
             else:
                 kind = "text"
-            current, size = [relpath, number, [], [], kind, depth], 0
+            current, size = [relpath, number, [], [], kind], 0
         assert current is not None
-        if quoted and mark is None and not continues:
-            # An unquoted line that is no lazy continuation closes the quote.
-            columns = [0]
-        if line.strip() and (not continues or after_blank):
-            columns = [c for c in columns if c <= indent]
+        if not continues or full:
+            stack = stack[:matched] + fresh
             if not continues and current[4] == "item":
-                columns.append(_item_column(line, indent))
+                stack.append((False, _item_column(line, indent)))
         current[3].append(size)
         current[2].append(line)
         if underline:

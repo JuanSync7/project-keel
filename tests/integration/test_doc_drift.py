@@ -1757,6 +1757,29 @@ _BLOCK_CASES = [
     # An unquoted line that is no lazy continuation closes the quote and its
     # items, so a 5-space `- x` under the paragraph after it continues it.
     (["> - o", "  # H", "  text `b", "     - x` {id} `y"], [4]),
+    # A quote inside a list item keeps the item's column: the break at that
+    # column ends the quote (a break is never lazy) and opens inside the item.
+    (["10. o", "    > q `a", "    ***", "    Body {id}` here."], [4]),
+    (["10. o", "    > - q `a", "    ***", "    Body {id}` here."], [4]),
+    (["10. o", "    > q `a", "    > r {id}` b"], []),
+    # A line 4 or more columns past its container's column, after a blank
+    # line, is indented code: a block of its own that the first line under 4
+    # columns past the container closes, so its backtick pairs with nothing.
+    (["p", "", "    code `a", "Body {id}` here."], [4]),
+    (["- o", "", "      code `a", "  Body {id}` here."], [4]),
+    # A blank line keeps the items open, so the paragraph after it sits in
+    # its item; a lazy line keeps the open items, so a sub-item after it opens
+    # inside them.
+    (["- o", "", "    p `a", "  {id}` b"], []),
+    (["- o", "  - i `a", "lazy", "    - x {id}` y"], [4]),
+    # Under a paragraph that holds text the same line is a continuation, in an
+    # item as at the top level.
+    (["Text `a", "    {id}` b"], []),
+    (["- o `a", "      {id}` b"], []),
+    # A blank quoted line ends the quoted paragraph, so the unquoted line
+    # after it is no lazy continuation and its items are closed.
+    (["> q", ">", "text `a", "> more {id}` b"], [4]),
+    (["> - o", ">", "  text", "> p `a", ">     - x {id}` y"], []),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1788,6 +1811,17 @@ _BLOCK_IDS = [
     "tab-between-quote-marks",
     "tab-before-quoted-item",
     "unquoted-block-closes-quote",
+    "quote-in-item-then-break",
+    "list-in-quote-in-item-then-break",
+    "quote-in-item-continues",
+    "indented-code-after-blank",
+    "indented-code-in-item",
+    "blank-keeps-item-open",
+    "lazy-line-keeps-items",
+    "four-spaces-after-text-continues",
+    "six-spaces-in-item-continues",
+    "blank-quoted-line-ends-lazy",
+    "blank-quoted-line-closes-items",
 ]
 
 
@@ -1816,6 +1850,7 @@ def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_
         (["Text `a", "***", "Works on this host` only."], [3]),
         (["Text `a", "> Works on this host` only."], [2]),
         (["- o", "  - i `a", "    ***", "    Works on this host` only."], [4]),
+        (["p", "", "    code `a", "Works on this host` only."], [4]),
     ],
     ids=[
         "atx-heading",
@@ -1825,6 +1860,7 @@ def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_
         "thematic-break",
         "quote-after-text",
         "third-level-thematic-break",
+        "indented-code",
     ],
 )
 def test_a_block_line_does_not_pair_its_backtick_with_the_next_line_for_the_phrase_scan(
