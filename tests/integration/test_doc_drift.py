@@ -513,84 +513,9 @@ def check_citation_findings(docs, letters, names):
     return sorted(findings)
 
 
-# A line that opens a block of its own, so the line above it ends a paragraph.
-_BLOCK_OPENER = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
-_QUOTE_MARK = re.compile(r"\s{0,3}(?:>\s?)+")
-
-
-def _paragraphs(
-    prose: list[tuple[str, int, str]],
-) -> list[tuple[str, int, str, list[int]]]:
-    """Prose lines joined into paragraphs: `(relpath, first line, text, line
-    start offsets)`. A report of a change is a sentence, and a hard wrap may
-    fall inside it, so the phrase scan reads a paragraph, not a line. A blank
-    line (a fence blanks to one), a heading, a list item or a table
-    row starts a new paragraph, and a quote mark is dropped from each line."""
-    out: list[tuple[str, int, str, list[int]]] = []
-    current: tuple[str, int, list[str], list[int]] | None = None
-    size = 0
-    for relpath, number, line in prose:
-        line = _QUOTE_MARK.sub("", line, count=1)
-        continues = (
-            current is not None
-            and current[0] == relpath
-            and current[1] + len(current[2]) == number
-            and line.strip()
-            and not _BLOCK_OPENER.match(line)
-        )
-        if not continues:
-            if current is not None:
-                out.append((current[0], current[1], "\n".join(current[2]), current[3]))
-            current, size = (relpath, number, [], []), 0
-        assert current is not None
-        current[3].append(size)
-        current[2].append(line)
-        size += len(line) + 1
-    if current is not None:
-        out.append((current[0], current[1], "\n".join(current[2]), current[3]))
-    return out
-
-
-_BACKTICK_RUN = re.compile(r"`+")
+_paragraphs = cs.markdown_paragraphs
+_blank_code_spans = cs.blank_code_spans
 _WHITESPACE_RUN = re.compile(r"\s+")
-
-
-def _blank_code_spans(text: str) -> str:
-    """*text* with every code span replaced by spaces, line breaks kept, so
-    offsets are unchanged. A span opens at a backtick run and closes at the next
-    run of exactly the same length, and may hold line breaks (CommonMark); an
-    opener with no such closer is literal backticks. A backslash escapes the
-    first backtick of an opener only: inside a span it is literal, so `C:\\` is
-    a closed span (CommonMark: backslash escapes do not work in code spans)."""
-    runs = [(run.start(), run.end()) for run in _BACKTICK_RUN.finditer(text)]
-    blanked = list(text)
-    index = 0
-    while index < len(runs):
-        start, end = runs[index]
-        slashes = len(text[:start]) - len(text[:start].rstrip("\\"))
-        if slashes % 2:
-            start += 1
-        if start == end:
-            index += 1
-            continue
-        runs[index] = (start, end)
-        width = end - start
-        close = next(
-            (
-                j
-                for j in range(index + 1, len(runs))
-                if runs[j][1] - runs[j][0] == width
-            ),
-            None,
-        )
-        if close is None:
-            index += 1
-            continue
-        for at in range(runs[index][0], runs[close][1]):
-            if blanked[at] != "\n":
-                blanked[at] = " "
-        index = close + 1
-    return "".join(blanked)
 
 
 def _scan_text(text: str) -> tuple[str, list[int]]:
@@ -1770,6 +1695,67 @@ def test_the_work_id_scan_reads_code_spans_on_the_joined_paragraph(
     text = "\n".join(line.replace("{id}", ident) for line in lead + lines) + "\n"
     findings = moment_and_host_findings([("GUIDE.md", text)], policy, mention, tmp_path)
     reds = [f for f in findings if "work id" in f]
+    assert [int(f.split(":")[1]) for f in reds] == [n + len(lead) for n in expected], (
+        findings
+    )
+
+
+_BLOCK_CASES = [
+    # A stray backtick ends the block's own line and another follows the id on
+    # the next line: joined, the pair would blank the id and the phrase.
+    (["# T`", "Body {id}` here."], [2]),
+    (["Title`", "=====", "Body {id}` here."], [3]),
+    (["Title`", "-----", "Body {id}` here."], [3]),
+    (["| a | b` |", "Body {id}` here."], [2]),
+    (["***", "Body `{id} here`."], []),
+    # A list item keeps its continuation lines, so a span may wrap inside it.
+    (["- item `a", "  {id}` b"], []),
+    (["- item `a", "  b` then {id}"], [2]),
+]
+_BLOCK_IDS = [
+    "atx-heading",
+    "setext-equals",
+    "setext-dashes",
+    "table-row",
+    "thematic-break-span-intact",
+    "list-item-wrapped-span",
+    "list-item-id-after-span",
+]
+
+
+@pytest.mark.parametrize("lines, expected", _BLOCK_CASES, ids=_BLOCK_IDS)
+def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_scan(
+    tmp_path, manifest, policy, lines, expected
+):
+    mention = work_mention(manifest)
+    ident = _planted_slice_id(manifest)
+    lead = ["Lead paragraph.", ""]
+    text = "\n".join(line.replace("{id}", ident) for line in lead + lines) + "\n"
+    findings = moment_and_host_findings([("GUIDE.md", text)], policy, mention, tmp_path)
+    reds = [f for f in findings if "work id" in f]
+    assert [int(f.split(":")[1]) for f in reds] == [n + len(lead) for n in expected], (
+        findings
+    )
+
+
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        (["# T`", "Works on this host` only."], [2]),
+        (["Title`", "=====", "Works on this host` only."], [3]),
+        (["| a | b` |", "Works on this host` only."], [2]),
+        (["- item `a", "  on this host` b"], []),
+    ],
+    ids=["atx-heading", "setext", "table-row", "list-item-wrapped-span"],
+)
+def test_a_block_line_does_not_pair_its_backtick_with_the_next_line_for_the_phrase_scan(
+    tmp_path, manifest, policy, lines, expected
+):
+    mention = work_mention(manifest)
+    lead = ["Lead paragraph.", ""]
+    text = "\n".join(lead + lines) + "\n"
+    findings = moment_and_host_findings([("GUIDE.md", text)], policy, mention, tmp_path)
+    reds = [f for f in findings if "on this host" in f]
     assert [int(f.split(":")[1]) for f in reds] == [n + len(lead) for n in expected], (
         findings
     )

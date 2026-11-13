@@ -34,7 +34,6 @@ from urllib.parse import unquote  # noqa: E402
 import config_loader  # noqa: E402
 from atomic_write import write_if_changed  # noqa: E402
 from check_structure import (  # noqa: E402
-    _INLINE_CODE,
     _MD_LINK,
     _SECTION_CITE,
     _URL_SCHEME,
@@ -43,7 +42,9 @@ from check_structure import (  # noqa: E402
     _prose_lines,
     _resolve_link,
     _unfenced_lines,
+    code_spans,
     kept_markdown,
+    markdown_paragraphs,
     served_chain,
     sorted_walk,
     walked_paths,
@@ -287,9 +288,13 @@ def _raw_references(text: str, rel: str) -> list:
         )
         for m in _SECTION_CITE.finditer(text)
     )
-    for line in _unfenced_lines(text):
-        for m in _INLINE_CODE.finditer(line):
-            span = m.group(2).strip()
+    # A span may wrap onto the next line, so spans are read on the joined
+    # paragraph by the rule the drift scans use (check_structure.code_spans);
+    # a line break inside a span is not a path character.
+    numbered = [(rel, i, line) for i, line in enumerate(_unfenced_lines(text), 1)]
+    for _rel, _first, paragraph, _starts in markdown_paragraphs(numbered):
+        for start, end, width in code_spans(paragraph):
+            span = paragraph[start + width : end - width].strip(" ")
             looks_like_path = "/" in span or span.endswith((".py", ".md"))
             if looks_like_path and _MENTION_RE.fullmatch(span):
                 refs.append(("mention", span, span.rstrip("/")))

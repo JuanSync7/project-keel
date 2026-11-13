@@ -426,3 +426,14 @@ def test_dead_link_and_anchor_messages_carry_a_remedy_and_the_anchors_that_exist
 
 def test_vendored_trees_are_ignored_directories():
     assert {".tox", ".nox", "htmlcov", ".eggs"} <= cs.IGNORE_DIRS
+
+
+def test_a_link_inside_a_wrapped_code_span_is_not_a_reference():
+    # Per line, "`a" and "[l](dead.md)`" each held one backtick and paired with
+    # none, so the dead link inside the wrapped span was read as a reference.
+    assert _find({"a.md": "Lead `a\nb [l](dead.md)` c.\n"}) == []
+
+
+def test_a_link_after_a_wrapped_code_span_is_still_checked():
+    errs = _find({"a.md": "Lead `a\nb` then [l](dead.md).\n"})
+    assert errs and "dead.md" in errs[0], errs

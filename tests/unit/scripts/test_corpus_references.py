@@ -75,6 +75,25 @@ def test_a_backticked_path_cannot_span_a_newline(path):
     ]
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Lead `unclosed\nwraps` then `src/thing.py` is named.\n",
+        "# T\nThe error `a\nb` from `src/thing.py`.\n",
+    ],
+    ids=["wrapped-span-before-path", "after-heading"],
+)
+def test_a_path_after_a_wrapped_span_is_still_a_mention(text):
+    # Per line, "` then `" paired as a span and hid the path after it.
+    assert ("mention", "src/thing.py", "src/thing.py") in bc._raw_references(
+        text, "docs/guide.md"
+    )
+
+
+def test_a_path_inside_a_wrapped_span_is_not_a_mention():
+    assert bc._raw_references("see `src/thing.py\nmore` here\n", "docs/g.md") == []
+
+
 def test_a_link_becomes_a_link_edge_from_the_writing_node_to_the_doc(repo):
     nodes = _nodes(repo)
     assert ("conventions", "../CONVENTIONS.md") in _edges(nodes["guide"], "link")

@@ -4104,7 +4104,125 @@ def _unfenced_lines(text):
 def _prose_lines(text):
     """_unfenced_lines with inline code spans blanked too — what a renderer
     would treat as prose, so a link written inside backticks is not a link."""
-    return [_INLINE_CODE.sub("", line) for line in _unfenced_lines(text)]
+    lines = _unfenced_lines(text)
+    out = []
+    at = 0
+    # A span may wrap onto the next line, so spans are read on the paragraph
+    # (code_spans), then cut out of each of its lines; numbering is kept.
+    for _rel, _first, paragraph, _starts in markdown_paragraphs(
+        [("", i, line) for i, line in enumerate(lines, 1)]
+    ):
+        count = paragraph.count("\n") + 1
+        joined = "\n".join(lines[at : at + count])
+        gone = set()
+        for start, end, _width in code_spans(joined):
+            gone.update(range(start, end))
+        kept = "".join(c for i, c in enumerate(joined) if i not in gone or c == "\n")
+        out.extend(kept.split("\n"))
+        at += count
+    return out
+
+
+# A line that opens a block of its own, so the line above it ends a paragraph.
+_BLOCK_OPENER = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
+# A heading or a table row is one line, and the line after it starts a new
+# paragraph; a list item keeps its continuation lines.
+_ONE_LINE_BLOCK = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|\|)")
+# A setext underline (_SETEXT_UNDERLINE, shared with the anchor check) closes
+# the text lines above it as a heading; a thematic break is a block of its own
+# either way.
+_THEMATIC_BREAK = re.compile(r"\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
+_QUOTE_MARK = re.compile(r"\s{0,3}(?:>\s?)+")
+_BACKTICK_RUN = re.compile(r"`+")
+
+
+def markdown_paragraphs(prose):
+    """Prose lines `(relpath, line number, text)` joined into paragraphs:
+    `(relpath, first line, text, line start offsets)`. A code span and a
+    sentence may wrap, so the scans read a paragraph, not a line. A paragraph
+    is a run of plain text lines, as in CommonMark: a blank line (a fence
+    blanks to one), a heading, a table row, a setext underline or a thematic
+    break ends it, so the next line starts a new one; a list item starts one
+    and keeps its continuation lines; a quote mark is dropped from each line."""
+    out = []
+    current = None  # [relpath, first, lines, offsets, kind]
+    size = 0
+    for relpath, number, line in prose:
+        line = _QUOTE_MARK.sub("", line, count=1)
+        open_ = (
+            current is not None
+            and current[0] == relpath
+            and current[1] + len(current[2]) == number
+            and current[4] != "closed"
+            and line.strip()
+        )
+        underline = (
+            open_ and current[4] == "text" and _SETEXT_UNDERLINE.match(line) is not None
+        )
+        continues = underline or (open_ and not _BLOCK_OPENER.match(line))
+        if not continues:
+            if current is not None:
+                out.append((current[0], current[1], "\n".join(current[2]), current[3]))
+            if _ONE_LINE_BLOCK.match(line) or _THEMATIC_BREAK.match(line):
+                kind = "closed"
+            elif _BLOCK_OPENER.match(line):
+                kind = "item"
+            else:
+                kind = "text"
+            current, size = [relpath, number, [], [], kind], 0
+        assert current is not None
+        current[3].append(size)
+        current[2].append(line)
+        if underline:
+            current[4] = "closed"
+        size += len(line) + 1
+    if current is not None:
+        out.append((current[0], current[1], "\n".join(current[2]), current[3]))
+    return out
+
+
+def code_spans(text):
+    """The code spans of *text* as `(start, end, width)`, *end* past the
+    closing run. A span opens at a backtick run and closes at the next run of
+    exactly the same length, and may hold line breaks (CommonMark); an opener
+    with no such closer is literal backticks. A backslash escapes the first
+    backtick of an opener only: inside a span it is literal, so `C:\\` is a
+    closed span (CommonMark: backslash escapes do not work in code spans)."""
+    runs = [(run.start(), run.end()) for run in _BACKTICK_RUN.finditer(text)]
+    spans = []
+    index = 0
+    while index < len(runs):
+        start, end = runs[index]
+        slashes = len(text[:start]) - len(text[:start].rstrip("\\"))
+        if slashes % 2:
+            start += 1
+        if start == end:
+            index += 1
+            continue
+        runs[index] = (start, end)
+        width = end - start
+        close = None
+        for j in range(index + 1, len(runs)):
+            if runs[j][1] - runs[j][0] == width:
+                close = j
+                break
+        if close is None:
+            index += 1
+            continue
+        spans.append((start, runs[close][1], width))
+        index = close + 1
+    return spans
+
+
+def blank_code_spans(text):
+    """*text* with every code span replaced by spaces, line breaks kept, so
+    offsets are unchanged (`code_spans` says what a span is)."""
+    blanked = list(text)
+    for start, end, _width in code_spans(text):
+        for at in range(start, end):
+            if blanked[at] != "\n":
+                blanked[at] = " "
+    return "".join(blanked)
 
 
 def _heading_slug(heading):
