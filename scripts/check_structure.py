@@ -4211,7 +4211,7 @@ def markdown_paragraphs(prose):
                 columns = [0]
             text, indent, inside = _block_start(line, columns)
         opener = inside and _BLOCK_OPENER.match(text) is not None
-        breaks = inside and _THEMATIC_BREAK.match(text) is not None
+        breaks = inside and _THEMATIC_BREAK.fullmatch(text) is not None
         open_ = (
             current is not None
             and current[0] == relpath
@@ -4225,7 +4225,7 @@ def markdown_paragraphs(prose):
             open_
             and current[4] == "text"
             and inside
-            and _SETEXT_UNDERLINE.match(text) is not None
+            and _SETEXT_UNDERLINE.fullmatch(text) is not None
         )
         continues = underline or (open_ and not opener and not breaks)
         # A blank line opens a paragraph that the next text line continues, so
