@@ -4136,12 +4136,14 @@ _ONE_LINE_BLOCK = re.compile(r"(?:#{1,6}(?:\s|$)|\|)")
 _THEMATIC_BREAK = re.compile(r"(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
 # Read with .match: a `>` later in a line is text, not a quote mark. A quote's
 # content may sit up to 3 spaces past its mark, so `>  >` nests two deep.
-_QUOTE_MARK = re.compile(r">[ \t]?(?: {0,3}>[ \t]?)*")
-_LIST_MARKER = re.compile(r"([-*+]|\d{1,9}[.)])(\s*)")
+_QUOTE_MARK = re.compile(r"> ?(?: {0,3}> ?)*")
+_LIST_MARKER = re.compile(r"([-*+]|\d{1,9}[.)])( *)")
 _BACKTICK_RUN = re.compile(r"`+")
 # A block starts 0 to 3 columns past its container's content column; 4 or
 # more is an indented continuation (CommonMark).
 _BLOCK_INDENT = 3
+# markdown_paragraphs expands each line's tabs to this stop from the line's
+# own start, so the column helpers below read spaces only.
 _TAB_STOP = 4
 
 
@@ -4149,9 +4151,9 @@ def _block_start(line, columns):
     """`(text, indent, inside)` of *line*: its text without the indent, the
     indent in columns, and whether it is 0 to 3 columns past the content
     column of a container in *columns* (ascending, 0 first), so the text may
-    open a block. A tab counts to the next multiple of 4 columns."""
-    text = line.lstrip(" \t")
-    indent = len(line[: len(line) - len(text)].expandtabs(_TAB_STOP))
+    open a block."""
+    text = line.lstrip(" ")
+    indent = len(line) - len(text)
     column = max(c for c in columns if c <= indent)
     return text, indent, indent - column <= _BLOCK_INDENT
 
@@ -4159,17 +4161,15 @@ def _block_start(line, columns):
 def _item_column(line, indent):
     """The content column of the list item *line* opens: where its text starts
     after the marker, or one past the marker when five or more spaces (or
-    none) follow it, as in CommonMark. A tab after the marker counts to the
-    next multiple of 4 columns of the line, not of the gap."""
-    text = line.lstrip(" \t")
+    none) follow it, as in CommonMark."""
+    text = line.lstrip(" ")
     marker = _LIST_MARKER.match(text)
     assert marker is not None
     after = indent + len(marker.group(1))
-    head = line[: len(line) - len(text) + marker.end()]
-    start = len(head.expandtabs(_TAB_STOP))
-    if start - after > 4 or not text[marker.end() :].strip():
+    gap = len(marker.group(2))
+    if gap > 4 or not text[marker.end() :].strip():
         return after + 1
-    return start
+    return after + gap
 
 
 def markdown_paragraphs(prose):
@@ -4183,19 +4183,25 @@ def markdown_paragraphs(prose):
     columns past the content column of the list item it sits in, so a break,
     item or heading nested 4 or more columns in is judged against its own
     item, not column 0. A line that starts a paragraph or follows a blank line
-    closes every item whose content column it sits left of. A quote mark is
-    dropped from the start of each line;
+    closes every item whose content column it sits left of. A tab counts to
+    the next multiple of 4 columns of its line, and the paragraph text holds
+    it expanded. A quote mark is dropped from the start of each line;
     a quoted line after an unquoted one, or a deeper quote under a shallower
     one, starts a paragraph, and an unquoted line after a quoted one
-    continues it (a lazy continuation)."""
+    continues it (a lazy continuation). A line's indent before its quote mark,
+    and an unquoted line under a quote, are judged outside the quote's items."""
     out = []
     current = None  # [relpath, first, lines, offsets, kind, quote depth]
     size = 0
     columns = [0]  # content columns of the open list items, in this quote
     for relpath, number, line in prose:
+        line = line.expandtabs(_TAB_STOP)
         if current is None or current[0] != relpath:
             columns = [0]
-        text, indent, inside = _block_start(line, columns)
+        # `columns` belong to the open quote, if any; its mark, or a line
+        # without one, sits outside it, where only column 0 is known.
+        quoted = current is not None and current[0] == relpath and current[5] > 0
+        text, indent, inside = _block_start(line, [0] if quoted else columns)
         mark = _QUOTE_MARK.match(text) if inside else None
         depth = 0
         if mark is not None:
@@ -4236,6 +4242,9 @@ def markdown_paragraphs(prose):
                 kind = "text"
             current, size = [relpath, number, [], [], kind, depth], 0
         assert current is not None
+        if quoted and mark is None and not continues:
+            # An unquoted line that is no lazy continuation closes the quote.
+            columns = [0]
         if line.strip() and (not continues or after_blank):
             columns = [c for c in columns if c <= indent]
             if not continues and current[4] == "item":

@@ -1745,6 +1745,18 @@ _BLOCK_CASES = [
     # deeper quote; a list inside a quote keeps its columns line to line.
     (["> Quote `a", ">  > Body {id}` here."], [2]),
     (["> - o", ">   - i `a", ">     - Body {id}` here."], [3]),
+    # An unquoted line under a quote sits outside the quote's items, so a
+    # 4-space `- x` there is a lazy continuation, not a nested item.
+    (["> - o `a", "    - x` {id} `y"], [2]),
+    (["> - o", ">   - i `a", "    - x` {id} `y"], [3]),
+    # A tab after a quote mark counts to the next multiple of 4 columns of the
+    # line, and the mark takes one of them as its optional space.
+    (["> t `a", ">\t  > x` {id} `y"], [2]),
+    (["> Quote `a", "> \t> Body {id}` here."], [2]),
+    (["> t", ">\t- Body `b", ">       - {id}` x"], [3]),
+    # An unquoted line that is no lazy continuation closes the quote and its
+    # items, so a 5-space `- x` under the paragraph after it continues it.
+    (["> - o", "  # H", "  text `b", "     - x` {id} `y"], [4]),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1770,6 +1782,12 @@ _BLOCK_IDS = [
     "tab-after-marker",
     "spaced-quote-under-quote",
     "list-inside-quote",
+    "lazy-line-under-quoted-item",
+    "lazy-line-under-nested-quoted-item",
+    "tab-after-quote-mark",
+    "tab-between-quote-marks",
+    "tab-before-quoted-item",
+    "unquoted-block-closes-quote",
 ]
 
 
