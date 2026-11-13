@@ -644,14 +644,8 @@ def moment_and_host_findings(
     for relpath, text in docs:
         for i, line in enumerate(cs._unfenced_lines(text), 1):
             # A code span may wrap onto the next line, so the paragraph keeps
-            # its code and blanks it joined; the work id scan stays per line.
+            # its code and blanks it joined, for the work id and the phrases.
             prose.append((relpath, i, line))
-            findings.extend(
-                "%s:%d: names the work id %r in prose -- a slice id is history; "
-                "say what is true now, or move the text under doc_drift."
-                "history_paths" % (relpath, i, m.group(0))
-                for m in mention.finditer(cs._INLINE_CODE.sub("", line))
-            )
         for i, line in enumerate(text.split("\n"), 1):
             for m in _LOOPBACK_PORT.finditer(line):
                 ports.setdefault(m.group(1), []).append((relpath, i, m.group(0)))
@@ -659,6 +653,20 @@ def moment_and_host_findings(
         (relpath, first, starts, *_scan_text(text))
         for relpath, first, text, starts in _paragraphs(prose)
     ]
+    for relpath, first, starts, scanned, origin in paragraphs:
+        # The same blanked text as the phrase scan, so one definition of a code
+        # span exempts both and a match is reported on the line it starts on.
+        findings.extend(
+            "%s:%d: names the work id %r in prose -- a slice id is history; "
+            "say what is true now, or move the text under doc_drift."
+            "history_paths"
+            % (
+                relpath,
+                first + _line_of(scanned, origin, m.span(), starts),
+                m.group(0),
+            )
+            for m in mention.finditer(scanned)
+        )
     for regex, reason in policy["forbidden_phrases"]:
         # The bounded child enumerates every match, so no configured pattern
         # runs here. A paragraph holds many lines, so every match is a finding:
@@ -1728,6 +1736,38 @@ def test_a_planted_work_id_host_phrase_or_undeclared_port_reds_the_scan(
         port = _LOOPBACK_PORT.search(planted).group(1)
         (tmp_path / "serve.py").write_text("PORT = %s\n" % port, encoding="utf-8")
         assert scan(source + "\n" + planted + "\n") == []
+
+
+def _planted_slice_id(manifest):
+    """A concrete slice id built from the `work_naming` slice_id template."""
+    return manifest["work_naming"]["slice_id"].replace("<n>", "1").replace("<m>", "1")
+
+
+@pytest.mark.parametrize(
+    "lines, expected",
+    [
+        # The span wraps across two lines: the id is code on both, no finding.
+        (["Delivered as `see", "{id} here` today."], []),
+        # Prose between two wrapped spans: the backticks on the middle line are
+        # not a span, so the id is prose and is found on the middle line.
+        (["Text `a", "b` then {id} then `c", "d` end."], [2]),
+        # The id on the line after a wrapped span closes: the offset map must
+        # name that line, not the line the span opened on.
+        (["Text `a", "b` closes.", "Then {id} follows."], [3]),
+        # An id fully on one line, outside any span, is found as before.
+        (["Plain {id} prose."], [1]),
+    ],
+    ids=["id-in-wrapped-span", "id-between-spans", "id-after-span", "id-one-line"],
+)
+def test_the_work_id_scan_reads_code_spans_on_the_joined_paragraph(
+    tmp_path, manifest, policy, lines, expected
+):
+    mention = work_mention(manifest)
+    ident = _planted_slice_id(manifest)
+    text = "\n".join(line.replace("{id}", ident) for line in lines) + "\n"
+    findings = moment_and_host_findings([("GUIDE.md", text)], policy, mention, tmp_path)
+    reds = [f for f in findings if "work id" in f]
+    assert [int(f.split(":")[1]) for f in reds] == expected, findings
 
 
 # A report of a change names the moment it describes, so it is history. Each
