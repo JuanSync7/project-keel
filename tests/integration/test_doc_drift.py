@@ -36,7 +36,7 @@ import exit_code_table  # noqa: E402
 import review_docs  # noqa: E402
 import traceability  # noqa: E402
 from child_env import build_child_env  # noqa: E402
-from scripts.bounded_match import match_values  # noqa: E402
+from scripts.bounded_match import match_spans  # noqa: E402
 from test_e2e_coverage import EXEMPT_KEY  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -551,12 +551,78 @@ def _paragraphs(
     return out
 
 
-def _line_of(match: re.Match[str], starts: list[int]) -> int:
-    """The 0-based line, within its paragraph, of *match*'s first non-space
-    character. A pattern may open on the whitespace before its word, and in a
-    joined paragraph that whitespace can be the previous line's break."""
-    text = match.group(0)
-    offset = match.start() + len(text) - len(text.lstrip())
+_BACKTICK_RUN = re.compile(r"`+")
+_WHITESPACE_RUN = re.compile(r"\s+")
+
+
+def _blank_code_spans(text: str) -> str:
+    """*text* with every code span replaced by spaces, line breaks kept, so
+    offsets are unchanged. A span opens at a backtick run and closes at the next
+    run of exactly the same length, and may hold line breaks (CommonMark); an
+    opener with no such closer is literal backticks, and a backslash escapes
+    the first backtick of the run after it."""
+    runs = []
+    for run in _BACKTICK_RUN.finditer(text):
+        start = run.start()
+        slashes = len(text[:start]) - len(text[:start].rstrip("\\"))
+        if slashes % 2 and run.end() - start > 1:
+            start += 1
+        elif slashes % 2:
+            continue
+        runs.append((start, run.end()))
+    blanked = list(text)
+    index = 0
+    while index < len(runs):
+        width = runs[index][1] - runs[index][0]
+        close = next(
+            (
+                j
+                for j in range(index + 1, len(runs))
+                if runs[j][1] - runs[j][0] == width
+            ),
+            None,
+        )
+        if close is None:
+            index += 1
+            continue
+        for at in range(runs[index][0], runs[close][1]):
+            if blanked[at] != "\n":
+                blanked[at] = " "
+        index = close + 1
+    return "".join(blanked)
+
+
+def _scan_text(text: str) -> tuple[str, list[int]]:
+    """A paragraph as the phrase scan reads it: code spans blanked, then every
+    whitespace run one space, so a hard wrap or a doubled space cannot split a
+    literal-space phrase; with, for each character of that text, its offset in
+    *text*, so a finding still names the line the match is on."""
+    blanked = _blank_code_spans(text)
+    pieces: list[str] = []
+    origin: list[int] = []
+    last = 0
+    for run in _WHITESPACE_RUN.finditer(blanked):
+        pieces.append(blanked[last : run.start()] + " ")
+        origin.extend(range(last, run.start()))
+        origin.append(run.start())
+        last = run.end()
+    pieces.append(blanked[last:])
+    origin.extend(range(last, len(blanked)))
+    return "".join(pieces), origin
+
+
+def _line_of(
+    scanned: str, origin: list[int], span: tuple[int, int], starts: list[int]
+) -> int:
+    """The 0-based line, within its paragraph, of the first non-space
+    character of the match at *span* in the scanned text. A pattern may open on
+    the whitespace before its word, and in a joined paragraph that whitespace
+    can be the previous line's break."""
+    matched = scanned[span[0] : span[1]]
+    first = span[0] + len(matched) - len(matched.lstrip())
+    if not origin:
+        return 0
+    offset = origin[min(first, len(origin) - 1)]
     return bisect.bisect_right(starts, offset) - 1
 
 
@@ -575,45 +641,46 @@ def moment_and_host_findings(
     ports: dict[str, list[tuple[str, int, str]]] = {}
     prose = []
     for relpath, text in docs:
-        for i, line in enumerate(cs._prose_lines(text), 1):
+        for i, line in enumerate(cs._unfenced_lines(text), 1):
+            # A code span may wrap onto the next line, so the paragraph keeps
+            # its code and blanks it joined; the work id scan stays per line.
             prose.append((relpath, i, line))
             findings.extend(
                 "%s:%d: names the work id %r in prose -- a slice id is history; "
                 "say what is true now, or move the text under doc_drift."
                 "history_paths" % (relpath, i, m.group(0))
-                for m in mention.finditer(line)
+                for m in mention.finditer(cs._INLINE_CODE.sub("", line))
             )
         for i, line in enumerate(text.split("\n"), 1):
             for m in _LOOPBACK_PORT.finditer(line):
                 ports.setdefault(m.group(1), []).append((relpath, i, m.group(0)))
-    paragraphs = _paragraphs(prose)
+    paragraphs = [
+        (relpath, first, starts, *_scan_text(text))
+        for relpath, first, text, starts in _paragraphs(prose)
+    ]
     for regex, reason in policy["forbidden_phrases"]:
-        matched = match_values(
+        # The bounded child enumerates every match, so no configured pattern
+        # runs here. A paragraph holds many lines, so every match is a finding:
+        # stopping at the first would hide a second report beside it.
+        spans = match_spans(
             regex.pattern,
             "doc_drift.forbidden_phrases",
-            [text for _path, _number, text, _starts in paragraphs],
-            "search",
+            [scanned for _path, _number, _starts, scanned, _origin in paragraphs],
             timeout=timeout,
         )
-        for (relpath, first, text, starts), did_match in zip(
-            paragraphs, matched, strict=True
+        for (relpath, first, starts, scanned, origin), hits in zip(
+            paragraphs, spans, strict=True
         ):
-            if did_match:
-                # Only replay proven matches to retain the exact finding excerpt.
-                # A paragraph holds many lines, so every match is a finding:
-                # stopping at the first would hide a second report beside it.
-                hits = list(regex.finditer(text))
-                assert hits, (relpath, first, regex.pattern)
-                findings.extend(
-                    "%s:%d: %r -- %s"
-                    % (
-                        relpath,
-                        first + _line_of(m, starts),
-                        " ".join(m.group(0).split()),
-                        reason,
-                    )
-                    for m in hits
+            findings.extend(
+                "%s:%d: %r -- %s"
+                % (
+                    relpath,
+                    first + _line_of(scanned, origin, hit, starts),
+                    " ".join(scanned[hit[0] : hit[1]].split()),
+                    reason,
                 )
+                for hit in hits
+            )
     declared, decode_findings = declared_ports(port_root, set(ports))
     findings.extend(decode_findings)
     for port in sorted(set(ports) - declared):
@@ -1783,6 +1850,108 @@ def test_a_report_hard_wrapped_across_two_lines_reds_at_its_first_line(
     assert fenced == [], "a fence is an illustration"
 
 
+def _scan_planted(tmp_path, manifest, policy, docs, planted):
+    """Findings for the shipped CONTRIBUTING.md with *planted* appended, after
+    proving the unplanted copy is clean; also the line the plant starts on."""
+    source = dict(docs)["CONTRIBUTING.md"]
+    doc = tmp_path / "CONTRIBUTING.md"
+
+    def scan(text):
+        doc.write_text(text, encoding="utf-8")
+        found = shipped_docs(tmp_path, policy["history_paths"])
+        assert found, "a pass over zero documents is a failure"
+        return moment_and_host_findings(found, policy, work_mention(manifest), tmp_path)
+
+    assert scan(source) == [], "the unplanted copy must be clean"
+    return scan(source + "\n" + planted + "\n"), len(source.split("\n")) + 1
+
+
+@pytest.mark.parametrize(
+    "planted, first_line_offset",
+    [
+        ("The agent runs on this\nhost only.", 0),
+        ("The agent runs on\n  this   host only.", 0),
+        ("The agent runs\non\nthis\nhost only.", 1),
+        ("Look at this\nhost's disk.", 0),
+    ],
+    ids=["one-wrap", "indent-and-doubled-space", "wrap-every-word", "apostrophe"],
+)
+def test_a_literal_space_phrase_split_by_a_hard_wrap_reds_at_its_first_word(
+    tmp_path, manifest, policy, docs, planted, first_line_offset
+):
+    """A configured phrase with a literal space is matched over the paragraph
+    with each whitespace run read as one space, and the finding names the line
+    the phrase starts on, not the line it ends on."""
+    findings, first = _scan_planted(tmp_path, manifest, policy, docs, planted)
+    assert len(findings) == 1, findings
+    assert findings[0].startswith("CONTRIBUTING.md:%d:" % (first + first_line_offset))
+    assert "a claim about one machine" in findings[0], findings
+    assert "\n" not in findings[0], "a finding is one line"
+
+
+@pytest.mark.parametrize(
+    "planted",
+    [
+        "Quote `the loader now\nuses a reader` here.",
+        "Quote `the loader now\n  uses a reader` and `a\nsecond` span.",
+        "Quote ``the loader ` now\nuses a reader`` here.",
+        "Quote `on this\nhost` here.",
+        "`the loader now\nuses a reader`",
+    ],
+    ids=["one-span", "two-spans", "double-backtick", "phrase-in-span", "whole-line"],
+)
+def test_a_report_quoted_in_a_code_span_wrapped_across_lines_is_exempt(
+    tmp_path, manifest, policy, docs, planted
+):
+    """Code spans are illustrations, as the line scan treated them, even where
+    the span wraps."""
+    findings, _first = _scan_planted(tmp_path, manifest, policy, docs, planted)
+    assert findings == [], findings
+
+
+@pytest.mark.parametrize(
+    "planted, count",
+    [
+        ("A `span` is fine; the loader now\nuses a reader.", 1),
+        ("A `a\nb` span, then the loader now\nuses a reader.", 1),
+        ("A stray ` then the loader now\nuses it.", 1),
+        ("A `` pair `\nthe loader now\nuses it.", 1),
+        ("An escaped \\`tick the loader now\nuses it\\`.", 1),
+        ("`x` the loader now\nuses `y` and the gate no\nlonger accepts z.", 2),
+    ],
+    ids=[
+        "span-before",
+        "wrapped-span-before",
+        "unmatched-opener",
+        "unequal-runs",
+        "escaped-ticks",
+        "two-reports-around-spans",
+    ],
+)
+def test_a_real_wrapped_report_beside_code_spans_still_reds(
+    tmp_path, manifest, policy, docs, planted, count
+):
+    findings, _first = _scan_planted(tmp_path, manifest, policy, docs, planted)
+    assert len(findings) == count, findings
+
+
+@pytest.mark.parametrize(
+    "text, blanked",
+    [
+        ("a `b` c", "a     c"),
+        ("a `b\nc` d", "a   \n   d"),
+        ("a ``b ` c`` d", "a" + " " * 11 + "d"),
+        ("a `b`` c", "a `b`` c"),
+        ("a \\`b` c", "a \\`b` c"),
+        ("a \\``b`` c", "a \\``b`` c"),
+    ],
+    ids=["one", "wrapped", "longer-run-inside", "unequal", "escaped", "half-escaped"],
+)
+def test_blank_code_spans_follows_the_commonmark_run_rule(text, blanked):
+    assert _blank_code_spans(text) == blanked
+    assert len(_blank_code_spans(text)) == len(text), "offsets must not move"
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -1882,49 +2051,77 @@ def test_a_real_present_claim_in_the_corpus_stays_accepted(
     assert moment_and_host_findings(found, policy, work_mention(manifest), _ROOT) == []
 
 
-def _twin_phrases(source: str) -> dict[str, str]:
-    """The `doc_drift.forbidden_phrases` map of the manifest twin *source*
-    as copier renders it under the question defaults, parsed.
+@bounded(str(_ROOT))
+def _answer_sets(root: str) -> list[dict[str, Any]]:
+    """Every answer set copier.yml's validators allow, from the list
+    `test_reference_drift` judges the twin under (imported at call time: that
+    module imports this one). Many sets, so they are derived once."""
+    import test_reference_drift as reference
+
+    return reference.answer_sets(reference.copier_questions(Path(root)))
+
+
+def _twin_phrases(template: Any, answers: dict[str, Any]) -> dict[str, str]:
+    """The `doc_drift.forbidden_phrases` map of the manifest twin *template*
+    (compiled once: compiling dominates a render) as copier renders it under
+    *answers*, parsed.
 
     A substring search of the source would credit an entry kept only in a
     `{# #}` comment or an `{% if %}` block, which the render lacks; the
-    render is what a generated project reads. Raises on a name the defaults
+    render is what a generated project reads. Raises on a name the answers
     leave undefined (StrictUndefined) and on a render that is not JSON."""
-    jinja2 = optional_deps.importorskip("jinja2", extra="template")
-    yaml = optional_deps.importorskip("yaml", extra="template")
-    env = jinja2.Environment(
-        keep_trailing_newline=True, undefined=jinja2.StrictUndefined
-    )
-    cfg = yaml.safe_load((_ROOT / "copier.yml").read_text(encoding="utf-8"))
-    answers: dict[str, Any] = {}
-    for name, spec in cfg.items():
-        if name.startswith("_"):
-            continue
-        default = spec.get("default") if isinstance(spec, dict) else spec
-        if isinstance(default, str) and "{{" in default:
-            default = env.from_string(default).render(**answers)
-        answers[name] = default
-    rendered = json.loads(env.from_string(source).render(**answers))
+    rendered = json.loads(template.render(**answers))
     return dict(rendered[_BLOCK]["forbidden_phrases"])
 
 
 def _twin_phrase_findings(source: str, entries: list[tuple[Any, str]]) -> list[str]:
-    """Differences between keel's `forbidden_phrases` and the twin's render,
-    both directions: an entry the render lacks or words differently, and an
-    entry the render holds that keel does not."""
+    """Differences between keel's `forbidden_phrases` and the twin's render
+    under every answer set, both directions: an entry the render lacks or
+    words differently, and an entry the render holds that keel does not. A
+    finding says in how many answer sets it holds, because an entry kept in an
+    answer-dependent block is missing from only some."""
     ours = {regex.pattern: reason for regex, reason in entries}
-    theirs = _twin_phrases(source)
-    findings = [
-        "twin lacks or rewords %r" % p for p in sorted(ours) if theirs.get(p) != ours[p]
+    import test_reference_drift as reference
+
+    sets = _answer_sets(str(_ROOT))
+    assert sets, "a parity check over zero answer sets proves nothing"
+    template = reference._jinja().from_string(source)
+    counts: dict[str, int] = {}
+    for answers in sets:
+        theirs = _twin_phrases(template, answers)
+        found = [
+            "twin lacks or rewords %r" % p
+            for p in sorted(ours)
+            if theirs.get(p) != ours[p]
+        ]
+        found += ["twin adds %r" % p for p in sorted(set(theirs) - set(ours))]
+        for finding in found:
+            counts[finding] = counts.get(finding, 0) + 1
+    return [
+        "%s under %d of %d answer sets" % (finding, count, len(sets))
+        for finding, count in sorted(counts.items())
     ]
-    findings += ["twin adds %r" % p for p in sorted(set(theirs) - set(ours))]
-    return findings
+
+
+def _default_only_test() -> str:
+    """A Jinja test, on a scalar question, that holds under the question
+    defaults and fails under some other answer set."""
+    import test_reference_drift as reference
+
+    questions = reference.copier_questions(_ROOT)
+    defaults = reference.complete_answers(questions, {})
+    sets = _answer_sets(str(_ROOT))
+    for name, value in defaults.items():
+        if isinstance(value, (bool, str)) and any(a[name] != value for a in sets):
+            return "%s == %s" % (name, json.dumps(value))
+    raise AssertionError("no scalar question has an answer other than its default")
 
 
 def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
     """A generated project refuses what keel refuses: the parsed render of the
-    `.jinja` twin holds exactly the `forbidden_phrases` keel reads, pattern and
-    reason, in both directions. The expected set is the policy itself."""
+    `.jinja` twin, under every answer set, holds exactly the
+    `forbidden_phrases` keel reads, pattern and reason, in both directions.
+    The expected set is the policy itself."""
     twin = _ROOT / "config" / "project.json.jinja"
     if not twin.is_file():
         pytest.skip(_TEMPLATE_ONLY)
@@ -1941,12 +2138,14 @@ def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
         "if-false",
         "extra-entry",
         "reworded",
+        "answer-dependent-if",
     ],
 )
 def test_a_twin_entry_outside_the_render_reds_the_parity_check(policy, plant):
     """Each fault is invisible to a substring search of the source and red to
     the render: an entry kept only in a Jinja comment or a false block, an
-    entry only the twin holds, and an entry whose reason the twin rewords."""
+    entry only the twin holds, an entry whose reason the twin rewords, and an
+    entry kept in a block that holds under the question defaults only."""
     twin = _ROOT / "config" / "project.json.jinja"
     if not twin.is_file():
         pytest.skip(_TEMPLATE_ONLY)
@@ -1967,6 +2166,10 @@ def test_a_twin_entry_outside_the_render_reds_the_parity_check(policy, plant):
         bad = source.replace(held, "{% if false %}" + held + "{% endif %}")
     elif plant == "extra-entry":
         bad = source.replace(held, held + ', "(?i)\\\\bplanted\\\\b": "r"')
+    elif plant == "answer-dependent-if":
+        bad = source.replace(
+            held, "{% if " + _default_only_test() + " %}" + held + "{% endif %}"
+        )
     else:
         bad = source.replace(
             line, "%s: %s" % (json.dumps(regex.pattern), json.dumps(reason + " x"))
@@ -2740,5 +2943,29 @@ def test_forbidden_backtracking_refuses_within_deadline(tmp_path: Path) -> None:
             re.compile("never"),
             tmp_path,
             timeout=0.2,
+        )
+    assert time.monotonic() - started < 5
+
+
+def test_forbidden_match_then_backtrack_refuses_within_deadline(tmp_path: Path) -> None:
+    """The pattern matches `x`, then backtracks on the tail the finder must
+    still scan; no configured regex may run outside the bounded child."""
+    pattern, value = r"x|(a+)+$", "x " + "a" * 40 + "b"
+    policy = drift_policy(
+        {
+            "doc_drift": {
+                "history_paths": ["history/"],
+                "forbidden_phrases": {pattern: "a reason"},
+            }
+        }
+    )
+    started = time.monotonic()
+    with pytest.raises(AssertionError, match="doc_drift.forbidden_phrases.*timeout"):
+        moment_and_host_findings(
+            [("guide.md", value)],
+            policy,
+            re.compile("never"),
+            tmp_path,
+            timeout=0.5,
         )
     assert time.monotonic() - started < 5

@@ -94,3 +94,68 @@ def test_batch_uses_one_isolated_child_and_stdin_json(
     assert "env" in kwargs and "timeout" in kwargs
     assert '"x"' in kwargs["input"] and '"y"' in kwargs["input"]
     assert "work_naming.backlog_id" not in args[0]
+
+
+@pytest.mark.parametrize(
+    "pattern, values, expected",
+    [
+        (r"\d+", ["a1 b22 c333", "none", ""], [[(1, 2), (4, 6), (8, 11)], [], []]),
+        (r"x*", ["ab"], [[(0, 0), (1, 1), (2, 2)]]),
+        (r"é+", ["aéé é"], [[(1, 3), (4, 5)]]),
+    ],
+    ids=["several-none-empty-value", "empty-matches", "non-ascii-offsets"],
+)
+def test_spans_agree_with_finditer(
+    pattern: str, values: list[str], expected: list[list[tuple[int, int]]]
+) -> None:
+    bounded_match = importlib.import_module("scripts.bounded_match")
+    spans = bounded_match.match_spans(pattern, "doc_drift.forbidden_phrases", values)
+    assert spans == expected
+    assert spans == [[m.span() for m in re.finditer(pattern, v)] for v in values]
+
+
+def test_spans_of_an_empty_batch_start_no_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bounded_match = importlib.import_module("scripts.bounded_match")
+
+    def unexpected(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("an empty batch started a child")
+
+    monkeypatch.setattr(subprocess, "run", unexpected)
+    assert bounded_match.match_spans("x", "doc_drift.forbidden_phrases", []) == []
+
+
+def test_spans_of_a_matching_then_backtracking_pattern_refuse_in_time() -> None:
+    bounded_match = importlib.import_module("scripts.bounded_match")
+    pattern, value = r"x|(a+)+$", "x " + "a" * 40 + "b"
+    started = time.monotonic()
+    with pytest.raises(AssertionError) as caught:
+        bounded_match.match_spans(
+            pattern, "doc_drift.forbidden_phrases", [value], timeout=0.5
+        )
+    assert time.monotonic() - started < 10
+    message = str(caught.value)
+    assert "doc_drift.forbidden_phrases" in message
+    assert "timeout" in message and "repair" in message
+    assert pattern not in message and value not in message
+
+
+@pytest.mark.parametrize(
+    "output",
+    ["not json", "[]", "[[[0, 9]]]", "[[[1, 0]]]", "[[[0]]]", "[[[true, 1]]]", "[1]"],
+)
+def test_malformed_span_replies_refuse_without_inputs(
+    monkeypatch: pytest.MonkeyPatch, output: str
+) -> None:
+    bounded_match = importlib.import_module("scripts.bounded_match")
+
+    def reply(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args[0], 0, output, "private")
+
+    monkeypatch.setattr(subprocess, "run", reply)
+    with pytest.raises(AssertionError) as caught:
+        bounded_match.match_spans("private", "doc_drift.forbidden_phrases", ["abc"])
+    message = str(caught.value)
+    assert "doc_drift.forbidden_phrases" in message and "repair" in message
+    assert "private" not in message
