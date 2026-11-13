@@ -524,7 +524,7 @@ def _paragraphs(
     """Prose lines joined into paragraphs: `(relpath, first line, text, line
     start offsets)`. A report of a change is a sentence, and a hard wrap may
     fall inside it, so the phrase scan reads a paragraph, not a line. A blank
-    line (a fence or span blanks to one), a heading, a list item or a table
+    line (a fence blanks to one), a heading, a list item or a table
     row starts a new paragraph, and a quote mark is dropped from each line."""
     out: list[tuple[str, int, str, list[int]]] = []
     current: tuple[str, int, list[str], list[int]] | None = None
@@ -559,21 +559,22 @@ def _blank_code_spans(text: str) -> str:
     """*text* with every code span replaced by spaces, line breaks kept, so
     offsets are unchanged. A span opens at a backtick run and closes at the next
     run of exactly the same length, and may hold line breaks (CommonMark); an
-    opener with no such closer is literal backticks, and a backslash escapes
-    the first backtick of the run after it."""
-    runs = []
-    for run in _BACKTICK_RUN.finditer(text):
-        start = run.start()
-        slashes = len(text[:start]) - len(text[:start].rstrip("\\"))
-        if slashes % 2 and run.end() - start > 1:
-            start += 1
-        elif slashes % 2:
-            continue
-        runs.append((start, run.end()))
+    opener with no such closer is literal backticks. A backslash escapes the
+    first backtick of an opener only: inside a span it is literal, so `C:\\` is
+    a closed span (CommonMark: backslash escapes do not work in code spans)."""
+    runs = [(run.start(), run.end()) for run in _BACKTICK_RUN.finditer(text)]
     blanked = list(text)
     index = 0
     while index < len(runs):
-        width = runs[index][1] - runs[index][0]
+        start, end = runs[index]
+        slashes = len(text[:start]) - len(text[:start].rstrip("\\"))
+        if slashes % 2:
+            start += 1
+        if start == end:
+            index += 1
+            continue
+        runs[index] = (start, end)
+        width = end - start
         close = next(
             (
                 j
@@ -1918,6 +1919,8 @@ def test_a_report_quoted_in_a_code_span_wrapped_across_lines_is_exempt(
         ("A `` pair `\nthe loader now\nuses it.", 1),
         ("An escaped \\`tick the loader now\nuses it\\`.", 1),
         ("`x` the loader now\nuses `y` and the gate no\nlonger accepts z.", 2),
+        ("Use `C:\\` then the loader now\nuses a reader, see `z`.", 1),
+        ("A trailing `\\` is fine.\nThe loader now uses a reader, see `z`.", 1),
     ],
     ids=[
         "span-before",
@@ -1926,6 +1929,8 @@ def test_a_report_quoted_in_a_code_span_wrapped_across_lines_is_exempt(
         "unequal-runs",
         "escaped-ticks",
         "two-reports-around-spans",
+        "backslash-ends-span",
+        "lone-backslash-span",
     ],
 )
 def test_a_real_wrapped_report_beside_code_spans_still_reds(
@@ -1944,8 +1949,17 @@ def test_a_real_wrapped_report_beside_code_spans_still_reds(
         ("a `b`` c", "a `b`` c"),
         ("a \\`b` c", "a \\`b` c"),
         ("a \\``b`` c", "a \\``b`` c"),
+        ("a `C:\\` b `y`", "a " + " " * 5 + " b " + " " * 3),
     ],
-    ids=["one", "wrapped", "longer-run-inside", "unequal", "escaped", "half-escaped"],
+    ids=[
+        "one",
+        "wrapped",
+        "longer-run-inside",
+        "unequal",
+        "escaped",
+        "half-escaped",
+        "backslash-inside-span",
+    ],
 )
 def test_blank_code_spans_follows_the_commonmark_run_rule(text, blanked):
     assert _blank_code_spans(text) == blanked
