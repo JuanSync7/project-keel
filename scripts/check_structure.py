@@ -4124,17 +4124,48 @@ def _prose_lines(text):
 
 
 # A line that opens a block of its own, so the line above it ends a paragraph.
-_BLOCK_OPENER = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
+# The patterns read a line with its indent removed: _block_start judges the
+# indent against the column of the container the line sits in.
+_BLOCK_OPENER = re.compile(r"(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
 # A heading or a table row is one line, and the line after it starts a new
 # paragraph; a list item keeps its continuation lines.
-_ONE_LINE_BLOCK = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|\|)")
+_ONE_LINE_BLOCK = re.compile(r"(?:#{1,6}(?:\s|$)|\|)")
 # A setext underline (_SETEXT_UNDERLINE, shared with the anchor check) closes
 # the text lines above it as a heading; a thematic break is a block of its own
 # either way.
-_THEMATIC_BREAK = re.compile(r"\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
+_THEMATIC_BREAK = re.compile(r"(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
 # Read with .match: a `>` later in a line is text, not a quote mark.
-_QUOTE_MARK = re.compile(r"\s{0,3}(?:>\s?)+")
+_QUOTE_MARK = re.compile(r"(?:>\s?)+")
+_LIST_MARKER = re.compile(r"([-*+]|\d{1,9}[.)])(\s*)")
 _BACKTICK_RUN = re.compile(r"`+")
+# A block starts 0 to 3 columns past its container's content column; 4 or
+# more is an indented continuation (CommonMark).
+_BLOCK_INDENT = 3
+_TAB_STOP = 4
+
+
+def _block_start(line, columns):
+    """`(text, indent, inside)` of *line*: its text without the indent, the
+    indent in columns, and whether it is 0 to 3 columns past the content
+    column of a container in *columns* (ascending, 0 first), so the text may
+    open a block. A tab counts to the next multiple of 4 columns."""
+    text = line.lstrip(" \t")
+    indent = len(line[: len(line) - len(text)].expandtabs(_TAB_STOP))
+    column = max(c for c in columns if c <= indent)
+    return text, indent, indent - column <= _BLOCK_INDENT
+
+
+def _item_column(line, indent):
+    """The content column of the list item *line* opens: where its text starts
+    after the marker, or one past the marker when five or more spaces (or
+    none) follow it, as in CommonMark."""
+    marker = _LIST_MARKER.match(line.lstrip(" \t"))
+    assert marker is not None
+    gap = len(marker.group(2).expandtabs(_TAB_STOP))
+    rest = line.lstrip(" \t")[marker.end() :]
+    if gap > 4 or not rest.strip():
+        gap = 1
+    return indent + len(marker.group(1)) + gap
 
 
 def markdown_paragraphs(prose):
@@ -4144,40 +4175,61 @@ def markdown_paragraphs(prose):
     is a run of plain text lines, as in CommonMark: a blank line (a fence
     blanks to one), a heading, a table row, a setext underline or a thematic
     break ends it, so the next line starts a new one; a list item starts one
-    and keeps its continuation lines. A quote mark is dropped from the start
-    of each line; a quoted line after an unquoted one starts a paragraph, and
-    an unquoted line after a quoted one continues it (a lazy continuation)."""
+    and keeps its continuation lines. A line opens a block only 0 to 3
+    columns past the content column of the list item it sits in, so a break,
+    item or heading nested 4 or more columns in is judged against its own
+    item, not column 0. A quote mark is dropped from the start of each line;
+    a quoted line after an unquoted one, or a deeper quote under a shallower
+    one, starts a paragraph, and an unquoted line after a quoted one
+    continues it (a lazy continuation)."""
     out = []
-    current = None  # [relpath, first, lines, offsets, kind, quoted]
+    current = None  # [relpath, first, lines, offsets, kind, quote depth]
     size = 0
+    columns = [0]  # content columns of the open list items, in this quote
     for relpath, number, line in prose:
-        mark = _QUOTE_MARK.match(line)
+        if current is None or current[0] != relpath:
+            columns = [0]
+        text, indent, inside = _block_start(line, columns)
+        mark = _QUOTE_MARK.match(text) if inside else None
+        depth = 0
         if mark is not None:
-            line = line[mark.end() :]
+            depth = mark.group().count(">")
+            line = text[mark.end() :]
+            if current is None or depth != current[5]:
+                columns = [0]
+            text, indent, inside = _block_start(line, columns)
+        opener = inside and _BLOCK_OPENER.match(text) is not None
+        breaks = inside and _THEMATIC_BREAK.match(text) is not None
         open_ = (
             current is not None
             and current[0] == relpath
             and current[1] + len(current[2]) == number
             and current[4] != "closed"
-            and (mark is None or current[5])
+            and (mark is None or current[5] > 0)
+            and depth <= current[5]
             and line.strip()
         )
         underline = (
-            open_ and current[4] == "text" and _SETEXT_UNDERLINE.match(line) is not None
+            open_
+            and current[4] == "text"
+            and inside
+            and _SETEXT_UNDERLINE.match(text) is not None
         )
-        continues = underline or (
-            open_ and not _BLOCK_OPENER.match(line) and not _THEMATIC_BREAK.match(line)
-        )
+        continues = underline or (open_ and not opener and not breaks)
         if not continues:
             if current is not None:
                 out.append((current[0], current[1], "\n".join(current[2]), current[3]))
-            if _ONE_LINE_BLOCK.match(line) or _THEMATIC_BREAK.match(line):
+            if inside and _ONE_LINE_BLOCK.match(text) or breaks:
                 kind = "closed"
-            elif _BLOCK_OPENER.match(line):
+            elif opener:
                 kind = "item"
             else:
                 kind = "text"
-            current, size = [relpath, number, [], [], kind, mark is not None], 0
+            if line.strip():
+                columns = [c for c in columns if c <= indent]
+                if kind == "item":
+                    columns.append(_item_column(line, indent))
+            current, size = [relpath, number, [], [], kind, depth], 0
         assert current is not None
         current[3].append(size)
         current[2].append(line)

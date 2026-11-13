@@ -1719,6 +1719,18 @@ _BLOCK_CASES = [
     # A list item keeps its continuation lines, so a span may wrap inside it.
     (["- item `a", "  {id}` b"], []),
     (["- item `a", "  b` then {id}"], [2]),
+    # A block opens 0 to 3 columns past the content column of the item it sits
+    # in, so at the third level a break, an item or a heading at 4 spaces ends
+    # the paragraph above it.
+    (["- o", "  - i `a", "    ***", "    Body {id}` here."], [4]),
+    (["- o", "  - i `a", "    - Body {id}` here."], [3]),
+    (["- o", "  - i `a", "    # Body {id}` here."], [3]),
+    # A deeper quote under a quote opens a paragraph of its own.
+    (["> Quote `a", "> > Body {id}` here."], [2]),
+    # Four columns past the content column of a top-level item is a
+    # continuation line; so is a tab, which counts as four columns.
+    (["- item `a", "    {id}` b"], []),
+    (["Text `a", "\t***", "Body {id}` here."], []),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1732,6 +1744,12 @@ _BLOCK_IDS = [
     "quote-lazy-continuation",
     "list-item-wrapped-span",
     "list-item-id-after-span",
+    "third-level-thematic-break",
+    "third-level-list-item",
+    "third-level-heading",
+    "quote-under-quote",
+    "item-four-space-continuation",
+    "tab-before-break-continues",
 ]
 
 
@@ -1759,6 +1777,7 @@ def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_
         (["- item `a", "  on this host` b"], []),
         (["Text `a", "***", "Works on this host` only."], [3]),
         (["Text `a", "> Works on this host` only."], [2]),
+        (["- o", "  - i `a", "    ***", "    Works on this host` only."], [4]),
     ],
     ids=[
         "atx-heading",
@@ -1767,6 +1786,7 @@ def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_
         "list-item-wrapped-span",
         "thematic-break",
         "quote-after-text",
+        "third-level-thematic-break",
     ],
 )
 def test_a_block_line_does_not_pair_its_backtick_with_the_next_line_for_the_phrase_scan(
