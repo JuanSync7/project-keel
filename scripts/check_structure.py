@@ -4134,8 +4134,9 @@ _ONE_LINE_BLOCK = re.compile(r"(?:#{1,6}(?:\s|$)|\|)")
 # the text lines above it as a heading; a thematic break is a block of its own
 # either way.
 _THEMATIC_BREAK = re.compile(r"(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
-# Read with .match: a `>` later in a line is text, not a quote mark.
-_QUOTE_MARK = re.compile(r"(?:>\s?)+")
+# Read with .match: a `>` later in a line is text, not a quote mark. A quote's
+# content may sit up to 3 spaces past its mark, so `>  >` nests two deep.
+_QUOTE_MARK = re.compile(r">[ \t]?(?: {0,3}>[ \t]?)*")
 _LIST_MARKER = re.compile(r"([-*+]|\d{1,9}[.)])(\s*)")
 _BACKTICK_RUN = re.compile(r"`+")
 # A block starts 0 to 3 columns past its container's content column; 4 or
@@ -4158,14 +4159,17 @@ def _block_start(line, columns):
 def _item_column(line, indent):
     """The content column of the list item *line* opens: where its text starts
     after the marker, or one past the marker when five or more spaces (or
-    none) follow it, as in CommonMark."""
-    marker = _LIST_MARKER.match(line.lstrip(" \t"))
+    none) follow it, as in CommonMark. A tab after the marker counts to the
+    next multiple of 4 columns of the line, not of the gap."""
+    text = line.lstrip(" \t")
+    marker = _LIST_MARKER.match(text)
     assert marker is not None
-    gap = len(marker.group(2).expandtabs(_TAB_STOP))
-    rest = line.lstrip(" \t")[marker.end() :]
-    if gap > 4 or not rest.strip():
-        gap = 1
-    return indent + len(marker.group(1)) + gap
+    after = indent + len(marker.group(1))
+    head = line[: len(line) - len(text) + marker.end()]
+    start = len(head.expandtabs(_TAB_STOP))
+    if start - after > 4 or not text[marker.end() :].strip():
+        return after + 1
+    return start
 
 
 def markdown_paragraphs(prose):
@@ -4178,7 +4182,9 @@ def markdown_paragraphs(prose):
     and keeps its continuation lines. A line opens a block only 0 to 3
     columns past the content column of the list item it sits in, so a break,
     item or heading nested 4 or more columns in is judged against its own
-    item, not column 0. A quote mark is dropped from the start of each line;
+    item, not column 0. A line that starts a paragraph or follows a blank line
+    closes every item whose content column it sits left of. A quote mark is
+    dropped from the start of each line;
     a quoted line after an unquoted one, or a deeper quote under a shallower
     one, starts a paragraph, and an unquoted line after a quoted one
     continues it (a lazy continuation)."""
@@ -4216,6 +4222,9 @@ def markdown_paragraphs(prose):
             and _SETEXT_UNDERLINE.match(text) is not None
         )
         continues = underline or (open_ and not opener and not breaks)
+        # A blank line opens a paragraph that the next text line continues, so
+        # that line must close the items it sits left of as a new paragraph does.
+        after_blank = current is not None and not current[2][-1].strip()
         if not continues:
             if current is not None:
                 out.append((current[0], current[1], "\n".join(current[2]), current[3]))
@@ -4225,12 +4234,12 @@ def markdown_paragraphs(prose):
                 kind = "item"
             else:
                 kind = "text"
-            if line.strip():
-                columns = [c for c in columns if c <= indent]
-                if kind == "item":
-                    columns.append(_item_column(line, indent))
             current, size = [relpath, number, [], [], kind, depth], 0
         assert current is not None
+        if line.strip() and (not continues or after_blank):
+            columns = [c for c in columns if c <= indent]
+            if not continues and current[4] == "item":
+                columns.append(_item_column(line, indent))
         current[3].append(size)
         current[2].append(line)
         if underline:

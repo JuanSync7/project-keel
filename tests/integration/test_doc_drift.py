@@ -1731,6 +1731,20 @@ _BLOCK_CASES = [
     # continuation line; so is a tab, which counts as four columns.
     (["- item `a", "    {id}` b"], []),
     (["Text `a", "\t***", "Body {id}` here."], []),
+    # After a blank line, a column-0 paragraph closes the nested items above
+    # it, so a 4-space `- x` in it is a continuation line, not an item.
+    (["- o", "  - i", "    - j", "", "Top `a", "    - x` {id} `y"], [6]),
+    # An item's content column follows its marker's width and gap: five or
+    # more spaces after `10.` count as one, so its column is 4; after `-` it
+    # is 2; and a tab after the marker runs to the next multiple of 4 columns
+    # of the line.
+    (["10.      o `a", "      - Body {id}` here."], [2]),
+    (["-     o `a", "      - x` {id} `y"], [2]),
+    (["-\to `a", "        - x` {id} `y"], [2]),
+    # A quote's content may sit up to 3 spaces past its mark, so `>  >` is a
+    # deeper quote; a list inside a quote keeps its columns line to line.
+    (["> Quote `a", ">  > Body {id}` here."], [2]),
+    (["> - o", ">   - i `a", ">     - Body {id}` here."], [3]),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1750,6 +1764,12 @@ _BLOCK_IDS = [
     "quote-under-quote",
     "item-four-space-continuation",
     "tab-before-break-continues",
+    "blank-closes-nested-items",
+    "wide-ordered-marker",
+    "wide-gap-counts-one",
+    "tab-after-marker",
+    "spaced-quote-under-quote",
+    "list-inside-quote",
 ]
 
 
