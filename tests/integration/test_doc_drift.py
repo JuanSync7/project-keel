@@ -1764,10 +1764,15 @@ def test_the_work_id_scan_reads_code_spans_on_the_joined_paragraph(
 ):
     mention = work_mention(manifest)
     ident = _planted_slice_id(manifest)
-    text = "\n".join(line.replace("{id}", ident) for line in lines) + "\n"
+    # A lead paragraph moves each case off line 1: a finding numbered from its
+    # paragraph rather than its file then names the wrong line and fails.
+    lead = ["Lead paragraph.", ""]
+    text = "\n".join(line.replace("{id}", ident) for line in lead + lines) + "\n"
     findings = moment_and_host_findings([("GUIDE.md", text)], policy, mention, tmp_path)
     reds = [f for f in findings if "work id" in f]
-    assert [int(f.split(":")[1]) for f in reds] == expected, findings
+    assert [int(f.split(":")[1]) for f in reds] == [n + len(lead) for n in expected], (
+        findings
+    )
 
 
 # A report of a change names the moment it describes, so it is history. Each
