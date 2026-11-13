@@ -4132,6 +4132,7 @@ _ONE_LINE_BLOCK = re.compile(r"\s{0,3}(?:#{1,6}(?:\s|$)|\|)")
 # the text lines above it as a heading; a thematic break is a block of its own
 # either way.
 _THEMATIC_BREAK = re.compile(r"\s{0,3}(?:(?:\*\s*){3,}|(?:_\s*){3,}|(?:-\s*){3,})$")
+# Read with .match: a `>` later in a line is text, not a quote mark.
 _QUOTE_MARK = re.compile(r"\s{0,3}(?:>\s?)+")
 _BACKTICK_RUN = re.compile(r"`+")
 
@@ -4143,23 +4144,30 @@ def markdown_paragraphs(prose):
     is a run of plain text lines, as in CommonMark: a blank line (a fence
     blanks to one), a heading, a table row, a setext underline or a thematic
     break ends it, so the next line starts a new one; a list item starts one
-    and keeps its continuation lines; a quote mark is dropped from each line."""
+    and keeps its continuation lines. A quote mark is dropped from the start
+    of each line; a quoted line after an unquoted one starts a paragraph, and
+    an unquoted line after a quoted one continues it (a lazy continuation)."""
     out = []
-    current = None  # [relpath, first, lines, offsets, kind]
+    current = None  # [relpath, first, lines, offsets, kind, quoted]
     size = 0
     for relpath, number, line in prose:
-        line = _QUOTE_MARK.sub("", line, count=1)
+        mark = _QUOTE_MARK.match(line)
+        if mark is not None:
+            line = line[mark.end() :]
         open_ = (
             current is not None
             and current[0] == relpath
             and current[1] + len(current[2]) == number
             and current[4] != "closed"
+            and (mark is None or current[5])
             and line.strip()
         )
         underline = (
             open_ and current[4] == "text" and _SETEXT_UNDERLINE.match(line) is not None
         )
-        continues = underline or (open_ and not _BLOCK_OPENER.match(line))
+        continues = underline or (
+            open_ and not _BLOCK_OPENER.match(line) and not _THEMATIC_BREAK.match(line)
+        )
         if not continues:
             if current is not None:
                 out.append((current[0], current[1], "\n".join(current[2]), current[3]))
@@ -4169,7 +4177,7 @@ def markdown_paragraphs(prose):
                 kind = "item"
             else:
                 kind = "text"
-            current, size = [relpath, number, [], [], kind], 0
+            current, size = [relpath, number, [], [], kind, mark is not None], 0
         assert current is not None
         current[3].append(size)
         current[2].append(line)

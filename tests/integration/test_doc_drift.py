@@ -1707,7 +1707,15 @@ _BLOCK_CASES = [
     (["Title`", "=====", "Body {id}` here."], [3]),
     (["Title`", "-----", "Body {id}` here."], [3]),
     (["| a | b` |", "Body {id}` here."], [2]),
-    (["***", "Body `{id} here`."], []),
+    # A thematic break ends the paragraph above it, so an opener there does
+    # not pair with a backtick below it.
+    (["Text `a", "***", "Body {id}` here."], [3]),
+    (["Text `a", "___", "Body {id}` here."], [3]),
+    (["- item `a", "---", "Body {id}` here."], [3]),
+    # A quote opens a paragraph after a plain one; an unquoted line after a
+    # quote is a lazy continuation, so a span wraps across the two.
+    (["Text `a", "> Body {id}` here."], [2]),
+    (["> Quote `a", "lazy {id}` b"], []),
     # A list item keeps its continuation lines, so a span may wrap inside it.
     (["- item `a", "  {id}` b"], []),
     (["- item `a", "  b` then {id}"], [2]),
@@ -1717,7 +1725,11 @@ _BLOCK_IDS = [
     "setext-equals",
     "setext-dashes",
     "table-row",
-    "thematic-break-span-intact",
+    "thematic-break-stars",
+    "thematic-break-underscores",
+    "thematic-break-after-item",
+    "quote-after-text",
+    "quote-lazy-continuation",
     "list-item-wrapped-span",
     "list-item-id-after-span",
 ]
@@ -1745,8 +1757,17 @@ def test_a_heading_setext_title_or_table_row_ends_its_paragraph_for_the_work_id_
         (["Title`", "=====", "Works on this host` only."], [3]),
         (["| a | b` |", "Works on this host` only."], [2]),
         (["- item `a", "  on this host` b"], []),
+        (["Text `a", "***", "Works on this host` only."], [3]),
+        (["Text `a", "> Works on this host` only."], [2]),
     ],
-    ids=["atx-heading", "setext", "table-row", "list-item-wrapped-span"],
+    ids=[
+        "atx-heading",
+        "setext",
+        "table-row",
+        "list-item-wrapped-span",
+        "thematic-break",
+        "quote-after-text",
+    ],
 )
 def test_a_block_line_does_not_pair_its_backtick_with_the_next_line_for_the_phrase_scan(
     tmp_path, manifest, policy, lines, expected
@@ -1759,6 +1780,15 @@ def test_a_block_line_does_not_pair_its_backtick_with_the_next_line_for_the_phra
     assert [int(f.split(":")[1]) for f in reds] == [n + len(lead) for n in expected], (
         findings
     )
+
+
+def test_a_quote_mark_is_dropped_only_from_the_start_of_a_line():
+    # A `>` later in a line is text: dropping it would change the prose the
+    # scans and the corpus read.
+    assert [p[2] for p in _paragraphs([("G.md", 3, "a -> b <x> c")])] == [
+        "a -> b <x> c"
+    ]
+    assert [p[2] for p in _paragraphs([("G.md", 3, "> > a -> b")])] == ["a -> b"]
 
 
 # A report of a change names the moment it describes, so it is history. Each
