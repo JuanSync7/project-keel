@@ -1784,6 +1784,36 @@ _BLOCK_CASES = [
     # blank line `===` is text, so the 4-space line after it continues it and
     # its backtick pairs with the one before the id.
     (["Lead.", "", "===", "    a `b", "c` {id} `d"], [5]),
+    # A line that opens two containers (`- - o`, `1. - o`, `> - - o`) leaves
+    # the innermost item's content column in force: the 6-space line after the
+    # blank is a paragraph of the inner item, not indented code of the outer.
+    (["- - o", "", "      a `", "    c` {id} `"], [4]),
+    (["1. - o", "", "       a `", "     c` {id} `"], [4]),
+    (["> - - o", ">", ">       a `", ">     c` {id} `"], [4]),
+    # An item that holds a heading or a break is closed after it: the line
+    # after it is no lazy continuation, so the 4-space line is plain text
+    # under a paragraph, not an item.
+    (["- # H", "x `", "    - y` {id} `"], [3]),
+    (["- ***", "x `", "    - y` {id} `"], [3]),
+    # Only an ordered item numbered 1 and holding text may interrupt a
+    # paragraph; `10.` and an empty `*` are text of it.
+    (["x `", "10. y` {id} `"], [2]),
+    (["x `", "* ", "y` {id} `"], [3]),
+    (["x `", "1. y` {id} `"], []),
+    # A blank line keeps indented code open, so a span wraps across it.
+    (["p", "", "    code `a", "", "    more` {id} `y"], [5]),
+    # An unquoted line does not continue a quote's indented code: it is a
+    # block of its own, so the backtick before it pairs with nothing after.
+    (["> p", ">", ">     code `a", "      x` {id} `y"], []),
+    # A quote mark 4 or more columns in is text, not a quote: it is indented
+    # code, so the line under it is a paragraph of its own.
+    (["> a", ">", "    > b `", "c` {id} `"], []),
+    # A marker after a quote mark opens an item in that quote, which a
+    # paragraph above does not limit: `10.` here is an item, and its nested
+    # item and its quote close the paragraphs they follow.
+    (["x", "> 10. y `", ">     - z` {id} `"], []),
+    (["> x `", "10. y` {id} `"], []),
+    (["- > q `", "  > r` {id} `"], [2]),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1827,6 +1857,20 @@ _BLOCK_IDS = [
     "blank-quoted-line-ends-lazy",
     "blank-quoted-line-closes-items",
     "underline-after-blank-is-text",
+    "two-markers-one-line",
+    "ordered-then-bullet-one-line",
+    "two-markers-in-quote",
+    "item-heading-closes-item",
+    "item-break-closes-item",
+    "numbered-ten-continues-paragraph",
+    "empty-item-continues-paragraph",
+    "numbered-one-interrupts",
+    "blank-keeps-indented-code-open",
+    "unquoted-line-ends-quoted-code",
+    "quote-mark-four-columns-in-is-code",
+    "item-in-fresh-quote-may-be-ten",
+    "unmatched-quote-leaves-ten-an-item",
+    "quote-inside-item",
 ]
 
 

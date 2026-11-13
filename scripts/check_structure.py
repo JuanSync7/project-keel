@@ -4123,10 +4123,11 @@ def _prose_lines(text):
     return out
 
 
-# A line that opens a block of its own, so the line above it ends a paragraph.
-# The patterns read a line with its indent removed: _block_start judges the
-# indent against the column of the container the line sits in.
-_BLOCK_OPENER = re.compile(r"(?:#{1,6}(?:\s|$)|[-*+]\s|\d{1,9}[.)]\s|\|)")
+# A list marker with its text, read at the start of a line's text: a heading,
+# a table row or a break is judged by the patterns below, and the marker only
+# when a space or the end of the line follows it. _item_column and
+# _LIST_MARKER read the same marker.
+_ITEM_START = re.compile(r"(?:[-*+]|(\d{1,9})[.)])(?: |$)")
 # A heading or a table row is one line, and the line after it starts a new
 # paragraph; a list item keeps its continuation lines.
 _ONE_LINE_BLOCK = re.compile(r"(?:#{1,6}(?:\s|$)|\|)")
@@ -4209,8 +4210,15 @@ def markdown_paragraphs(prose):
     is a run of plain text lines, as in CommonMark: a blank line (a fence
     blanks to one), a heading, a table row, a setext underline or a thematic
     break ends it, so the next line starts a new one; a list item starts one
-    and keeps its continuation lines. The open list items and quotes are a
-    stack, each with its content column. A line continues the containers it
+    and keeps its continuation lines; a list item holding a heading, a table
+    row or a break is closed after it. The open list items and quotes are a
+    stack, each with its content column, and every marker on a line opens one:
+    the rest of the line is judged again against the new content column, so
+    `- - o` opens two items and `- # H` an item holding a heading. As in
+    CommonMark, an item interrupts a paragraph with text only if it is not
+    empty and, if ordered, starts at 1 (`10.` is text of the paragraph), and
+    only where the paragraph is the open tip of the containers the line
+    continued. A line continues the containers it
     sits in from the outside in and closes the rest, unless it is a lazy
     continuation: plain text under a paragraph that holds text, which keeps
     every container open (a blank line, even a quoted one, ends that
@@ -4225,7 +4233,7 @@ def markdown_paragraphs(prose):
     from the start of each line; a quote that opens on a line, as a quote
     under a plain line or a deeper quote, starts a paragraph."""
     out = []
-    current = None  # [relpath, first, lines, offsets, kind]
+    current = None  # [relpath, first, lines, offsets, kind, last line has text]
     size = 0
     stack = []  # open containers: (is_quote, content column)
     for relpath, number, line in prose:
@@ -4234,23 +4242,50 @@ def markdown_paragraphs(prose):
             stack = []
         matched, line, column = _continued(line, stack)
         full = matched == len(stack)
-        text, indent, inside = _block_start(line, column)
-        fresh = []
-        while inside and text.startswith(">"):
-            fresh.append((True, 0))
-            line = _after_quote_mark(text)
-            text, indent, inside = _block_start(line, 0)
-        blank = not text
-        opener = inside and _BLOCK_OPENER.match(text) is not None
-        breaks = inside and _THEMATIC_BREAK.fullmatch(text) is not None
         adjacent = (
             current is not None
             and current[0] == relpath
             and current[1] + len(current[2]) == number
         )
+        # Whether a paragraph with text is the open tip of the containers this
+        # line continued: only then may a marker interrupt it (CommonMark).
+        tip = adjacent and current[4] in ("text", "item") and current[5] and full
+        # Every marker on the line opens a container, and what follows it is
+        # judged again against the new content column: the innermost one holds
+        # the heading, the break or the text.
+        fresh = []
+        rest = line
+        quotes_only = True  # the stored line drops quote marks, not item markers
+        text, indent, inside = _block_start(rest, column)
+        while inside:
+            if text.startswith(">"):
+                fresh.append((True, 0))
+                rest, column = _after_quote_mark(text), 0
+                if quotes_only:
+                    line = rest
+            elif _ONE_LINE_BLOCK.match(text) or _THEMATIC_BREAK.fullmatch(text):
+                break
+            else:
+                item = _ITEM_START.match(text)
+                if item is None:
+                    break
+                marker = _LIST_MARKER.match(text)
+                assert marker is not None
+                empty = not text[marker.end() :].strip()
+                starts_one = item.group(1) is None or int(item.group(1)) == 1
+                if tip and not fresh and (empty or not starts_one):
+                    break
+                column = _item_column(rest, indent)
+                fresh.append((False, column))
+                quotes_only = False
+                rest = " " * column + text[marker.end() :]
+            text, indent, inside = _block_start(rest, column)
+        blank = not text
+        breaks = inside and _THEMATIC_BREAK.fullmatch(text) is not None
+        one_line = inside and _ONE_LINE_BLOCK.match(text) is not None
         para = adjacent and current[4] in ("text", "item") and not fresh
         holds = para and bool(current[2][-1].strip())
-        plain = not (blank or opener or breaks)
+        plain = not (blank or one_line or breaks)
         underline = (
             holds
             and current[4] == "text"
@@ -4274,22 +4309,21 @@ def markdown_paragraphs(prose):
         if not continues:
             if current is not None:
                 out.append((current[0], current[1], "\n".join(current[2]), current[3]))
-            if plain and not inside:
+            if not blank and not inside:
                 kind = "code"
-            elif inside and _ONE_LINE_BLOCK.match(text) or breaks:
+            elif one_line or breaks:
                 kind = "closed"
-            elif opener:
+            elif fresh and not fresh[-1][0]:
                 kind = "item"
             else:
                 kind = "text"
-            current, size = [relpath, number, [], [], kind], 0
+            current, size = [relpath, number, [], [], kind, False], 0
         assert current is not None
         if not continues or full:
             stack = stack[:matched] + fresh
-            if not continues and current[4] == "item":
-                stack.append((False, _item_column(line, indent)))
         current[3].append(size)
         current[2].append(line)
+        current[5] = not blank
         if underline:
             current[4] = "closed"
         size += len(line) + 1
