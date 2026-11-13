@@ -1780,6 +1780,10 @@ _BLOCK_CASES = [
     # after it is no lazy continuation and its items are closed.
     (["> q", ">", "text `a", "> more {id}` b"], [4]),
     (["> - o", ">", "  text", "> p `a", ">     - x {id}` y"], []),
+    # A setext underline needs a paragraph line with text above it: after a
+    # blank line `===` is text, so the 4-space line after it continues it and
+    # its backtick pairs with the one before the id.
+    (["Lead.", "", "===", "    a `b", "c` {id} `d"], [5]),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1822,6 +1826,7 @@ _BLOCK_IDS = [
     "six-spaces-in-item-continues",
     "blank-quoted-line-ends-lazy",
     "blank-quoted-line-closes-items",
+    "underline-after-blank-is-text",
 ]
 
 

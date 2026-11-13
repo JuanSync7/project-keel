@@ -4252,7 +4252,7 @@ def markdown_paragraphs(prose):
         holds = para and bool(current[2][-1].strip())
         plain = not (blank or opener or breaks)
         underline = (
-            para
+            holds
             and current[4] == "text"
             and inside
             and _SETEXT_UNDERLINE.fullmatch(text) is not None
