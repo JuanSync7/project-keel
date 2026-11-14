@@ -9,7 +9,7 @@ tags: [agent, enforcer, index, corpus]
 summary: Enforces conventions and builds/maintains the accountable wiki corpus.
 id: agents-index-enforcer-readme
 created: 2026-06-17
-updated: 2026-11-11
+updated: 2026-11-14
 visibility: internal
 canonical: true
 ---
@@ -33,12 +33,17 @@ gap-fill additionally needs `fix_gaps=True` and `max_model_calls`, the approved
 count of model calls (a `ValueError` without it). Every fill goes through one
 run's `models.ModelMeter`, so the call past the count raises
 `models.CallCapReached` and is never made, and a saved run resumes only on the
-same model with no more gaps left than the count (`models.approve_resume`,
-else `models.RunNotApproved`); `tests/integration/test_index_enforcer_durability.py`
-holds all three. The fill sends only gaps at a level in `config/project.json`
-`corpus.served_visibilities`, decided by `scripts/config_loader.py` `is_served`:
-a confidential gap, or one that states no level, is reported but never
-filled, so its text reaches no prompt (the same test file holds it).
+same model with no more fills left than the count (`models.approve_resume`,
+else `models.RunNotApproved`), counted under the root the saved run fills;
+`tests/integration/test_index_enforcer_durability.py` holds all three. The fill
+sends only gaps that `scripts/config_loader.py` `is_served_now` serves: the
+stricter of the corpus level and the level the gap's file states on disk now,
+read by `scripts/corpus_level.py` `stated_now`, must be in `config/project.json`
+`corpus.served_visibilities`. A confidential gap, one that states no level,
+or one whose file is now stricter or cannot be read is reported but never
+filled, so its text reaches no prompt (the same test file holds it). A nonzero
+`build_corpus.py` or `link_corpus.py` raises `ToolReportUnreadable` before the
+report step, so no run fills from a corpus that failed to build.
 
 Owner reports pass through `scripts/tool_reports.py` `read_report`: blank,
 non-JSON, deeply nested output or anything but a list of objects raises

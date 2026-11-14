@@ -16,6 +16,7 @@ sys.path.insert(0, str(_ROOT))
 
 from agents.index_enforcer import enforce  # noqa: E402
 from models import CallCapReached, RunNotApproved  # noqa: E402
+from runtimes import FileCheckpointer  # noqa: E402
 from scripts.tool_reports import ToolReportUnreadable  # noqa: E402
 
 pytestmark = pytest.mark.integration
@@ -441,6 +442,24 @@ def test_the_resume_count_leaves_out_a_gap_that_is_no_longer_a_fill(tmp_path, co
     assert "2 model call(s) left" in exc.value.parts[0]
     assert len(prompts) == 1 and _snapshot(tmp_path).is_file()
     assert _fill(tmp_path, model="fake", max_model_calls=2).gaps_filled == 2
+
+
+def test_a_resume_under_another_root_is_counted_on_the_root_it_fills(
+    tmp_path, tmp_path_factory, counted
+):
+    prompts, crash_on = counted
+    store = FileCheckpointer(str(tmp_path_factory.mktemp("store")))
+    crash_on["call"] = 1  # all three gaps are left, in the saved run's root
+    with pytest.raises(RuntimeError):
+        _fill(tmp_path, model="fake", max_model_calls=3, checkpointer=store)
+    other = tmp_path_factory.mktemp("other")
+    _project(other, _corpus())
+    _stricter(other, "n2")
+    _stricter(other, "n3")  # one gap left here, three in the root it fills
+    with pytest.raises(RunNotApproved) as exc:
+        _fill(other, model="fake", max_model_calls=1, checkpointer=store)
+    assert "3 model call(s) left" in exc.value.parts[0]
+    assert len(prompts) == 1
 
 
 def test_a_fresh_run_does_not_fill_a_node_whose_file_is_stricter_now(tmp_path, counted):

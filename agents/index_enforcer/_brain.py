@@ -377,7 +377,9 @@ def enforce(
                     # One fill per gap the run would still make from the saved
                     # corpus, the one in flight at the crash included; a gap
                     # whose file is now stricter or unreadable is no fill.
-                    left=len(_fillable(left.get("corpus", {}), served, root)),
+                    # Levels are read under the saved root, the one the fill
+                    # steps read, so the count and the fills cannot disagree.
+                    left=len(_fillable(left.get("corpus", {}), served, left["root"])),
                     cap=max_model_calls,
                 )
             kwargs["resume"] = None
