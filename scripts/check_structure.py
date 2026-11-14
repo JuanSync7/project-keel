@@ -4209,13 +4209,19 @@ def markdown_paragraphs(prose):
     sentence may wrap, so the scans read a paragraph, not a line. A paragraph
     is a run of plain text lines, as in CommonMark: a blank line (a fence
     blanks to one), a heading, a table row, a setext underline or a thematic
-    break ends it, so the next line starts a new one; a list item starts one
-    and keeps its continuation lines; a list item holding a heading, a table
-    row or a break is closed after it. The open list items and quotes are a
-    stack, each with its content column, and every marker on a line opens one:
+    break ends it, so the next line starts a new one; a setext underline ends
+    the paragraph it closes inside the containers that paragraph sits in (a
+    line outside them is lazy text, never an underline); a list item starts
+    one and keeps its continuation lines; a list item holding a heading, a
+    table row or a break is closed after it. The open list items and quotes
+    are a stack, each with its content column, and every marker on a line
+    opens one:
     the rest of the line is judged again against the new content column, so
-    `- - o` opens two items and `- # H` an item holding a heading. As in
-    CommonMark, an item interrupts a paragraph with text only if it is not
+    `- - o` opens two items and `- # H` an item holding a heading. A marker
+    takes the columns up to that column and the rest keeps its own: five or
+    more spaces after it leave indented code, and a line is text only if its
+    own content after the markers is not empty, so an empty item holds none.
+    As in CommonMark, an item interrupts a paragraph with text only if it is not
     empty and, if ordered, starts at 1 (`10.` is text of the paragraph), and
     only where the paragraph is the open tip of the containers the line
     continued. A line continues the containers it
@@ -4278,17 +4284,21 @@ def markdown_paragraphs(prose):
                 column = _item_column(rest, indent)
                 fresh.append((False, column))
                 quotes_only = False
-                rest = " " * column + text[marker.end() :]
+                # The marker takes the columns up to the content column and
+                # the rest of the line keeps its own: five or more spaces after
+                # the marker leave the line's text indented code (CommonMark).
+                rest = " " * column + text[column - indent :]
             text, indent, inside = _block_start(rest, column)
         blank = not text
         breaks = inside and _THEMATIC_BREAK.fullmatch(text) is not None
         one_line = inside and _ONE_LINE_BLOCK.match(text) is not None
         para = adjacent and current[4] in ("text", "item") and not fresh
-        holds = para and bool(current[2][-1].strip())
+        holds = para and current[5]
         plain = not (blank or one_line or breaks)
         underline = (
             holds
-            and current[4] == "text"
+            and current[4] in ("text", "item")
+            and full
             and inside
             and _SETEXT_UNDERLINE.fullmatch(text) is not None
         )

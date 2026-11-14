@@ -1814,6 +1814,27 @@ _BLOCK_CASES = [
     (["x", "> 10. y `", ">     - z` {id} `"], []),
     (["> x `", "10. y` {id} `"], []),
     (["- > q `", "  > r` {id} `"], [2]),
+    # A marker takes the columns up to its content column and the rest of the
+    # line keeps its own: five or more spaces after it leave indented code, so
+    # its backtick pairs with nothing and the id in it is read; one to four
+    # spaces leave item text, so the span wraps onto the next line. A tab
+    # counts to the next multiple of 4 columns of the line.
+    (["-      `{id}", "  2. `"], [1]),
+    (["-     `{id}", "  2. `"], [1]),
+    (["-    `{id}", "     2. `"], []),
+    (["- `{id}", "  2. `"], []),
+    (["-\t\t`{id}", "  2. `"], [1]),
+    (["-\t`{id}", "    2. `"], []),
+    # An empty item holds no text, so a line indented under it is no
+    # continuation: at 4 columns past the item it is indented code.
+    (["-  ", "      `{id}", "z `"], [2]),
+    # A setext underline closes the paragraph it sits under inside an item,
+    # but a line outside the paragraph's containers is lazy text: it never
+    # underlines, so the span wraps across it.
+    (["- y `a", "  ===", "  b {id}` c"], [3]),
+    (["- y `a", "  ---", "  b {id}` c"], [3]),
+    (["> y `a", "===", "b {id}` c"], []),
+    (["- y `a", "      ===", "  b {id}` c"], []),
 ]
 _BLOCK_IDS = [
     "atx-heading",
@@ -1871,6 +1892,17 @@ _BLOCK_IDS = [
     "item-in-fresh-quote-may-be-ten",
     "unmatched-quote-leaves-ten-an-item",
     "quote-inside-item",
+    "six-spaces-after-marker-is-code",
+    "five-spaces-after-marker-is-code",
+    "four-spaces-after-marker-is-text",
+    "one-space-after-marker-is-text",
+    "two-tabs-after-marker-is-code",
+    "one-tab-after-marker-is-text",
+    "empty-item-holds-no-text",
+    "underline-closes-item-paragraph",
+    "dashes-underline-closes-item-paragraph",
+    "lazy-equals-is-not-an-underline",
+    "four-columns-in-equals-is-not-an-underline",
 ]
 
 
