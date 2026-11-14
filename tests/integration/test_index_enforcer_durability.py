@@ -616,3 +616,20 @@ def test_committing_twice_writes_the_same_bytes(tmp_path, counted):
     served = frozenset({"internal"})
     assert brain._commit(state, served) == {"gaps_filled": 0}
     assert path.read_bytes() == first
+
+
+def test_a_resume_that_finds_no_corpus_at_commit_fails_and_keeps_its_snapshot(
+    tmp_path, counted
+):
+    # The summaries in the snapshot were paid for: a commit with nowhere to
+    # write them stops loudly, and the snapshot stays for a resume after a
+    # rebuild instead of being cleared over a quiet zero.
+    _crash_after_first_fill(tmp_path, counted)
+    (tmp_path / "wiki" / "corpus.json").unlink()
+    with pytest.raises(ToolReportUnreadable) as caught:
+        _fill(tmp_path, model="fake", max_model_calls=2)
+    what, on, next_step = caught.value.parts
+    assert "wiki/corpus.json" in on and str(tmp_path) in on
+    assert "build_corpus.py" in next_step
+    assert not (tmp_path / "wiki" / "corpus.json").exists()
+    assert json.loads(_snapshot(tmp_path).read_text())["cursor"] == "commit"

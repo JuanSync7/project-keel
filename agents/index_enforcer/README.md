@@ -53,7 +53,10 @@ the summary was made from. Any other filled summary is dropped, an authored
 summary is never touched, and no node or edge is added or removed. A resumed run
 therefore keeps a corpus built after the crash, and a second commit of the same
 inputs writes the same bytes. `EnforceReport.gaps_filled` counts only the
-summaries written. The durability test file holds these cases.
+summaries written. If the corpus is absent at commit, the run raises
+`ToolReportUnreadable` before any write and keeps its snapshot, so the summaries
+it paid for resume once the corpus is rebuilt. The durability test file holds
+these cases.
 
 Owner reports pass through `scripts/tool_reports.py` `read_report`: blank,
 non-JSON, deeply nested output or anything but a list of objects raises
