@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities as the file under the run's root states it on disk now (scripts/config_loader.py is_served_now over scripts/corpus_level.py stated_now, read once per path), on a fresh run and on a resumed one, so a hidden gap, a file made stricter since the corpus was built and a file whose level cannot be read are reported and never filled, and a resumed run's approved count (models.approve_resume) counts only the gaps it would fill. A nonzero build_corpus.py or link_corpus.py status raises the same ToolReportUnreadable before report and fill. The commit writes into the corpus under the run's root as it is on disk at commit time, never over it: each summary the run generated is copied onto the node with the same node_id only while that node is still a served gap with the same path and text_excerpt, so a corpus built after a crash survives a resume, an authored summary is never touched, a node or edge is never added or removed, and the report's gaps_filled counts only the summaries written. A corpus absent at commit raises ToolReportUnreadable before any write, so the snapshot is kept for a resume after a rebuild. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities as the file under the run's root states it on disk now (scripts/config_loader.py is_served_now over scripts/corpus_level.py stated_now, read once per path), on a fresh run and on a resumed one, so a hidden gap, a file made stricter since the corpus was built and a file whose level cannot be read are reported and never filled, and a resumed run's approved count (models.approve_resume) counts only the gaps it would fill. A saved run is resumed only with the execute and fix_gaps it was started with, else models.RunNotApproved before any step with the snapshot kept: a resume routes by the snapshot's flags and serves this call's levels. A nonzero build_corpus.py or link_corpus.py status raises the same ToolReportUnreadable before report and fill. The commit writes into the corpus under the run's root as it is on disk at commit time, never over it: each summary the run generated is copied onto the node with the same node_id only while that node is still a served gap with the same path and text_excerpt, so a corpus built after a crash survives a resume, an authored summary is never touched, a node or edge is never added or removed, and the report's gaps_filled counts only the summaries written. A corpus absent at commit raises ToolReportUnreadable before any write, so the snapshot is kept for a resume after a rebuild. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -15,7 +15,7 @@ import os
 import sys
 from dataclasses import dataclass
 
-from models import ModelBackend, ModelMeter, approve_resume, get_model
+from models import ModelBackend, ModelMeter, RunNotApproved, approve_resume, get_model
 from runtimes import (
     END,
     MODEL_CALL,
@@ -361,6 +361,22 @@ def _plan(meter, served):
     )
 
 
+def _same_flags(saved, execute, fix_gaps, where):
+    """Pass a saved run, at *where*, whose *saved* state was started with this
+    call's *execute* and *fix_gaps*. Raises models.RunNotApproved otherwise: a
+    resume routes by the snapshot's flags but sends the levels this call
+    serves, so it would clear the snapshot over summaries it never wrote."""
+    was = (saved.get("execute"), saved.get("fix_gaps"))
+    if was != (execute, fix_gaps):
+        raise RunNotApproved(
+            "the saved run was started with execute=%r, fix_gaps=%r, not the"
+            " execute=%r, fix_gaps=%r this run asks" % (was + (execute, fix_gaps)),
+            where,
+            "run again with execute=%r and fix_gaps=%r to resume, or remove %s to"
+            " start afresh" % (was + (where,)),
+        )
+
+
 def enforce(
     *,
     execute=False,
@@ -390,8 +406,9 @@ def enforce(
     reaches the model) needs ``max_model_calls``, the approved count, or
     raises ValueError: every fill goes through one ``models.CountedModel`` of
     that count, so the call past it raises ``models.CallCapReached``. A saved
-    run is resumed only on the same model and with no more fills left than
-    that count, a fill being a gap whose file under *root* states a served
+    run is resumed only with the execute and fix_gaps it was started with
+    (any call that passes a checkpointer), on the same model and with no
+    more fills left than that count, a fill being a gap whose file under *root* states a served
     level now; otherwise ``models.RunNotApproved`` is raised before any step.
     A nonzero build or link status raises ``ToolReportUnreadable`` before the
     report step.
@@ -415,6 +432,7 @@ def enforce(
         kwargs["run_key"] = run_key
         saved = checkpointer.load(run_key)
         if saved is not None:  # a prior run crashed -> resume
+            _same_flags(saved["state"], execute, fix_gaps, checkpointer.where(run_key))
             if execute and fix_gaps:
                 left = saved["state"]
                 approve_resume(

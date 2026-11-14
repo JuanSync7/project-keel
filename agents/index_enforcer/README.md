@@ -34,8 +34,11 @@ count of model calls (a `ValueError` without it). Every fill goes through one
 run's `models.ModelMeter`, so the call past the count raises
 `models.CallCapReached` and is never made, and a saved run resumes only on the
 same model with no more fills left than the count (`models.approve_resume`,
-else `models.RunNotApproved`), counted under the root the saved run fills;
-`tests/integration/test_index_enforcer_durability.py` holds all three. The fill
+else `models.RunNotApproved`), counted under the root the saved run fills. A
+saved run also resumes only with the `execute` and `fix_gaps` it was started
+with, else `models.RunNotApproved` before any step with the snapshot kept,
+because a resume routes by the snapshot's flags but sends the levels this call
+serves; `tests/integration/test_index_enforcer_durability.py` holds all four. The fill
 sends only gaps that `scripts/config_loader.py` `is_served_now` serves: the
 stricter of the corpus level and the level the gap's file states on disk now,
 read by `scripts/corpus_level.py` `stated_now`, must be in `config/project.json`

@@ -633,3 +633,36 @@ def test_a_resume_that_finds_no_corpus_at_commit_fails_and_keeps_its_snapshot(
     assert "build_corpus.py" in next_step
     assert not (tmp_path / "wiki" / "corpus.json").exists()
     assert json.loads(_snapshot(tmp_path).read_text())["cursor"] == "commit"
+
+
+@pytest.mark.parametrize(
+    ("execute", "fix_gaps"), [(True, False), (False, True), (False, False)]
+)
+def test_a_saved_run_resumed_with_other_flags_is_refused_and_kept(
+    tmp_path, counted, execute, fix_gaps
+):
+    # A resume takes its routing from the snapshot and its served levels from
+    # this call: with other flags it would clear the snapshot over summaries
+    # it never wrote, so it is refused before any step and nothing changes.
+    prompts, _ = counted
+    _crash_after_first_fill(tmp_path, counted)
+    corpus = (tmp_path / "wiki" / "corpus.json").read_bytes()
+    snapshot = _snapshot(tmp_path).read_bytes()
+    sent = len(prompts)
+    store = FileCheckpointer(str(tmp_path / "wiki" / ".runtime"))
+    with pytest.raises(RunNotApproved) as caught:
+        enforce(
+            execute=execute,
+            fix_gaps=fix_gaps,
+            root=str(tmp_path),
+            run_key="job",
+            checkpointer=store,
+            model="fake",
+            max_model_calls=2,
+        )
+    what, on, next_step = caught.value.parts
+    assert "fix_gaps" in what and str(_snapshot(tmp_path)) in on
+    assert "execute=True" in next_step and "fix_gaps=True" in next_step
+    assert _snapshot(tmp_path).read_bytes() == snapshot
+    assert (tmp_path / "wiki" / "corpus.json").read_bytes() == corpus
+    assert len(prompts) == sent
