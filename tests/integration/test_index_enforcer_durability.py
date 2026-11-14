@@ -5,6 +5,7 @@ layer: backend
 summary: A crash mid-fill resumes via the checkpointer; already-filled gaps are not re-filled and authored summaries are untouched. A filling run is held to its approved count of model calls the way the other agents are: enforce(execute=True, fix_gaps=True) with no max_model_calls is a ValueError before any step, every fill goes through one run's models.ModelMeter so the call past the count raises models.CallCapReached and never reaches the model, and a saved run is resumed only on the model the run names and with no more gaps left than its count, else models.RunNotApproved before any call with the snapshot kept. The model is a fake patched in for the brain's get_model and every tool the brain runs as a child process is a stub, so no billed model and no real tree is reached. A confidential gap, or one that states no level, is never sent: no prompt names it or carries its text, and it stays unfilled.
 """
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -519,3 +520,99 @@ def test_a_failed_build_or_link_fails_the_run_before_report_and_fill(
     assert "exited 5" in on and str(tmp_path) in on and "tool diagnostic" in on
     assert calls[-1] == tool and "scripts/accountability_report.py" not in calls
     assert (tmp_path / "wiki/corpus.json").read_bytes() == before
+
+
+def _edit_disk(root, edit):
+    """Change the corpus on disk as a build after the crash would."""
+    path = root / "wiki" / "corpus.json"
+    corpus = json.loads(path.read_text())
+    edit(corpus, {n["node_id"]: n for n in corpus["nodes"]})
+    path.write_text(json.dumps(corpus))
+
+
+def _crash_after_first_fill(root, counted):
+    prompts, crash_on = counted
+    crash_on["call"] = 2  # n1 filled, n2 in flight
+    with pytest.raises(RuntimeError):
+        _fill(root, model="fake", max_model_calls=3)
+    crash_on["call"] = None
+
+
+def test_a_resume_keeps_a_corpus_built_after_the_crash(tmp_path, counted):
+    _crash_after_first_fill(tmp_path, counted)
+
+    def newer(corpus, by_id):
+        by_id["n3"]["title"] = "c-retitled"
+        corpus["nodes"].append(
+            {
+                "node_id": "added",
+                "title": "added",
+                "path": "docs/added.md",
+                "summary": "NEW",
+                "summary_source": "authored",
+            }
+        )
+
+    _edit_disk(tmp_path, newer)
+    _fill(tmp_path, model="fake", max_model_calls=2)
+    stored = _stored(tmp_path)
+    assert stored["added"]["summary"] == "NEW"
+    assert stored["n3"]["title"] == "c-retitled"
+    for node_id in ("n1", "n2", "n3"):
+        assert stored[node_id]["summary_source"] == "generated"
+
+
+def test_a_resume_drops_a_summary_made_from_text_that_changed(tmp_path, counted):
+    _crash_after_first_fill(tmp_path, counted)
+    _edit_disk(tmp_path, lambda c, by_id: by_id["n1"].update(text_excerpt="changed"))
+    rep = _fill(tmp_path, model="fake", max_model_calls=2)
+    stored = _stored(tmp_path)
+    assert "summary_source" not in stored["n1"] and "summary" not in stored["n1"]
+    assert rep.gaps_filled == 2
+
+
+def test_a_resume_keeps_a_summary_authored_after_the_crash(tmp_path, counted):
+    _crash_after_first_fill(tmp_path, counted)
+    _edit_disk(
+        tmp_path,
+        lambda c, by_id: by_id["n1"].update(summary="HUMAN", summary_source="authored"),
+    )
+    rep = _fill(tmp_path, model="fake", max_model_calls=2)
+    stored = _stored(tmp_path)
+    assert stored["n1"]["summary"] == "HUMAN"
+    assert stored["n1"]["summary_source"] == "authored"
+    assert rep.gaps_filled == 2
+
+
+def test_gaps_filled_counts_only_the_summaries_written(tmp_path, counted):
+    _crash_after_first_fill(tmp_path, counted)
+    _stricter(tmp_path, "n1")  # n1's saved fill is no longer served
+    _edit_disk(tmp_path, lambda c, by_id: by_id["n3"].update(text_excerpt="changed"))
+    rep = _fill(tmp_path, model="fake", max_model_calls=2)
+    stored = _stored(tmp_path)
+    assert rep.gaps_filled == 1 and stored["n2"]["summary_source"] == "generated"
+    assert "summary_source" not in stored["n1"] and "summary_source" not in stored["n3"]
+
+
+def test_a_fresh_run_writes_the_corpus_with_its_fills_and_nothing_else(
+    tmp_path, counted
+):
+    expected = _corpus()
+    for node in expected["nodes"][:3]:
+        node["summary"] = "GEN"
+        node["summary_source"] = "generated"
+    rep = _fill(tmp_path, model="fake", max_model_calls=3)
+    assert rep.gaps_filled == 3
+    text = json.dumps(expected, indent=2, sort_keys=True) + "\n"
+    assert (tmp_path / "wiki" / "corpus.json").read_text() == text
+
+
+def test_committing_twice_writes_the_same_bytes(tmp_path, counted):
+    _fill(tmp_path, model="fake", max_model_calls=3)
+    brain = importlib.import_module(_BRAIN)
+    path = tmp_path / "wiki" / "corpus.json"
+    first = path.read_bytes()
+    state = {"root": str(tmp_path), "corpus": json.loads(first)}
+    served = frozenset({"internal"})
+    assert brain._commit(state, served) == {"gaps_filled": 0}
+    assert path.read_bytes() == first

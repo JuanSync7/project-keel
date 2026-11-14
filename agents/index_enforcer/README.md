@@ -45,6 +45,16 @@ filled, so its text reaches no prompt (the same test file holds it). A nonzero
 `build_corpus.py` or `link_corpus.py` raises `ToolReportUnreadable` before the
 report step, so no run fills from a corpus that failed to build.
 
+The commit writes into the corpus on disk, never over it. At commit time it
+reads `wiki/corpus.json` under the run's root and copies each summary the run
+generated onto the node with the same `node_id`, only while that node is still
+a gap that the fill would send now and has the same `path` and `text_excerpt`
+the summary was made from. Any other filled summary is dropped, an authored
+summary is never touched, and no node or edge is added or removed. A resumed run
+therefore keeps a corpus built after the crash, and a second commit of the same
+inputs writes the same bytes. `EnforceReport.gaps_filled` counts only the
+summaries written. The durability test file holds these cases.
+
 Owner reports pass through `scripts/tool_reports.py` `read_report`: blank,
 non-JSON, deeply nested output or anything but a list of objects raises
 `ToolReportUnreadable`, a `RuntimeError` with the exit helper's three parts,

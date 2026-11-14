@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities as the file under the run's root states it on disk now (scripts/config_loader.py is_served_now over scripts/corpus_level.py stated_now, read once per path), on a fresh run and on a resumed one, so a hidden gap, a file made stricter since the corpus was built and a file whose level cannot be read are reported and never filled, and a resumed run's approved count (models.approve_resume) counts only the gaps it would fill. A nonzero build_corpus.py or link_corpus.py status raises the same ToolReportUnreadable before report and fill. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities as the file under the run's root states it on disk now (scripts/config_loader.py is_served_now over scripts/corpus_level.py stated_now, read once per path), on a fresh run and on a resumed one, so a hidden gap, a file made stricter since the corpus was built and a file whose level cannot be read are reported and never filled, and a resumed run's approved count (models.approve_resume) counts only the gaps it would fill. A nonzero build_corpus.py or link_corpus.py status raises the same ToolReportUnreadable before report and fill. The commit writes into the corpus under the run's root as it is on disk at commit time, never over it: each summary the run generated is copied onto the node with the same node_id only while that node is still a served gap with the same path and text_excerpt, so a corpus built after a crash survives a resume, an authored summary is never touched, a node or edge is never added or removed, and the report's gaps_filled counts only the summaries written. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -245,12 +245,52 @@ def _fill_one(state, meter, served):
     return {"corpus": corpus, "gaps_filled": state.get("gaps_filled", 0) + 1}
 
 
-def _commit(state):
-    """Writes: persist the corpus once, deterministically (sorted keys)."""
-    with open(os.path.join(state["root"], _CORPUS), "w", encoding="utf-8") as fh:
-        json.dump(state["corpus"], fh, indent=2, sort_keys=True)
+def _filled_onto(disk, run, served, root):
+    """Copy the summaries *run* generated onto the nodes of the corpus *disk*
+    (mutated), and return how many were copied. A summary is copied only when
+    the disk node with the same node_id is still a served gap
+    (`_fillable` over *disk*) whose path and text_excerpt are the ones the
+    summary was made from; any other filled summary describes text or a level
+    the corpus on disk no longer has, and is dropped."""
+    fillable = {id(n) for n in _fillable(disk, served, root)}
+    by_id = {n.get("node_id"): n for n in disk.get("nodes", [])}
+    written = 0
+    for node in run.get("nodes", []):
+        if node.get("summary_source") != "generated":
+            continue
+        target = by_id.get(node.get("node_id"))
+        if (
+            target is None
+            or id(target) not in fillable
+            or target.get("path") != node.get("path")
+            or target.get("text_excerpt") != node.get("text_excerpt")
+        ):
+            continue
+        target["summary"] = node["summary"]
+        target["summary_source"] = "generated"
+        written += 1
+    return written
+
+
+def _commit(state, served):
+    """Writes: merge the run's filled summaries into the corpus on disk now,
+    never over it. The corpus under the run's root is read at commit time and
+    each summary the run generated is copied onto the node with the same
+    node_id only while that node is still a served gap with the same path and
+    text_excerpt (`_filled_onto`); an authored summary is never touched and no
+    node or edge is added or removed, so a corpus built after a crash survives
+    a resume. The file is written deterministically (sorted keys), so a second
+    commit of the same inputs writes the same bytes. Returns `gaps_filled`,
+    the count of summaries written. An absent corpus is left absent."""
+    path = os.path.join(state["root"], _CORPUS)
+    if not os.path.exists(path):
+        return {"gaps_filled": 0}
+    disk = _load_corpus(state["root"])
+    written = _filled_onto(disk, state["corpus"], served, state["root"])
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(disk, fh, indent=2, sort_keys=True)
         fh.write("\n")
-    return {}  # no state update -- same empty-update form as _fill_one
+    return {"gaps_filled": written}
 
 
 # --- the plan: control flow as data, with a durable fill loop ------------------
@@ -297,7 +337,7 @@ def _plan(meter, served):
             Step("link", WRITES, _link),
             Step("report", READ_ONLY, _report),
             Step("fill", MODEL_CALL, lambda state: _fill_one(state, meter, served)),
-            Step("commit", WRITES, _commit),
+            Step("commit", WRITES, lambda state: _commit(state, served)),
         ),
         edges=(
             Edge("gate", "build", when=_clean),  # clean tree -> rebuild
