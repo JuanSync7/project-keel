@@ -31,28 +31,28 @@ def _corpus():
             {
                 "node_id": "n1",
                 "title": "a",
-                "path": "p",
+                "path": "docs/n1.md",
                 "text_excerpt": "x",
                 "visibility": "internal",
             },
             {
                 "node_id": "n2",
                 "title": "b",
-                "path": "p",
+                "path": "docs/n2.md",
                 "text_excerpt": "x",
                 "visibility": "internal",
             },
             {
                 "node_id": "n3",
                 "title": "c",
-                "path": "p",
+                "path": "docs/n3.md",
                 "text_excerpt": "x",
                 "visibility": "internal",
             },
             {
                 "node_id": "keep",
                 "title": "k",
-                "path": "p",
+                "path": "docs/keep.md",
                 "summary": "AUTHORED",
                 "summary_source": "authored",
                 "visibility": "internal",
@@ -61,9 +61,21 @@ def _corpus():
     }
 
 
+def _state_level(root, path, level):
+    """Write the file *path* under *root* so it states *level* on disk."""
+    target = root / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("---\nvisibility: %s\n---\nbody\n" % level, "utf-8")
+
+
 def _project(root, corpus):
     """A scratch project at *root*: an empty config/project.json, so the
-    served levels are the shipped default, and *corpus* as its corpus."""
+    served levels are the shipped default, *corpus* as its corpus, and each
+    node's file stating the level the node carries (a node with none gets no
+    file, so its level cannot be read)."""
+    for node in corpus["nodes"]:
+        if "visibility" in node:
+            _state_level(root, node["path"], node["visibility"])
     (root / "config").mkdir()
     (root / "config" / "project.json").write_text("{}")
     (root / "wiki").mkdir()
@@ -389,3 +401,102 @@ def test_a_hidden_gap_is_never_sent_to_the_model(tmp_path, monkeypatch):
     assert by_id["open"]["summary_source"] == "generated"
     assert "summary_source" not in by_id["secret-doc"]
     assert "summary_source" not in by_id["unstated-doc"]
+
+
+def _stricter(root, node_id, level="confidential"):
+    """Make the file of corpus node *node_id* state *level* on disk, as an
+    owner does after the corpus was built."""
+    path = {n["node_id"]: n["path"] for n in _corpus()["nodes"]}[node_id]
+    _state_level(root, path, level)
+
+
+def _stored(root):
+    nodes = json.loads((root / "wiki" / "corpus.json").read_text())["nodes"]
+    return {n["node_id"]: n for n in nodes}
+
+
+def test_a_resumed_run_never_fills_a_gap_whose_file_became_stricter(tmp_path, counted):
+    prompts, crash_on = counted
+    crash_on["call"] = 2  # n1 is filled; n2 is in flight at the crash
+    with pytest.raises(RuntimeError):
+        _fill(tmp_path, model="fake", max_model_calls=3)
+    assert len(prompts) == 2
+    _stricter(tmp_path, "n2")
+    rep = _fill(tmp_path, model="fake", max_model_calls=1)  # only n3 is left
+    assert len(prompts) == 3 and "title: c" in prompts[2]
+    assert rep.gaps_filled == 2 and "n2" in rep.summary_gaps
+    stored = _stored(tmp_path)
+    assert "summary_source" not in stored["n2"]
+    assert stored["n1"]["summary_source"] == stored["n3"]["summary_source"]
+
+
+def test_the_resume_count_leaves_out_a_gap_that_is_no_longer_a_fill(tmp_path, counted):
+    prompts, crash_on = counted
+    crash_on["call"] = 1  # all three gaps are left
+    with pytest.raises(RuntimeError):
+        _fill(tmp_path, model="fake", max_model_calls=3)
+    _stricter(tmp_path, "n1")
+    with pytest.raises(RunNotApproved) as exc:
+        _fill(tmp_path, model="fake", max_model_calls=1)
+    assert "2 model call(s) left" in exc.value.parts[0]
+    assert len(prompts) == 1 and _snapshot(tmp_path).is_file()
+    assert _fill(tmp_path, model="fake", max_model_calls=2).gaps_filled == 2
+
+
+def test_a_fresh_run_does_not_fill_a_node_whose_file_is_stricter_now(tmp_path, counted):
+    prompts, _ = counted
+    _stricter(tmp_path, "n1")  # the corpus still says internal
+    rep = _fill(tmp_path, model="fake", max_model_calls=3)
+    assert len(prompts) == 2 and all("title: a" not in p for p in prompts)
+    assert rep.gaps_filled == 2 and "n1" in rep.summary_gaps
+    assert "summary_source" not in _stored(tmp_path)["n1"]
+
+
+@pytest.mark.parametrize("how", ["no-file", "no-frontmatter", "binary"])
+def test_a_node_whose_file_level_cannot_be_read_is_not_filled(tmp_path, counted, how):
+    prompts, _ = counted
+    target = tmp_path / "docs" / "n1.md"
+    if how == "no-file":
+        target.unlink()
+    elif how == "no-frontmatter":
+        target.write_text("just text\n", "utf-8")
+    else:
+        target.write_bytes(b"\xff\xfe\x00\x80")
+    rep = _fill(tmp_path, model="fake", max_model_calls=3)
+    assert len(prompts) == 2 and all("title: a" not in p for p in prompts)
+    assert rep.gaps_filled == 2
+    assert "summary_source" not in _stored(tmp_path)["n1"]
+
+
+@pytest.mark.parametrize(
+    "tool", ["scripts/jobs/build_corpus.py", "scripts/jobs/link_corpus.py"]
+)
+@pytest.mark.parametrize("execute", [False, True], ids=["dry", "execute"])
+def test_a_failed_build_or_link_fails_the_run_before_report_and_fill(
+    tmp_path, monkeypatch, tool, execute
+):
+    _project(tmp_path, _corpus())
+    before = (tmp_path / "wiki/corpus.json").read_bytes()
+    calls = []
+
+    def run(args):
+        calls.append(args[0])
+        if args[0] == tool:
+            return 5, "", "tool diagnostic"
+        return _fake_run(args)
+
+    monkeypatch.setattr(_BRAIN + "._run", run)
+    monkeypatch.setattr(
+        _BRAIN + ".get_model", lambda *args: pytest.fail("model called")
+    )
+    if not execute:  # the dry run skips the write steps: nothing to fail
+        enforce(root=str(tmp_path), fix_gaps=True)
+        assert tool not in calls
+        return
+    with pytest.raises(ToolReportUnreadable) as raised:
+        _fill(tmp_path, model="fake", max_model_calls=3)
+    what, on, next_step = raised.value.parts
+    assert tool in what and tool in next_step
+    assert "exited 5" in on and str(tmp_path) in on and "tool diagnostic" in on
+    assert calls[-1] == tool and "scripts/accountability_report.py" not in calls
+    assert (tmp_path / "wiki/corpus.json").read_bytes() == before

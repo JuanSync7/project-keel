@@ -2,7 +2,7 @@
 title: Index enforcer brain
 layer: backend
 public_api: no
-summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities (scripts/config_loader.py is_served), so a hidden gap is reported and never filled. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
+summary: Plan: gate -> build -> link -> report -> (durable fill loop) -> commit; run on a neutral Runtime. A filling run needs its approved count of model calls: every fill goes through one run's models.ModelMeter, and a resumed run is first checked against the approved model and count (models.approve_resume). Every tool child runs through scripts/resource_limits.py run_tool, held to config/project.json `agents.tool_timeout_seconds` and `agents.tool_max_output_bytes`: past either its session is ended and the step raises ChildTimedOut or ChildOutputTooLarge naming the key. The fill sends only gaps at a level in config/project.json corpus.served_visibilities as the file under the run's root states it on disk now (scripts/config_loader.py is_served_now over scripts/corpus_level.py stated_now, read once per path), on a fresh run and on a resumed one, so a hidden gap, a file made stricter since the corpus was built and a file whose level cannot be read are reported and never filled, and a resumed run's approved count (models.approve_resume) counts only the gaps it would fill. A nonzero build_corpus.py or link_corpus.py status raises the same ToolReportUnreadable before report and fill. A failed owner status or an unreadable owner list raises scripts/tool_reports.py ToolReportUnreadable before fill or commit; a nonzero structure status without ERROR lines raises the same error before build. An absent corpus gives a readable empty owner list.
 effect: writes
 rerun: fixed-point
 rerun_proof: test:tests/integration/test_index_enforcer_durability.py
@@ -27,7 +27,7 @@ from runtimes import (
     Step,
     get_runtime,
 )
-from scripts import config_loader, tool_reports
+from scripts import config_loader, corpus_level, tool_reports
 from scripts.resource_limits import run_tool
 
 __all__ = ["enforce", "summarize_gap", "EnforceReport"]
@@ -102,12 +102,23 @@ def _ungapped(corpus):
     return [n for n in corpus.get("nodes", []) if not n.get("summary_source")]
 
 
-def _fillable(corpus, served):
+def _fillable(corpus, served, root):
     """The gaps at a level in *served*, in corpus order: the fill work-list.
-    A hidden gap, a corpus row with no `visibility` field included, never reaches
-    summarize_gap, so its text is in no prompt; it stays a reported gap for
-    its owner to author."""
-    return [n for n in _ungapped(corpus) if config_loader.is_served(n, served)]
+    A gap is kept only when config_loader.is_served_now holds over the level
+    its file under *root* states on disk now (scripts/corpus_level.py
+    stated_now, read once per path), so a hidden gap, a corpus row with no
+    `visibility` field, a file made stricter since the corpus was built and a
+    file whose level cannot be read never reach summarize_gap: their text is
+    in no prompt, and each stays a reported gap for its owner to author."""
+    stated = {}
+    fillable = []
+    for node in _ungapped(corpus):
+        path = node.get("path")
+        if path not in stated:
+            stated[path] = corpus_level.stated_now(root, path)
+        if config_loader.is_served_now(node, served, stated[path]):
+            fillable.append(node)
+    return fillable
 
 
 # --- plan steps: each returns a dict merged into the run state -----------------
@@ -135,9 +146,22 @@ def _gate(state):
     }
 
 
+def _require_ok(tool, rc, err, root):
+    """Raise ToolReportUnreadable when the write tool *tool* exited nonzero
+    (*rc*), so no step after it reads or fills a corpus it failed to write."""
+    if rc != 0:
+        raise tool_reports.ToolReportUnreadable(
+            "%s failed" % tool,
+            "%s exited %d under %s; its stderr: %s"
+            % (tool, rc, root, err.strip() or "(empty)"),
+            "fix what %s names, then rerun" % tool,
+        )
+
+
 def _build(state):
-    """Writes: (re)build the wiki corpus tree."""
-    _run(
+    """Writes: (re)build the wiki corpus tree; a failed build raises
+    ToolReportUnreadable before report and fill."""
+    rc, _, err = _run(
         [
             "scripts/jobs/build_corpus.py",
             "--root",
@@ -146,18 +170,21 @@ def _build(state):
             os.path.join(state["root"], _CORPUS),
         ]
     )
+    _require_ok("scripts/jobs/build_corpus.py", rc, err, state["root"])
     return {}  # no state update -- same empty-update form as _fill_one
 
 
 def _link(state):
-    """Writes: add deterministic entity/keyword link edges to the corpus."""
-    _run(
+    """Writes: add deterministic entity/keyword link edges to the corpus; a
+    failed link raises ToolReportUnreadable before report and fill."""
+    rc, _, err = _run(
         [
             "scripts/jobs/link_corpus.py",
             "--corpus",
             os.path.join(state["root"], _CORPUS),
         ]
     )
+    _require_ok("scripts/jobs/link_corpus.py", rc, err, state["root"])
     return {}  # no state update -- same empty-update form as _fill_one
 
 
@@ -209,7 +236,7 @@ def _fill_one(state, meter, served):
     never touched (only nodes lacking summary_source are filled).
     """
     corpus = state["corpus"]
-    todo = _fillable(corpus, served)
+    todo = _fillable(corpus, served, state["root"])
     if not todo:
         return {}
     node = todo[0]
@@ -244,7 +271,7 @@ def _wants_fill(state, served):
     at a level in *served*."""
     return (
         bool(state.get("fix_gaps"))
-        and bool(_fillable(state.get("corpus", {}), served))
+        and bool(_fillable(state.get("corpus", {}), served, state["root"]))
         and not state.get("s_errors")
     )
 
@@ -253,7 +280,7 @@ def _more_to_fill(state, served):
     """True when authorized to fill and at least one gap at a level in
     *served* remains (loop guard)."""
     return bool(state.get("execute")) and bool(
-        _fillable(state.get("corpus", {}), served)
+        _fillable(state.get("corpus", {}), served, state["root"])
     )
 
 
@@ -316,8 +343,11 @@ def enforce(
     reaches the model) needs ``max_model_calls``, the approved count, or
     raises ValueError: every fill goes through one ``models.CountedModel`` of
     that count, so the call past it raises ``models.CallCapReached``. A saved
-    run is resumed only on the same model and with no more gaps left than
-    that count; otherwise ``models.RunNotApproved`` is raised before any step.
+    run is resumed only on the same model and with no more fills left than
+    that count, a fill being a gap whose file under *root* states a served
+    level now; otherwise ``models.RunNotApproved`` is raised before any step.
+    A nonzero build or link status raises ``ToolReportUnreadable`` before the
+    report step.
     """
     if execute and fix_gaps and max_model_calls is None:
         raise ValueError(
@@ -344,9 +374,10 @@ def enforce(
                     where=checkpointer.where(run_key),
                     saved_model=left.get("model"),
                     model=model,
-                    # One fill per gap still in the saved corpus, the one in
-                    # flight at the crash included.
-                    left=len(_fillable(left.get("corpus", {}), served)),
+                    # One fill per gap the run would still make from the saved
+                    # corpus, the one in flight at the crash included; a gap
+                    # whose file is now stricter or unreadable is no fill.
+                    left=len(_fillable(left.get("corpus", {}), served, root)),
                     cap=max_model_calls,
                 )
             kwargs["resume"] = None
