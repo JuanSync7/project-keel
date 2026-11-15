@@ -2381,6 +2381,61 @@ def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
     assert found == [], "config/project.json.jinja renders %s" % found
 
 
+def _manifest_paths(ours: Any, theirs: Any, path: str = "") -> set[str]:
+    """Return differing JSON Pointer paths; maps recurse and lists stay whole."""
+    if isinstance(ours, dict) and isinstance(theirs, dict):
+        found = set()
+        for key in sorted(ours.keys() | theirs.keys()):
+            child = path + "/" + key.replace("~", "~0").replace("/", "~1")
+            if key not in ours or key not in theirs:
+                found.add(child)
+            else:
+                found.update(_manifest_paths(ours[key], theirs[key], child))
+        return found
+    return {path} if type(ours) is not type(theirs) or ours != theirs else set()
+
+
+def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
+    """Compare every rendered manifest, with exact, non-stale path exemptions."""
+    import test_reference_drift as reference
+
+    key = ("template", "manifest_differences")
+    allowed = config_loader.resolve(
+        manifest, config_loader.rows(key), config_loader.CONFIG_FILE
+    )[key]
+    for path, reason in allowed.items():
+        assert path.startswith("/") and isinstance(reason, str) and reason.strip(), (
+            "template.manifest_differences: %r needs a JSON Pointer and reason" % path
+        )
+    sets = _answer_sets(str(_ROOT))
+    assert sets, "a parity check over zero answer sets proves nothing"
+    template = reference._jinja().from_string(source)
+    counts: dict[str, int] = {}
+    for answers in sets:
+        rendered = json.loads(template.render(**answers))
+        if rendered.get("name") == answers["project_slug"]:
+            rendered["name"] = manifest["name"]
+        for path in _manifest_paths(manifest, rendered):
+            counts[path] = counts.get(path, 0) + 1
+    return [
+        "%s differs under %d of %d answer sets" % (path, count, len(sets))
+        for path, count in sorted(counts.items())
+        if path not in allowed
+    ] + [
+        "%s is a stale exemption: differs under 0 of %d answer sets" % (path, len(sets))
+        for path in sorted(set(allowed) - counts.keys())
+    ]
+
+
+def test_every_manifest_leaf_ships_in_both_manifest_twins(manifest):
+    """Every generated manifest matches keel except at reasoned template paths."""
+    twin = _ROOT / "config" / "project.json.jinja"
+    if not twin.is_file():
+        pytest.skip(_TEMPLATE_ONLY)
+    found = _manifest_twin_findings(twin.read_text(encoding="utf-8"), manifest)
+    assert found == [], "config/project.json.jinja renders %s" % found
+
+
 @pytest.mark.parametrize(
     "plant",
     [

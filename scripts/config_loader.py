@@ -1215,6 +1215,13 @@ KEYS = tuple(
                 "the make-target policy scripts/check_structure.py validates",
             ),
             _row(
+                ("template", "manifest_differences"),
+                "object",
+                NONE,
+                "exact JSON Pointer paths allowed to differ in the manifest twin, "
+                "each mapped to its reason; the parity test refuses stale entries",
+            ),
+            _row(
                 ("doc_drift", "check_name_guide"),
                 "repo_path",
                 NONE,
