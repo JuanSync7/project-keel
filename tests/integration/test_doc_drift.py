@@ -2395,36 +2395,176 @@ def _manifest_paths(ours: Any, theirs: Any, path: str = "") -> set[str]:
     return {path} if type(ours) is not type(theirs) or ours != theirs else set()
 
 
+def _manifest_exemption_error(
+    entry: Any, questions: dict[str, Any], sets: list[dict[str, Any]]
+) -> str:
+    """Return the schema fault in an exemption, or an empty string."""
+    if not isinstance(entry, dict) or set(entry) - {"reason", "matches_when"}:
+        return "needs an object with reason and optional matches_when"
+    reason = entry.get("reason")
+    if not isinstance(reason, str) or not reason.strip():
+        return "needs a non-blank reason"
+    if "matches_when" not in entry:
+        return ""
+    if not isinstance(entry["matches_when"], list):
+        return "matches_when must be a list of conditions"
+    for condition in entry["matches_when"]:
+        if not isinstance(condition, dict):
+            return "each matches_when condition must be an object"
+        answer = condition.get("answer")
+        if not isinstance(answer, str) or answer not in questions:
+            return "unknown Copier answer %r" % answer
+        operators = set(condition) - {"answer"}
+        if len(operators) != 1 or not operators <= {"is", "is_not", "has", "lacks"}:
+            return (
+                "condition needs exactly one op from is, is_not, has, lacks; got %r"
+                % sorted(operators)
+            )
+        if operators & {"has", "lacks"} and any(
+            not isinstance(answers[answer], list) for answers in sets
+        ):
+            return "has/lacks needs a list answer; %r is not list-valued" % answer
+    return ""
+
+
+def _manifest_condition_matches(
+    condition: dict[str, Any], answers: dict[str, Any]
+) -> bool:
+    """Evaluate one validated condition against a completed Copier answer set."""
+    value = answers[condition["answer"]]
+    if "is" in condition:
+        return bool(value == condition["is"])
+    if "is_not" in condition:
+        return bool(value != condition["is_not"])
+    if "has" in condition:
+        return condition["has"] in value
+    return condition["lacks"] not in value
+
+
+def _manifest_path_exists(manifest: Any, path: str) -> bool:
+    """Whether an exact map path exists, including a null-valued leaf."""
+    for segment in path[1:].split("/"):
+        key = segment.replace("~1", "/").replace("~0", "~")
+        if not isinstance(manifest, dict) or key not in manifest:
+            return False
+        manifest = manifest[key]
+    return True
+
+
+def _manifest_exemption_findings(
+    path: str,
+    entry: dict[str, Any],
+    sets: list[dict[str, Any]],
+    differences: list[set[str]],
+    presence: list[bool],
+) -> list[str]:
+    """Judge the exemption's equality promise and whether it excuses any drift."""
+    # A missing subtree is reported once at its root, but each leaf under it
+    # still differs. Otherwise an unconditional leaf exemption would look stale
+    # whenever an answer removes its parent (for example the frontend layer).
+    differs = [
+        path in paths
+        or (present and any(path.startswith(changed + "/") for changed in paths))
+        for paths, present in zip(differences, presence, strict=True)
+    ]
+    if "matches_when" not in entry:
+        equal = [
+            answers for answers, drift in zip(sets, differs, strict=True) if not drift
+        ]
+        if not equal:
+            return []
+        return [
+            "%s matches under %d of %d answer sets; add matches_when; example: %s"
+            % (path, len(equal), len(sets), json.dumps(equal[0], sort_keys=True))
+        ]
+    matches = [
+        all(_manifest_condition_matches(c, answers) for c in entry["matches_when"])
+        for answers in sets
+    ]
+    if not any(matches):
+        return [
+            "%s is a vacuous exemption: matches_when holds under 0 of %d answer sets"
+            % (path, len(sets))
+        ]
+    forbidden = [
+        answers
+        for answers, drift, match in zip(sets, differs, matches, strict=True)
+        if drift and match
+    ]
+    findings = []
+    if forbidden:
+        findings.append(
+            "%s differs where matches_when holds under %d of %d answer sets; example: %s"
+            % (
+                path,
+                len(forbidden),
+                len(sets),
+                json.dumps(forbidden[0], sort_keys=True),
+            )
+        )
+    if not any(
+        drift and not match for drift, match in zip(differs, matches, strict=True)
+    ):
+        findings.append(
+            "%s is a stale exemption: differs under 0 non-matching answer sets (of %d total)"
+            % (path, len(sets))
+        )
+    return findings
+
+
 def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
-    """Compare every rendered manifest, with exact, non-stale path exemptions."""
+    """Compare every render with exact exemptions and answer-specific promises."""
     import test_reference_drift as reference
 
     key = ("template", "manifest_differences")
     allowed = config_loader.resolve(
         manifest, config_loader.rows(key), config_loader.CONFIG_FILE
     )[key]
-    for path, reason in allowed.items():
-        assert path.startswith("/") and isinstance(reason, str) and reason.strip(), (
-            "template.manifest_differences: %r needs a JSON Pointer and reason" % path
-        )
+    questions = reference.copier_questions(_ROOT)
     sets = _answer_sets(str(_ROOT))
     assert sets, "a parity check over zero answer sets proves nothing"
+    findings = []
+    valid = {}
+    for path, entry in allowed.items():
+        if (
+            not isinstance(path, str)
+            or not path.startswith("/")
+            or re.search(r"~(?![01])", path)
+        ):
+            error = "needs a JSON Pointer (~1 escapes / and ~0 escapes ~)"
+        else:
+            error = _manifest_exemption_error(entry, questions, sets)
+        if error:
+            findings.append("template.manifest_differences: %s %s" % (path, error))
+        else:
+            valid[path] = entry
     template = reference._jinja().from_string(source)
     counts: dict[str, int] = {}
+    differences = []
+    ours_present = {path for path in valid if _manifest_path_exists(manifest, path)}
+    presence: dict[str, list[bool]] = {path: [] for path in valid}
     for answers in sets:
         rendered = json.loads(template.render(**answers))
         if rendered.get("name") == answers["project_slug"]:
             rendered["name"] = manifest["name"]
-        for path in _manifest_paths(manifest, rendered):
+        paths = _manifest_paths(manifest, rendered)
+        differences.append(paths)
+        for path in valid:
+            presence[path].append(
+                path in ours_present or _manifest_path_exists(rendered, path)
+            )
+        for path in paths:
             counts[path] = counts.get(path, 0) + 1
-    return [
+    findings += [
         "%s differs under %d of %d answer sets" % (path, count, len(sets))
         for path, count in sorted(counts.items())
-        if path not in allowed
-    ] + [
-        "%s is a stale exemption: differs under 0 of %d answer sets" % (path, len(sets))
-        for path in sorted(set(allowed) - counts.keys())
+        if path not in valid
     ]
+    for path, entry in sorted(valid.items()):
+        findings += _manifest_exemption_findings(
+            path, entry, sets, differences, presence[path]
+        )
+    return findings
 
 
 def test_every_manifest_leaf_ships_in_both_manifest_twins(manifest):
@@ -2434,6 +2574,125 @@ def test_every_manifest_leaf_ships_in_both_manifest_twins(manifest):
         pytest.skip(_TEMPLATE_ONLY)
     found = _manifest_twin_findings(twin.read_text(encoding="utf-8"), manifest)
     assert found == [], "config/project.json.jinja renders %s" % found
+
+
+@pytest.mark.parametrize(
+    "entry, expected",
+    [
+        ("a reason", "needs an object"),
+        ({"reason": " "}, "non-blank reason"),
+        ({"reason": "why", "extra": True}, "needs an object"),
+        ({"reason": "why", "matches_when": {}}, "must be a list"),
+        ({"reason": "why", "matches_when": [True]}, "must be an object"),
+        (
+            {"answer": "missing_question", "is": True},
+            "unknown Copier answer",
+        ),
+        ({"answer": "shell", "unknown": True}, "exactly one op"),
+        ({"answer": "shell", "is": True, "is_not": False}, "exactly one op"),
+        ({"answer": "shell"}, "exactly one op"),
+        ({"answer": "shell", "has": True}, "needs a list answer"),
+    ],
+)
+def test_manifest_exemptions_refuse_malformed_entries(
+    entry: Any, expected: str
+) -> None:
+    if isinstance(entry, dict) and "answer" in entry:
+        entry = {"reason": "why", "matches_when": [entry]}
+    error = _manifest_exemption_error(entry, {"shell": {}}, [{"shell": True}])
+    assert expected in error
+
+
+@pytest.mark.parametrize(
+    "condition, expected",
+    [
+        ({"answer": "scalar", "is": "chosen"}, True),
+        ({"answer": "scalar", "is": "other"}, False),
+        ({"answer": "scalar", "is_not": "other"}, True),
+        ({"answer": "scalar", "is_not": "chosen"}, False),
+        ({"answer": "items", "has": "chosen"}, True),
+        ({"answer": "items", "has": "other"}, False),
+        ({"answer": "items", "lacks": "other"}, True),
+        ({"answer": "items", "lacks": "chosen"}, False),
+    ],
+)
+def test_manifest_conditions_evaluate_each_closed_operator(
+    condition: dict[str, Any], *, expected: bool
+) -> None:
+    answers = {"scalar": "chosen", "items": ["chosen"]}
+    assert _manifest_condition_matches(condition, answers) is expected
+
+
+@pytest.mark.parametrize(
+    "conditions, differences, expected",
+    [
+        (None, [{"/parent"}, {"/parent/leaf"}], ""),
+        (None, [set(), {"/parent/leaf"}], "add matches_when"),
+        (None, [set(), set()], "add matches_when"),
+        ([{"answer": "shell", "is": True}], [set(), {"/parent"}], ""),
+        (
+            [{"answer": "shell", "is": True}],
+            [{"/parent/leaf"}, {"/parent"}],
+            "differs where matches_when holds under 1 of 2 answer sets; example:",
+        ),
+        (
+            [{"answer": "shell", "is": "unavailable"}],
+            [set(), {"/parent"}],
+            "vacuous exemption",
+        ),
+        ([{"answer": "shell", "is": True}], [set(), set()], "stale exemption"),
+        (
+            [{"answer": "shell", "is": True}],
+            [{"/parent/leaf"}, set()],
+            "stale exemption",
+        ),
+        (
+            [{"answer": "shell", "is": True}, {"answer": "items", "has": "x"}],
+            [{"/parent"}, {"/parent"}],
+            "vacuous exemption",
+        ),
+        (
+            [{"answer": "shell", "is": True}, {"answer": "items", "lacks": "x"}],
+            [set(), {"/parent"}],
+            "",
+        ),
+    ],
+)
+def test_manifest_exemptions_judge_every_answer_set(
+    conditions: list[dict[str, Any]] | None,
+    differences: list[set[str]],
+    expected: str,
+) -> None:
+    entry: dict[str, Any] = {"reason": "intentional difference"}
+    if conditions is not None:
+        entry["matches_when"] = conditions
+    answers = [{"shell": True, "items": []}, {"shell": False, "items": ["x"]}]
+    findings = _manifest_exemption_findings(
+        "/parent/leaf", entry, answers, differences, [True] * len(answers)
+    )
+    if expected:
+        assert any("/parent/leaf" in f and expected in f for f in findings)
+    else:
+        assert findings == []
+
+
+def test_a_missing_parent_cannot_credit_an_absent_exempted_child() -> None:
+    ours = {"parent": {"null": None, "a/b~c": 1}}
+    assert _manifest_path_exists(ours, "/parent/null")
+    assert _manifest_path_exists(ours, "/parent/a~1b~0c")
+    assert not _manifest_path_exists(ours, "/parent/absent")
+    findings = _manifest_exemption_findings(
+        "/parent/absent",
+        {"reason": "not a real difference"},
+        [{"shell": True}],
+        [{"/parent"}],
+        [False],
+    )
+    assert len(findings) == 1
+    assert (
+        "/parent/absent matches under 1 of 1 answer sets; add matches_when"
+        in findings[0]
+    )
 
 
 @pytest.mark.parametrize(

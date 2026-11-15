@@ -7,31 +7,165 @@
   },
   "template": {
     "manifest_differences": {
-      "/template": "Template metadata declares keel's own Jinja twins and promises; generated projects have no keel twins (the twin's deliberately unrendered template block).",
-      "/tests/ship_set": "Keel renders projects with Copier; generated projects are not templates and have no renderer ship set (60aeb900).",
-      "/tests/scratch_root": "Disk scratch is isolated by the generated project_slug rather than keel's identity (cda423b3).",
-      "/tests/memory_scratch_root": "Memory scratch is isolated by the generated project_slug rather than keel's identity (cda423b3).",
-      "/secrets/scanner/install_root": "The pinned scanner installs outside the checkout in the generated project's own slug-scoped tools cache.",
-      "/shell/no_scripts": "Keel's reason names its Python gates; a generated project's reason names its slug and has no project-specific implementation claim (e80f291f).",
-      "/venv/extras": "Keel needs the template extra to run Copier; generated projects need only dev plus enabled transport extras (the twin's venv comment).",
-      "/doc_drift/history_paths": "Generated projects keep public history prefixes; keel's excluded internal cabinet is template-only (the twin's history_paths comment).",
-      "/config_reads/allowed/scripts~1audit_project.py": "The manifest auditor reads a different project's config; its template-only implementation is excluded from generated projects (the twin's false block).",
-      "/layers/frontend": "The frontend block is absent when frontend_stack is none, matching Copier's frontend directory exclusion.",
-      "/layers/frontend/stack": "The generated frontend selects the frontend_stack answer; keel's null stack selects none while retaining both implementations.",
-      "/layers/frontend/available": "Generated projects ship only the selected frontend stack; keel carries both implementations (603e9cc1).",
-      "/transports/enabled": "Generated projects always keep REST and MCP and add only optional transports selected by the transports answer.",
-      "/transports/available/grpc": "The gRPC directory ships only when the transports answer selects grpc.",
-      "/transports/available/edge_nginx": "The nginx edge directory ships only when the transports answer selects edge_nginx.",
-      "/transports/extras/grpc": "The grpc package extra is required only for projects that select the gRPC transport (1a85f668).",
-      "/e2e/sources/grpc": "Proto endpoint discovery is present only for the selected gRPC transport.",
-      "/e2e/sources/edge_nginx": "The edge's explicit no-endpoints source is present only for the selected nginx edge transport.",
-      "/e2e/exempt/grpc ~1thing.v1.ThingService~1CreateThing": "The ungenerated-stubs exemption applies only when the project selects gRPC (the twin's endpoint reason).",
-      "/practices/profiles/ai": "The ai profile is enabled by the profiles answer; keel keeps all domain profiles off.",
-      "/practices/profiles/cuda": "The cuda profile is enabled by the profiles answer; keel keeps all domain profiles off.",
-      "/practices/profiles/langgraph": "The langgraph profile is enabled by the profiles answer; keel keeps all domain profiles off.",
-      "/dependency_audit/accepted/astro": "The accepted Astro advisory ships only with the Astro app, so other stacks inherit no stale acceptance (0ffe6ce6).",
-      "/shell/enabled": "The shell answer chooses whether a generated project runs shell gates; keel enables them.",
-      "/config_reads/allowed/src~1backend~1showcase~1_repo.py": "The showcase read-model exception ships only when showcase is selected and that module ships (the twin's showcase block)."
+      "/template": {
+        "reason": "Template metadata declares keel's own Jinja twins and promises; generated projects have no keel twins (the twin's deliberately unrendered template block)."
+      },
+      "/tests/ship_set": {
+        "reason": "Keel renders projects with Copier; generated projects are not templates and have no renderer ship set (60aeb900)."
+      },
+      "/tests/scratch_root": {
+        "reason": "Disk scratch is isolated by the generated project_slug rather than keel's identity (cda423b3)."
+      },
+      "/tests/memory_scratch_root": {
+        "reason": "Memory scratch is isolated by the generated project_slug rather than keel's identity (cda423b3)."
+      },
+      "/secrets/scanner/install_root": {
+        "reason": "The pinned scanner installs outside the checkout in the generated project's own slug-scoped tools cache."
+      },
+      "/shell/no_scripts": {
+        "reason": "Keel's reason names its Python gates; a generated project's reason names its slug and has no project-specific implementation claim (e80f291f)."
+      },
+      "/venv/extras": {
+        "reason": "Keel needs the template extra to run Copier; generated projects need only dev plus enabled transport extras (the twin's venv comment)."
+      },
+      "/doc_drift/history_paths": {
+        "reason": "Generated projects keep public history prefixes; keel's excluded internal cabinet is template-only (the twin's history_paths comment)."
+      },
+      "/config_reads/allowed/scripts~1audit_project.py": {
+        "reason": "The manifest auditor reads a different project's config; its template-only implementation is excluded from generated projects (the twin's false block)."
+      },
+      "/layers/frontend": {
+        "reason": "The frontend block is absent when frontend_stack is none, matching Copier's frontend directory exclusion.",
+        "matches_when": [
+          {
+            "answer": "frontend_stack",
+            "is_not": "none"
+          }
+        ]
+      },
+      "/layers/frontend/stack": {
+        "reason": "The generated frontend selects the frontend_stack answer; keel's null stack selects none while retaining both implementations."
+      },
+      "/layers/frontend/available": {
+        "reason": "Generated projects ship only the selected frontend stack; keel carries both implementations (603e9cc1)."
+      },
+      "/transports/enabled": {
+        "reason": "Generated projects always keep REST and MCP and add only optional transports selected by the transports answer.",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "is": []
+          }
+        ]
+      },
+      "/transports/available/grpc": {
+        "reason": "The gRPC directory ships only when the transports answer selects grpc.",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "has": "grpc"
+          }
+        ]
+      },
+      "/transports/available/edge_nginx": {
+        "reason": "The nginx edge directory ships only when the transports answer selects edge_nginx.",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "has": "edge_nginx"
+          }
+        ]
+      },
+      "/transports/extras/grpc": {
+        "reason": "The grpc package extra is required only for projects that select the gRPC transport (1a85f668).",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "has": "grpc"
+          }
+        ]
+      },
+      "/e2e/sources/grpc": {
+        "reason": "Proto endpoint discovery is present only for the selected gRPC transport.",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "has": "grpc"
+          }
+        ]
+      },
+      "/e2e/sources/edge_nginx": {
+        "reason": "The edge's explicit no-endpoints source is present only for the selected nginx edge transport.",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "has": "edge_nginx"
+          }
+        ]
+      },
+      "/e2e/exempt/grpc ~1thing.v1.ThingService~1CreateThing": {
+        "reason": "The ungenerated-stubs exemption applies only when the project selects gRPC (the twin's endpoint reason).",
+        "matches_when": [
+          {
+            "answer": "transports",
+            "lacks": "grpc"
+          }
+        ]
+      },
+      "/practices/profiles/ai": {
+        "reason": "The ai profile is enabled by the profiles answer; keel keeps all domain profiles off.",
+        "matches_when": [
+          {
+            "answer": "profiles",
+            "lacks": "ai"
+          }
+        ]
+      },
+      "/practices/profiles/cuda": {
+        "reason": "The cuda profile is enabled by the profiles answer; keel keeps all domain profiles off.",
+        "matches_when": [
+          {
+            "answer": "profiles",
+            "lacks": "cuda"
+          }
+        ]
+      },
+      "/practices/profiles/langgraph": {
+        "reason": "The langgraph profile is enabled by the profiles answer; keel keeps all domain profiles off.",
+        "matches_when": [
+          {
+            "answer": "profiles",
+            "lacks": "langgraph"
+          }
+        ]
+      },
+      "/dependency_audit/accepted/astro": {
+        "reason": "The accepted Astro advisory ships only with the Astro app, so other stacks inherit no stale acceptance (0ffe6ce6).",
+        "matches_when": [
+          {
+            "answer": "frontend_stack",
+            "is": "astro"
+          }
+        ]
+      },
+      "/shell/enabled": {
+        "reason": "The shell answer chooses whether a generated project runs shell gates; keel enables them.",
+        "matches_when": [
+          {
+            "answer": "shell",
+            "is": true
+          }
+        ]
+      },
+      "/config_reads/allowed/src~1backend~1showcase~1_repo.py": {
+        "reason": "The showcase read-model exception ships only when showcase is selected and that module ships (the twin's showcase block).",
+        "matches_when": [
+          {
+            "answer": "showcase",
+            "is": true
+          }
+        ]
+      }
     },
     "required_settings": [
       "tool.pytest.ini_options.tmp_path_retention_policy",
