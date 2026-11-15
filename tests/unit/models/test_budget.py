@@ -2,7 +2,7 @@
 title: Unit — the model-call budget a run's backend is held to
 kind: tests
 layer: backend
-summary: models.CountedModel passes a call to the backend it wraps until the approved count is reached and then raises CallCapReached without calling it, so a count of 0 lets no call through; ModelMeter builds the named backend only on the first call, once, wrapped in that count; approve_resume passes a saved run whose model and remaining calls are what the run approves and raises RunNotApproved, naming the saved value, the approved one and the snapshot to remove, for a different model (the registry default and its name are the same model) or more calls left than approved; approve_same_flags passes a saved run whose recorded flags equal the ones the call asks, and raises RunNotApproved naming both and the snapshot when any differs or was never recorded; approved_cap reads config/project.json `agents.max_model_calls` through the config loader. SessionBudget admits a question only while the calls made so far plus the question's bound stay within its total, and raises SessionCapReached (a CallCapReached) naming the total, the calls made and the bound otherwise, so a total of 0 admits only a question that may make none; the backend its counted() factory builds adds every call it passes on, one that raises included, to that count, so the total is the calls made, not the bounds admitted; approved_session_cap reads `agents.max_session_model_calls` through the loader, absent being its declared default 0. No model outside this file is built.
+summary: models.CountedModel passes a call to the backend it wraps until the approved count is reached and then raises CallCapReached without calling it, so a count of 0 lets no call through; ModelMeter builds the named backend only on the first call, once, wrapped in that count; approve_resume passes a saved run whose model and remaining calls are what the run approves and raises RunNotApproved, naming the saved value, the approved one and the snapshot to remove, for a different model (the registry default and its name are the same model) or more calls left than approved; approve_same_flags passes a saved run whose recorded flags equal the ones the call asks, and raises RunNotApproved naming both and the snapshot when any differs or was never recorded (an absent key is not a recorded None), in the wording the index enforcer gave; approved_cap reads config/project.json `agents.max_model_calls` through the config loader. SessionBudget admits a question only while the calls made so far plus the question's bound stay within its total, and raises SessionCapReached (a CallCapReached) naming the total, the calls made and the bound otherwise, so a total of 0 admits only a question that may make none; the backend its counted() factory builds adds every call it passes on, one that raises included, to that count, so the total is the calls made, not the bounds admitted; approved_session_cap reads `agents.max_session_model_calls` through the loader, absent being its declared default 0. No model outside this file is built.
 """
 
 import json
@@ -136,10 +136,36 @@ def test_a_resume_with_other_flags_is_refused_naming_both(saved):
             where="s.json", saved=saved, asked={"execute": True, "fix_gaps": True}
         )
     what, on, next_step = exc.value.parts
-    shown = ", ".join("%s=%r" % (k, saved.get(k)) for k in ("execute", "fix_gaps"))
+    shown = ", ".join(
+        "%s=%s" % (k, repr(saved[k]) if k in saved else "<not recorded>")
+        for k in ("execute", "fix_gaps")
+    )
     assert shown in what and "execute=True, fix_gaps=True" in what
     assert on == "s.json"
-    assert shown in next_step and "s.json" in next_step
+    assert shown.replace(", ", " and ") in next_step and "s.json" in next_step
+
+
+def test_a_flag_never_recorded_is_refused_even_when_asked_as_none():
+    # An absent key is not a recorded None: the snapshot never said how it ran.
+    with pytest.raises(RunNotApproved) as exc:
+        approve_same_flags(where="s.json", saved={}, asked={"execute": None})
+    assert "execute" in exc.value.parts[0] and "not recorded" in exc.value.parts[0]
+
+
+def test_the_refusal_keeps_the_index_enforcers_wording():
+    with pytest.raises(RunNotApproved) as exc:
+        approve_same_flags(
+            where="s.json",
+            saved={"execute": True, "fix_gaps": False},
+            asked={"execute": False, "fix_gaps": True},
+        )
+    assert exc.value.parts == (
+        "the saved run was started with execute=True, fix_gaps=False, not the"
+        " execute=False, fix_gaps=True this run asks",
+        "s.json",
+        "run again with execute=True and fix_gaps=False to resume, or remove"
+        " s.json to start afresh",
+    )
 
 
 def test_the_approved_cap_is_read_through_the_loader(tmp_path, monkeypatch):

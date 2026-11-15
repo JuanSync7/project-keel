@@ -2,7 +2,7 @@
 title: Model-call budget — a backend that counts its calls and refuses past the approved count
 layer: backend
 public_api: yes
-summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved; approve_same_flags raises it, naming both, for a saved run whose recorded flags differ from the ones the call asks or never recorded one. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call; check_session_total raises config_loader.WrongValue, naming both keys and values, for a per-run cap over a nonzero total, a pair under which no run could ever be admitted. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
+summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved; approve_same_flags raises it, naming both, for a saved run whose recorded flags differ from the ones the call asks or never recorded one (an absent key is not a recorded None). approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call; check_session_total raises config_loader.WrongValue, naming both keys and values, for a per-run cap over a nonzero total, a pair under which no run could ever be admitted. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
 """
 
 from __future__ import annotations
@@ -208,17 +208,21 @@ def approve_same_flags(
     snapshot's flags, so under other flags it would act on state this call's
     flags never made."""
     names = sorted(asked)
-    was = {name: saved.get(name) for name in names}
-    if was != dict(asked):
-        started = ", ".join("%s=%r" % (name, was[name]) for name in names)
-        wanted = ", ".join("%s=%r" % (name, asked[name]) for name in names)
-        raise RunNotApproved(
-            "the saved run was started with %s, not the %s this run asks"
-            % (started, wanted),
-            where,
-            "run again with %s to resume, or remove %s to start afresh"
-            % (started, where),
-        )
+    if all(name in saved and saved[name] == asked[name] for name in names):
+        return
+    # An absent key is not a recorded None: the snapshot never said how it ran.
+    was = [
+        "%s=%s" % (name, repr(saved[name]) if name in saved else "<not recorded>")
+        for name in names
+    ]
+    wanted = ["%s=%r" % (name, asked[name]) for name in names]
+    raise RunNotApproved(
+        "the saved run was started with %s, not the %s this run asks"
+        % (", ".join(was), ", ".join(wanted)),
+        where,
+        "run again with %s to resume, or remove %s to start afresh"
+        % (" and ".join(was), where),
+    )
 
 
 def approved_cap(root: str) -> int:
