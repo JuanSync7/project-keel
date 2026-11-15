@@ -1215,19 +1215,6 @@ KEYS = tuple(
                 "the make-target policy scripts/check_structure.py validates",
             ),
             _row(
-                ("template", "manifest_differences"),
-                "object",
-                NONE,
-                'exact JSON Pointer paths mapped to {"reason": "<non-blank>", '
-                '"matches_when": [<condition>, ...]}. matches_when is optional. '
-                'Each condition is {"answer": "<Copier question>", "<op>": <value>} '
-                "with exactly one op from is, is_not, has, lacks. "
-                "The parity test requires equality when all conditions hold. "
-                "It refuses conditions that no answer set satisfies. "
-                "It requires drift under some non-matching set. "
-                "Without matches_when it requires drift under every answer set",
-            ),
-            _row(
                 ("doc_drift", "check_name_guide"),
                 "repo_path",
                 NONE,

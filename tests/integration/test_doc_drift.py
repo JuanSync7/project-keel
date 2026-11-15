@@ -2516,10 +2516,16 @@ def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
     """Compare every render with exact exemptions and answer-specific promises."""
     import test_reference_drift as reference
 
-    key = ("template", "manifest_differences")
-    allowed = config_loader.resolve(
-        manifest, config_loader.rows(key), config_loader.CONFIG_FILE
-    )[key]
+    # No KEYS row, as for template.twins: a generated manifest has no template
+    # block, and a required row failed four loader tests in every generated
+    # project. The skip in the caller keeps generated projects out of here.
+    block = manifest.get("template")
+    allowed = block.get("manifest_differences") if isinstance(block, dict) else None
+    if not isinstance(allowed, dict):
+        return [
+            "template.manifest_differences: keel's config/project.json must map "
+            "each allowed manifest difference to its exemption object"
+        ]
     questions = reference.copier_questions(_ROOT)
     sets = _answer_sets(str(_ROOT))
     assert sets, "a parity check over zero answer sets proves nothing"
