@@ -2,12 +2,12 @@
 title: Model-call budget — a backend that counts its calls and refuses past the approved count
 layer: backend
 public_api: yes
-summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call; check_session_total raises config_loader.WrongValue, naming both keys and values, for a per-run cap over a nonzero total, a pair under which no run could ever be admitted. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
+summary: CountedModel wraps any ModelBackend and passes each call through until the approved count is reached, then raises CallCapReached without calling the backend, so a count of 0 lets no call through; ModelMeter is one run's counted backend, built from a name on the first call only, so a run that never reaches a model step builds none. approve_resume raises RunNotApproved, carrying report()'s three parts, for a saved run that would resume on another model than the one approved or with more calls left than approved; approve_same_flags raises it, naming both, for a saved run whose recorded flags differ from the ones the call asks or never recorded one. approved_cap reads config/project.json `agents.max_model_calls` through scripts/config_loader.py and raises its ConfigError for a value it cannot use. SessionBudget is the total a long-lived caller (the MCP Q&A server) is held to across all its runs: admit raises SessionCapReached, a CallCapReached, for a run whose bound added to the calls made so far would pass the total, before any model is called, and the backends its counted() factory builds add every call they pass on to that count; approved_session_cap reads that total from `agents.max_session_model_calls`, absent being the declared default 0, which admits no run that may make a call; check_session_total raises config_loader.WrongValue, naming both keys and values, for a per-run cap over a nonzero total, a pair under which no run could ever be admitted. Shared by the agents, the eval harness and the MCP server, which sit above models in config/project.json `import_layers.order`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 from scripts import config_loader
 
@@ -24,6 +24,7 @@ __all__ = [
     "SessionBudget",
     "SessionCapReached",
     "approve_resume",
+    "approve_same_flags",
     "approved_cap",
     "approved_session_cap",
     "check_session_total",
@@ -195,6 +196,28 @@ def approve_resume(
             % (left, cap),
             where,
             "approve %d or more, or remove %s to start afresh" % (left, where),
+        )
+
+
+def approve_same_flags(
+    *, where: str, saved: Mapping[str, object], asked: Mapping[str, object]
+) -> None:
+    """Pass a saved run, at *where*, whose *saved* state records every flag in
+    *asked* with the same value. Raises RunNotApproved naming both sets of
+    flags when one differs or was never recorded: a resume routes by the
+    snapshot's flags, so under other flags it would act on state this call's
+    flags never made."""
+    names = sorted(asked)
+    was = {name: saved.get(name) for name in names}
+    if was != dict(asked):
+        started = ", ".join("%s=%r" % (name, was[name]) for name in names)
+        wanted = ", ".join("%s=%r" % (name, asked[name]) for name in names)
+        raise RunNotApproved(
+            "the saved run was started with %s, not the %s this run asks"
+            % (started, wanted),
+            where,
+            "run again with %s to resume, or remove %s to start afresh"
+            % (started, where),
         )
 
 

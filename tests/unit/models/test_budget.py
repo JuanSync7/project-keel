@@ -2,7 +2,7 @@
 title: Unit — the model-call budget a run's backend is held to
 kind: tests
 layer: backend
-summary: models.CountedModel passes a call to the backend it wraps until the approved count is reached and then raises CallCapReached without calling it, so a count of 0 lets no call through; ModelMeter builds the named backend only on the first call, once, wrapped in that count; approve_resume passes a saved run whose model and remaining calls are what the run approves and raises RunNotApproved, naming the saved value, the approved one and the snapshot to remove, for a different model (the registry default and its name are the same model) or more calls left than approved; approved_cap reads config/project.json `agents.max_model_calls` through the config loader. SessionBudget admits a question only while the calls made so far plus the question's bound stay within its total, and raises SessionCapReached (a CallCapReached) naming the total, the calls made and the bound otherwise, so a total of 0 admits only a question that may make none; the backend its counted() factory builds adds every call it passes on, one that raises included, to that count, so the total is the calls made, not the bounds admitted; approved_session_cap reads `agents.max_session_model_calls` through the loader, absent being its declared default 0. No model outside this file is built.
+summary: models.CountedModel passes a call to the backend it wraps until the approved count is reached and then raises CallCapReached without calling it, so a count of 0 lets no call through; ModelMeter builds the named backend only on the first call, once, wrapped in that count; approve_resume passes a saved run whose model and remaining calls are what the run approves and raises RunNotApproved, naming the saved value, the approved one and the snapshot to remove, for a different model (the registry default and its name are the same model) or more calls left than approved; approve_same_flags passes a saved run whose recorded flags equal the ones the call asks, and raises RunNotApproved naming both and the snapshot when any differs or was never recorded; approved_cap reads config/project.json `agents.max_model_calls` through the config loader. SessionBudget admits a question only while the calls made so far plus the question's bound stay within its total, and raises SessionCapReached (a CallCapReached) naming the total, the calls made and the bound otherwise, so a total of 0 admits only a question that may make none; the backend its counted() factory builds adds every call it passes on, one that raises included, to that count, so the total is the calls made, not the bounds admitted; approved_session_cap reads `agents.max_session_model_calls` through the loader, absent being its declared default 0. No model outside this file is built.
 """
 
 import json
@@ -23,6 +23,7 @@ from models import (  # noqa: E402
     SessionBudget,
     SessionCapReached,
     approve_resume,
+    approve_same_flags,
     approved_cap,
     approved_session_cap,
     check_session_total,
@@ -109,6 +110,36 @@ def test_one_call_left_past_the_approved_count_is_refused():
     # The boundary: as many left as approved passes (above), one more refuses.
     with pytest.raises(RunNotApproved):
         approve_resume(where="s.json", saved_model="fake", model="fake", left=3, cap=2)
+
+
+def test_a_resume_with_the_flags_it_was_started_with_passes():
+    # A saved key the call does not ask about is not compared.
+    approve_same_flags(
+        where="s.json",
+        saved={"execute": True, "fix_gaps": False, "cursor": "fill"},
+        asked={"execute": True, "fix_gaps": False},
+    )
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        {"execute": True, "fix_gaps": False},
+        {"execute": False, "fix_gaps": True},
+        # A snapshot that never recorded a flag was not started with it.
+        {"fix_gaps": True},
+    ],
+)
+def test_a_resume_with_other_flags_is_refused_naming_both(saved):
+    with pytest.raises(RunNotApproved) as exc:
+        approve_same_flags(
+            where="s.json", saved=saved, asked={"execute": True, "fix_gaps": True}
+        )
+    what, on, next_step = exc.value.parts
+    shown = ", ".join("%s=%r" % (k, saved.get(k)) for k in ("execute", "fix_gaps"))
+    assert shown in what and "execute=True, fix_gaps=True" in what
+    assert on == "s.json"
+    assert shown in next_step and "s.json" in next_step
 
 
 def test_the_approved_cap_is_read_through_the_loader(tmp_path, monkeypatch):
