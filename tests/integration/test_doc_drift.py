@@ -2565,7 +2565,9 @@ def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
     presence: dict[str, list[bool]] = {path: [] for path in valid}
     for answers in sets:
         rendered = json.loads(template.render(**answers))
-        expected = _manifest_with_slug(manifest, manifest["name"], answers["project_slug"])
+        expected = _manifest_with_slug(
+            manifest, manifest["name"], answers["project_slug"]
+        )
         paths = _manifest_paths(expected, rendered)
         differences.append(paths)
         for path in valid:
