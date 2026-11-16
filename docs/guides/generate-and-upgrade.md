@@ -9,7 +9,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-08
+updated: 2026-11-16
 visibility: internal
 canonical: true
 ---
@@ -119,6 +119,7 @@ exactly the files this judgment says arrive.
 | `tests/integration/test_copier_*.py` | never | tests of the template itself |
 | `tests/render_cache.py` | never | serves only a test of the template itself |
 | `tests/unit/test_render_cache.py` | never | its test |
+| `tests/fixtures/campaign-plans.json` | never | the template's campaign ids and queue rows, read only by a test of the template itself |
 | `scripts/audit_project.py` | never | runs from a template checkout only |
 | `tests/unit/scripts/test_audit_project.py` | never | its test |
 | `scripts/canary.py` | never | renders the template checkout, so it runs from one only |
