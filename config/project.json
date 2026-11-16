@@ -13,15 +13,6 @@
       "/tests/ship_set": {
         "reason": "Keel renders projects with Copier; generated projects are not templates and have no renderer ship set (60aeb900)."
       },
-      "/tests/scratch_root": {
-        "reason": "Disk scratch is isolated by the generated project_slug rather than keel's identity (cda423b3)."
-      },
-      "/tests/memory_scratch_root": {
-        "reason": "Memory scratch is isolated by the generated project_slug rather than keel's identity (cda423b3)."
-      },
-      "/secrets/scanner/install_root": {
-        "reason": "The pinned scanner installs outside the checkout in the generated project's own slug-scoped tools cache."
-      },
       "/shell/no_scripts": {
         "reason": "Keel's reason names its Python gates; a generated project's reason names its slug and has no project-specific implementation claim (e80f291f)."
       },

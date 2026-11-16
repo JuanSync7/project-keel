@@ -2381,6 +2381,20 @@ def test_every_forbidden_phrase_ships_in_both_manifest_twins(policy):
     assert found == [], "config/project.json.jinja renders %s" % found
 
 
+def _manifest_with_slug(value: Any, keel_slug: str, project_slug: str) -> Any:
+    """Build expected values with the answer's slug, leaving map keys intact."""
+    if isinstance(value, str):
+        return value.replace(keel_slug, project_slug)
+    if isinstance(value, dict):
+        return {
+            key: _manifest_with_slug(child, keel_slug, project_slug)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_manifest_with_slug(child, keel_slug, project_slug) for child in value]
+    return value
+
+
 def _manifest_paths(ours: Any, theirs: Any, path: str = "") -> set[str]:
     """Return differing JSON Pointer paths; maps recurse and lists stay whole."""
     if isinstance(ours, dict) and isinstance(theirs, dict):
@@ -2551,9 +2565,8 @@ def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
     presence: dict[str, list[bool]] = {path: [] for path in valid}
     for answers in sets:
         rendered = json.loads(template.render(**answers))
-        if rendered.get("name") == answers["project_slug"]:
-            rendered["name"] = manifest["name"]
-        paths = _manifest_paths(manifest, rendered)
+        expected = _manifest_with_slug(manifest, manifest["name"], answers["project_slug"])
+        paths = _manifest_paths(expected, rendered)
         differences.append(paths)
         for path in valid:
             presence[path].append(
@@ -2571,6 +2584,23 @@ def _manifest_twin_findings(source: str, manifest: dict[str, Any]) -> list[str]:
             path, entry, sets, differences, presence[path]
         )
     return findings
+
+
+def test_manifest_slug_substitution_walks_values() -> None:
+    manifest = {
+        "name": "template_slug",
+        "template_slug": "unchanged",
+        "nested": [{"path": "~/.cache/template_slug/template_slug-tests"}],
+        "scalars": [None, True, False, 4, 2.5],
+    }
+    assert _manifest_with_slug(manifest, "template_slug", "answer_slug") == {
+        "name": "answer_slug",
+        "template_slug": "unchanged",
+        "nested": [{"path": "~/.cache/answer_slug/answer_slug-tests"}],
+        "scalars": [None, True, False, 4, 2.5],
+    }
+    assert manifest["name"] == "template_slug"
+    assert manifest["nested"][0]["path"] == "~/.cache/template_slug/template_slug-tests"
 
 
 def test_every_manifest_leaf_ships_in_both_manifest_twins(manifest):
