@@ -51,6 +51,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import test_reference_drift as reference_drift  # noqa: E402
 from test_doc_drift import REPORT_FORMS  # noqa: E402
 from test_scratch_root_gate import child_timeout  # noqa: E402
+from test_work_trailers import _run as toy_git  # noqa: E402
+
+pytest_plugins = ("test_work_trailers",)
 
 # Self-neutralising downstream. `_exclude` prunes these modules at GENERATION, but
 # copier's `_exclude` can never retire a file on `copier update` — it renders the old
@@ -571,6 +574,87 @@ _PLAN_FRONTMATTER = (
 )
 
 
+@pytest.mark.parametrize("case", ["preservation", "merge"])
+def test_split_campaign_plans_preserve_ids_and_never_ship(
+    case, tmp_path, generate, toy, monkeypatch
+):
+    """Campaign moves preserve declarations and queue rows; separate files merge cleanly."""
+    campaigns = _ROOT / "docs" / "internals" / "campaigns"
+    assert campaigns.is_dir(), "each campaign needs its own plan document"
+    if case == "preservation":
+        baseline = json.loads(
+            (_ROOT / "tests/fixtures/campaign-plans.json").read_text(encoding="utf-8")
+        )
+        manifest = check_structure.config_loader.read(str(_ROOT))
+        policy, errors = check_structure.work_naming_policy(manifest)
+        assert not errors, errors
+        inventory = check_structure.plan_inventory(
+            str(_ROOT), policy, check_structure.work_owner(manifest)
+        )
+        assert set(baseline["slices"]) <= inventory["slices"].keys()
+        for heading in baseline["headings"]:
+            number = re.match(r"## CMP-([0-9]+)", heading).group(1)
+            text = (campaigns / f"cmp-{number}.md").read_text(encoding="utf-8")
+            assert heading in text.splitlines(), heading
+        plan = (_ROOT / "docs/internals/downstream-feedback.md").read_text(
+            encoding="utf-8"
+        )
+        queue = [
+            row.split("|")[1:3]
+            for row in re.findall(r"^\| \d+ \| KEEL-.*$", plan, re.MULTILINE)
+        ]
+        assert all(row in queue for row in baseline["queue"])
+        dest = tmp_path / "proj"
+        generate(dest, project_name="demo_proj", frontend_stack="none")
+        assert not (dest / "docs/internals/campaigns").exists()
+        shipped = list(dest.rglob("*.md"))
+        for campaign in campaigns.glob("cmp-*.md"):
+            assert not any(path.name == campaign.name for path in shipped), campaign
+        return
+
+    root, env, commit = toy
+    (root / "docs/design/plan.md").unlink()
+    folder = root / "docs/internals/campaigns"
+    folder.mkdir(parents=True)
+    for number in (1, 2):
+        path = folder / f"cmp-{number}.md"
+        path.write_text(
+            _PLAN_FRONTMATTER.replace("docs-design-roadmap", f"campaign-{number}")
+            + f"## CMP-{number} — independent campaign\n\n"
+            + "| Slice | Subject |\n|---|---|\n"
+            + f"| CMP-{number}.S1 | baseline |\n",
+            encoding="utf-8",
+        )
+    toy_git(root, env, "add", "-A")
+    baseline_commit = commit("open both campaigns before branching")
+    for number in (1, 2):
+        toy_git(root, env, "checkout", "-q", "-b", f"lane-{number}", baseline_commit)
+        path = folder / f"cmp-{number}.md"
+        path.write_text(
+            path.read_text(encoding="utf-8") + f"| CMP-{number}.S2 | lane addition |\n",
+            encoding="utf-8",
+        )
+        toy_git(root, env, "add", "-A")
+        commit(f"extend campaign {number}")
+        assert toy_git(root, env, "diff", "--name-only", baseline_commit) == (
+            f"docs/internals/campaigns/cmp-{number}.md"
+        )
+    toy_git(root, env, "merge", "--no-edit", "lane-1")
+    assert toy_git(root, env, "ls-files", "--unmerged") == ""
+    monkeypatch.setattr(check_structure, "ROOT", str(root))
+    monkeypatch.setattr(check_structure, "errors", [])
+    monkeypatch.setattr(check_structure, "warnings", [])
+    monkeypatch.setattr(check_structure, "_CONFIG_READ", {})
+    check_structure.check_Z()
+    assert check_structure.errors == []
+    assert check_structure.warnings == []
+    manifest = check_structure.config_loader.read(str(root))
+    policy, errors = check_structure.work_naming_policy(manifest)
+    assert not errors, errors
+    inventory = check_structure.plan_inventory(str(root), policy, "demo")
+    assert set(inventory["slices"]) == {"CMP-1.S1", "CMP-1.S2", "CMP-2.S1", "CMP-2.S2"}
+
+
 def test_generated_project_judges_work_naming(tmp_path, generate):
     """The work-naming block arrives as config, a fresh project owes check_Z
     nothing (keel's own plan doc is not shipped), and the project's own first
@@ -585,13 +669,11 @@ def test_generated_project_judges_work_naming(tmp_path, generate):
     # The shipped real-tree test in tests/unit/scripts/test_check_z.py skips
     # where no plan doc declares a slice, as here; keel's own plan doc is what
     # keeps that test from being a skip in keel.
-    keel_rows = re.findall(
-        r"^\|\s*(CMP-[0-9]+\.S[0-9]+)\s*\|",
-        (_ROOT / "docs" / "internals" / "downstream-feedback.md").read_text(
-            encoding="utf-8"
-        ),
-        re.MULTILINE,
-    )
+    policy, errors = check_structure.work_naming_policy(keel)
+    assert not errors, errors
+    keel_rows = check_structure.plan_inventory(
+        str(_ROOT), policy, check_structure.work_owner(keel)
+    )["slices"]
     assert "CMP-2.S4" in keel_rows, keel_rows
     r = _structure_gate(dest)
     assert r.returncode == 0, "a fresh project is not green:\n" + r.stdout + r.stderr

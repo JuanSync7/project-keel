@@ -9,7 +9,7 @@ tags: [keel, plans, records]
 summary: Maintainer plans and run records in the cabinet Copier excludes from generated projects.
 id: docs-internals-readme
 created: 2026-11-07
-updated: 2026-11-07
+updated: 2026-11-16
 visibility: internal
 canonical: true
 ---
@@ -23,7 +23,8 @@ For shipped documentation, start at the [documentation index](../README.md).
 | Record | Purpose |
 |--------|---------|
 | [Documentation quality](documentation-quality.md) | Documentation checks, review rules and their implementation record. |
-| [Downstream feedback](downstream-feedback.md) | Feedback from adopters and the slices that address it. |
+| [Downstream feedback](downstream-feedback.md) | Feedback from adopters, the queue and maintainer rulings. |
+| [Campaigns](campaigns/) | One plan document per campaign, with its slice table and decisions. |
 | [Hardening plan](keel-hardening-plan.md) | The template's hardening worklist and its decisions. |
 | [Make next steps](make-next-steps.md) | Make target effect labels and the gate runner's worklist. |
 | [Autonomous run, 2026-10-24](runs/2026-10-24-autonomous.md) | The unattended run's decisions and delivery record. |

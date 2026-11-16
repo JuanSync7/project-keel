@@ -9,7 +9,7 @@ tags: [conventions, frontmatter, taxonomy]
 summary: Single source of truth for labeling (frontmatter) and the directory taxonomy.
 id: conventions
 created: 2026-06-17
-updated: 2026-11-12
+updated: 2026-11-16
 visibility: internal
 canonical: true
 ---
@@ -1416,7 +1416,8 @@ that names its work differently changes the block, not the checks.
   prose and is not judged.
 - **Create the plan doc first.** Write the plan doc and its row before the first
   commit with a `Slice:` trailer, or the trailer test reports an id that nothing
-  declares.
+  declares. Reserve a campaign id on `main` with the plan commit that opens it
+  before its lanes branch, because check_Z requires campaign numbers with no gap.
 - **Adopting in a project with history.** `work_naming.adoption_boundary` names
   the last commit before a project adopted trailers; the trailer test judges
   only the commits after it. A boundary that is not an ancestor of `HEAD` fails

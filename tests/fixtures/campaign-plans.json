@@ -1,0 +1,933 @@
+{
+  "slices": [
+    "CMP-1.S1",
+    "CMP-1.S2",
+    "CMP-1.S3",
+    "CMP-1.S4",
+    "CMP-1.S5",
+    "CMP-10.S1",
+    "CMP-10.S2",
+    "CMP-10.S3",
+    "CMP-10.S4",
+    "CMP-11.S1",
+    "CMP-11.S2",
+    "CMP-11.S3",
+    "CMP-12.S1",
+    "CMP-13.S1",
+    "CMP-13.S2",
+    "CMP-14.S1",
+    "CMP-14.S2",
+    "CMP-14.S3",
+    "CMP-14.S4",
+    "CMP-14.S5",
+    "CMP-14.S6",
+    "CMP-15.S1",
+    "CMP-15.S2",
+    "CMP-15.S3",
+    "CMP-15.S4",
+    "CMP-16.S1",
+    "CMP-16.S2",
+    "CMP-16.S3",
+    "CMP-17.S1",
+    "CMP-17.S2",
+    "CMP-17.S3",
+    "CMP-18.S1",
+    "CMP-18.S2",
+    "CMP-18.S3",
+    "CMP-19.S1",
+    "CMP-19.S2",
+    "CMP-19.S3",
+    "CMP-2.S1",
+    "CMP-2.S2",
+    "CMP-2.S3",
+    "CMP-2.S4",
+    "CMP-2.S5",
+    "CMP-20.S1",
+    "CMP-21.S1",
+    "CMP-21.S2",
+    "CMP-22.S1",
+    "CMP-22.S2",
+    "CMP-22.S3",
+    "CMP-23.S1",
+    "CMP-23.S2",
+    "CMP-23.S3",
+    "CMP-23.S4",
+    "CMP-24.S1",
+    "CMP-24.S2",
+    "CMP-3.S1",
+    "CMP-3.S2",
+    "CMP-3.S3",
+    "CMP-3.S4",
+    "CMP-3.S5",
+    "CMP-3.S6",
+    "CMP-4.S1",
+    "CMP-4.S2",
+    "CMP-4.S3",
+    "CMP-4.S4",
+    "CMP-4.S5",
+    "CMP-4.S6",
+    "CMP-4.S7",
+    "CMP-4.S8",
+    "CMP-5.S1",
+    "CMP-5.S2",
+    "CMP-5.S3",
+    "CMP-5.S4",
+    "CMP-5.S5",
+    "CMP-6.S1",
+    "CMP-6.S2",
+    "CMP-6.S3",
+    "CMP-6.S4",
+    "CMP-6.S5",
+    "CMP-6.S6",
+    "CMP-7.S1",
+    "CMP-7.S2",
+    "CMP-7.S3",
+    "CMP-7.S4",
+    "CMP-8.S1",
+    "CMP-8.S2",
+    "CMP-8.S3",
+    "CMP-8.S4",
+    "CMP-9.S1",
+    "CMP-9.S2"
+  ],
+  "headings": [
+    "## CMP-1 \u2014 the five defects bedrock-platform reported",
+    "## CMP-2 \u2014 the ranked queue",
+    "## CMP-3 \u2014 what blocks bedrock-platform's next update",
+    "## CMP-4 \u2014 keel enforces what it claims, and emits evidence jarvis can read",
+    "## CMP-5 \u2014 the coding rules move from text an agent reads into code the gate runs",
+    "## CMP-6 \u2014 a generated project is proven whole, and the two high gaps close",
+    "## CMP-7 \u2014 a document answers for the features it serves",
+    "## CMP-8 \u2014 a rule a tool can decide is held by a check",
+    "## CMP-9 \u2014 a test shows it can fail",
+    "## CMP-10 \u2014 a refused config file stops every reader, and a wrong claim in a doc is caught",
+    "## CMP-11 \u2014 parallel slices stop colliding in the shared files",
+    "## CMP-12 \u2014 a fence inside a list or a quote is read as a renderer reads it",
+    "## CMP-13 \u2014 a test gate credits only an assertion that runs, and reads its policy through the loader",
+    "## CMP-14 \u2014 a gate sees every change it claims to judge",
+    "## CMP-15 \u2014 config conversion failures end in a named refusal or one finding",
+    "## CMP-16 \u2014 document checks read tables through one GFM grammar",
+    "## CMP-17 \u2014 an unreadable tool report fails the agent run",
+    "## CMP-18 \u2014 one excluded cabinet and a reachable index for shipped documents",
+    "## CMP-19 \u2014 every structure check has an id and a failing twin",
+    "## CMP-20 \u2014 blank-line HTML blocks cannot manufacture fences",
+    "## CMP-21 \u2014 interrupted refactors recover the whole change set",
+    "## CMP-22 \u2014 writers confine mutations to their authorized tree",
+    "## CMP-23 \u2014 a generated project learns what the template fixed, and its test loop is quick without standing in for the gate",
+    "## CMP-24 \u2014 a shipped document that reports a change fails the prose gate"
+  ],
+  "queue": [
+    [
+      " 1 ",
+      " KEEL-RAM-1 "
+    ],
+    [
+      " 2 ",
+      " KEEL-DOC-SETUP-1 "
+    ],
+    [
+      " 3 ",
+      " KEEL-SPEED-1 "
+    ],
+    [
+      " 4 ",
+      " KEEL-FRAG-1 "
+    ],
+    [
+      " 5 ",
+      " KEEL-RUN-1 "
+    ],
+    [
+      " 6 ",
+      " KEEL-VENV-1 "
+    ],
+    [
+      " 7 ",
+      " KEEL-SEC-2 "
+    ],
+    [
+      " 8 ",
+      " KEEL-FE-AUDIT-1 "
+    ],
+    [
+      " 9 ",
+      " KEEL-DIST-1 "
+    ],
+    [
+      " 10 ",
+      " KEEL-NEXT-1 "
+    ],
+    [
+      " 11 ",
+      " KEEL-LINT-1 "
+    ],
+    [
+      " 12 ",
+      " KEEL-TESTQ-1 "
+    ],
+    [
+      " 13 ",
+      " KEEL-PKG-1 "
+    ],
+    [
+      " 14 ",
+      " KEEL-SHELL-1 "
+    ],
+    [
+      " 15 ",
+      " KEEL-ERR-1 "
+    ],
+    [
+      " 16 ",
+      " KEEL-AGT-2 "
+    ],
+    [
+      " 17 ",
+      " KEEL-RES-2 "
+    ],
+    [
+      " 18 ",
+      " KEEL-CFG-3 "
+    ],
+    [
+      " 19 ",
+      " KEEL-WARN-1 "
+    ],
+    [
+      " 20 ",
+      " KEEL-AGT-3 "
+    ],
+    [
+      " 21 ",
+      " KEEL-DOC-2 "
+    ],
+    [
+      " 22 ",
+      " KEEL-SHIP-1 "
+    ],
+    [
+      " 23 ",
+      " KEEL-HDR-1 "
+    ],
+    [
+      " 24 ",
+      " KEEL-LINK-1 "
+    ],
+    [
+      " 25 ",
+      " KEEL-CODEDOC-1 "
+    ],
+    [
+      " 26 ",
+      " KEEL-GRPC-1 "
+    ],
+    [
+      " 27 ",
+      " KEEL-ASTRO-1 "
+    ],
+    [
+      " 28 ",
+      " KEEL-ESLINT-1 "
+    ],
+    [
+      " 29 ",
+      " KEEL-RISK-1 "
+    ],
+    [
+      " 30 ",
+      " KEEL-EXIT-1 "
+    ],
+    [
+      " 31 ",
+      " KEEL-TOOLT-1 "
+    ],
+    [
+      " 32 ",
+      " KEEL-MCPCAP-1 "
+    ],
+    [
+      " 33 ",
+      " KEEL-PROC-1 "
+    ],
+    [
+      " 34 ",
+      " KEEL-XDIST-1 "
+    ],
+    [
+      " 35 ",
+      " KEEL-ROSTER-1 "
+    ],
+    [
+      " 36 ",
+      " KEEL-TYPO-1 "
+    ],
+    [
+      " 37 ",
+      " KEEL-KATEX-1 "
+    ],
+    [
+      " 38 ",
+      " KEEL-GOALS-1 "
+    ],
+    [
+      " 39 ",
+      " KEEL-JSONDUP-1 "
+    ],
+    [
+      " 40 ",
+      " KEEL-OWNER-2 "
+    ],
+    [
+      " 41 ",
+      " KEEL-VIS-1 "
+    ],
+    [
+      " 42 ",
+      " KEEL-OWNER-3 "
+    ],
+    [
+      " 43 ",
+      " KEEL-VIS-2 "
+    ],
+    [
+      " 53 ",
+      " KEEL-RISK-2 "
+    ],
+    [
+      " 54 ",
+      " KEEL-AGENTKIT-1 "
+    ],
+    [
+      " 55 ",
+      " KEEL-TESTCOPY-1 "
+    ],
+    [
+      " 56 ",
+      " KEEL-CORPUS-2 "
+    ],
+    [
+      " 57 ",
+      " KEEL-VIS-3 "
+    ],
+    [
+      " 58 ",
+      " KEEL-VIS-4 "
+    ],
+    [
+      " 109 ",
+      " KEEL-VIS-5 "
+    ],
+    [
+      " 111 ",
+      " KEEL-VIS-6 "
+    ],
+    [
+      " 114 ",
+      " KEEL-VIS-7 "
+    ],
+    [
+      " 116 ",
+      " KEEL-VIS-8 "
+    ],
+    [
+      " 59 ",
+      " KEEL-VIS-9 "
+    ],
+    [
+      " 60 ",
+      " KEEL-BATCH-1 "
+    ],
+    [
+      " 61 ",
+      " KEEL-LEAK-1 "
+    ],
+    [
+      " 62 ",
+      " KEEL-CIGATE-1 "
+    ],
+    [
+      " 63 ",
+      " KEEL-CFGCRASH-1 "
+    ],
+    [
+      " 64 ",
+      " KEEL-VIS-10 "
+    ],
+    [
+      " 65 ",
+      " KEEL-FIXCLASS-1 "
+    ],
+    [
+      " 66 ",
+      " KEEL-LEAK-2 "
+    ],
+    [
+      " 67 ",
+      " KEEL-SLOWSET-1 "
+    ],
+    [
+      " 68 ",
+      " KEEL-REGEN-1 "
+    ],
+    [
+      " 69 ",
+      " KEEL-LEAK-3 "
+    ],
+    [
+      " 70 ",
+      " KEEL-SHELL-2 "
+    ],
+    [
+      " 71 ",
+      " KEEL-SHELL-3 "
+    ],
+    [
+      " 102 ",
+      " KEEL-SHELL-4 "
+    ],
+    [
+      " 72 ",
+      " KEEL-MARGIN-1 "
+    ],
+    [
+      " 73 ",
+      " KEEL-ERR-2 "
+    ],
+    [
+      " 117 ",
+      " KEEL-ERR-4 "
+    ],
+    [
+      " 118 ",
+      " KEEL-ERR-5 "
+    ],
+    [
+      " 74 ",
+      " KEEL-LINT-2 "
+    ],
+    [
+      " 75 ",
+      " KEEL-CFGCRASH-2 "
+    ],
+    [
+      " 119 ",
+      " KEEL-CFGCRASH-5 "
+    ],
+    [
+      " 105 ",
+      " KEEL-CFGCRASH-3 "
+    ],
+    [
+      " 106 ",
+      " KEEL-SERVEROOT-1 "
+    ],
+    [
+      " 107 ",
+      " KEEL-SERVEROOT-2 "
+    ],
+    [
+      " 110 ",
+      " KEEL-SERVEROOT-3 "
+    ],
+    [
+      " 112 ",
+      " KEEL-SERVEROOT-4 "
+    ],
+    [
+      " 120 ",
+      " KEEL-SERVEROOT-5 "
+    ],
+    [
+      " 121 ",
+      " KEEL-SERVEROOT-6 "
+    ],
+    [
+      " 122 ",
+      " KEEL-CONFLICTMARK-1 "
+    ],
+    [
+      " 123 ",
+      " KEEL-CONFLICTGUARD-2 "
+    ],
+    [
+      " 124 ",
+      " KEEL-NOFRONTEND-1 "
+    ],
+    [
+      " 125 ",
+      " KEEL-CHECKOUTMSG-1 "
+    ],
+    [
+      " 126 ",
+      " KEEL-TESTCOPY-2 "
+    ],
+    [
+      " 127 ",
+      " KEEL-SLOWTEST-2 "
+    ],
+    [
+      " 128 ",
+      " KEEL-TESTCOPY-3 "
+    ],
+    [
+      " 129 ",
+      " KEEL-TESTCOPY-4 "
+    ],
+    [
+      " 130 ",
+      " KEEL-TESTCOPY-5 "
+    ],
+    [
+      " 131 ",
+      " KEEL-TESTCOPY-6 "
+    ],
+    [
+      " 132 ",
+      " KEEL-TESTCOPY-7 "
+    ],
+    [
+      " 133 ",
+      " KEEL-TESTCOPY-8 "
+    ],
+    [
+      " 134 ",
+      " KEEL-LEAK-4 "
+    ],
+    [
+      " 135 ",
+      " KEEL-RUF-1 "
+    ],
+    [
+      " 136 ",
+      " KEEL-ROOTGATE-1 "
+    ],
+    [
+      " 137 ",
+      " KEEL-LEAK-5 "
+    ],
+    [
+      " 138 ",
+      " KEEL-REGEN-2 "
+    ],
+    [
+      " 139 ",
+      " KEEL-LEAK-6 "
+    ],
+    [
+      " 140 ",
+      " KEEL-ROOTGATE-2 "
+    ],
+    [
+      " 141 ",
+      " KEEL-RUF-2 "
+    ],
+    [
+      " 142 ",
+      " KEEL-SLOWTEST-2 "
+    ],
+    [
+      " 143 ",
+      " KEEL-AUDITWALK-1 "
+    ],
+    [
+      " 144 ",
+      " KEEL-STAMPDATE-1 "
+    ],
+    [
+      " 145 ",
+      " KEEL-NESTSCRATCH-1 "
+    ],
+    [
+      " 146 ",
+      " KEEL-NESTSCRATCH-2 "
+    ],
+    [
+      " 147 ",
+      " KEEL-SLOWSET-2 "
+    ],
+    [
+      " 148 ",
+      " KEEL-NESTSCRATCH-3 "
+    ],
+    [
+      " 149 ",
+      " KEEL-SLOWSET-3 "
+    ],
+    [
+      " 150 ",
+      " KEEL-TESTLOOP-2 "
+    ],
+    [
+      " 151 ",
+      " KEEL-SLOWTEST-3 "
+    ],
+    [
+      " 152 ",
+      " KEEL-CFGCRASH-6 "
+    ],
+    [
+      " 153 ",
+      " KEEL-SLOWTEST-4 "
+    ],
+    [
+      " 154 ",
+      " KEEL-CFGCRASH-7 "
+    ],
+    [
+      " 155 ",
+      " KEEL-SLOWTEST-5 "
+    ],
+    [
+      " 156 ",
+      " KEEL-SLOWTEST-6 "
+    ],
+    [
+      " 157 ",
+      " KEEL-CFGCRASH-8 "
+    ],
+    [
+      " 158 ",
+      " KEEL-CFGCRASH-9 "
+    ],
+    [
+      " 159 ",
+      " KEEL-SLOWTEST-7 "
+    ],
+    [
+      " 160 ",
+      " KEEL-CFGCRASH-10 "
+    ],
+    [
+      " 161 ",
+      " KEEL-SLOWTEST-8 "
+    ],
+    [
+      " 162 ",
+      " KEEL-SLOWTEST-9 "
+    ],
+    [
+      " 163 ",
+      " KEEL-SLOWTEST-10 "
+    ],
+    [
+      " 164 ",
+      " KEEL-SLOWTEST-11 "
+    ],
+    [
+      " 165 ",
+      " KEEL-SLOWTEST-12 "
+    ],
+    [
+      " 166 ",
+      " KEEL-CFGCRASH-11 "
+    ],
+    [
+      " 167 ",
+      " KEEL-CFGCRASH-12 "
+    ],
+    [
+      " 168 ",
+      " KEEL-SLOWTEST-13 "
+    ],
+    [
+      " 169 ",
+      " KEEL-SLOWTEST-14 "
+    ],
+    [
+      " 170 ",
+      " KEEL-CFGCRASH-13 "
+    ],
+    [
+      " 171 ",
+      " KEEL-CFGCRASH-14 "
+    ],
+    [
+      " 172 ",
+      " KEEL-CFGCRASH-15 "
+    ],
+    [
+      " 173 ",
+      " KEEL-ERR-6 "
+    ],
+    [
+      " 174 ",
+      " KEEL-CFGCRASH-16 "
+    ],
+    [
+      " 175 ",
+      " KEEL-CFGCRASH-17 "
+    ],
+    [
+      " 176 ",
+      " KEEL-CFGCRASH-18 "
+    ],
+    [
+      " 177 ",
+      " KEEL-ROSTER-2 "
+    ],
+    [
+      " 178 ",
+      " KEEL-CFGCRASH-19 "
+    ],
+    [
+      " 179 ",
+      " KEEL-VOCAB-2 "
+    ],
+    [
+      " 180 ",
+      " KEEL-GRPC-2 "
+    ],
+    [
+      " 181 ",
+      " KEEL-VOCAB-3 "
+    ],
+    [
+      " 182 ",
+      " KEEL-VOCAB-4 "
+    ],
+    [
+      " 183 ",
+      " KEEL-VOCAB-5 "
+    ],
+    [
+      " 184 ",
+      " KEEL-VOCAB-6 "
+    ],
+    [
+      " 185 ",
+      " KEEL-VOCAB-7 "
+    ],
+    [
+      " 186 ",
+      " KEEL-VOCAB-8 "
+    ],
+    [
+      " 187 ",
+      " KEEL-VOCAB-9 "
+    ],
+    [
+      " 188 ",
+      " KEEL-VOCAB-10 "
+    ],
+    [
+      " 189 ",
+      " KEEL-VOCAB-11 "
+    ],
+    [
+      " 190 ",
+      " KEEL-VOCAB-12 "
+    ],
+    [
+      " 191 ",
+      " KEEL-SLOWTEST-15 "
+    ],
+    [
+      " 192 ",
+      " KEEL-SLOWTEST-16 "
+    ],
+    [
+      " 193 ",
+      " KEEL-SLOWTEST-17 "
+    ],
+    [
+      " 194 ",
+      " KEEL-SLOWTEST-18 "
+    ],
+    [
+      " 195 ",
+      " KEEL-VIS-11 "
+    ],
+    [
+      " 196 ",
+      " KEEL-LADDER-1 "
+    ],
+    [
+      " 197 ",
+      " KEEL-TWIN-1 "
+    ],
+    [
+      " 198 ",
+      " KEEL-TWIN-2 "
+    ],
+    [
+      " 199 ",
+      " KEEL-TWIN-3 "
+    ],
+    [
+      " 200 ",
+      " KEEL-TWIN-4 "
+    ],
+    [
+      " 76 ",
+      " KEEL-TABLE-PIPE-1 "
+    ],
+    [
+      " 77 ",
+      " KEEL-SNAPSHOT-ID-1 "
+    ],
+    [
+      " 78 ",
+      " KEEL-MARKATTACH-1 "
+    ],
+    [
+      " 79 ",
+      " KEEL-ANSWERS-1 "
+    ],
+    [
+      " 80 ",
+      " KEEL-EXITDROP-1 "
+    ],
+    [
+      " 81 ",
+      " KEEL-REAPRACE-1 "
+    ],
+    [
+      " 82 ",
+      " KEEL-REAPRACE-2 "
+    ],
+    [
+      " 83 ",
+      " KEEL-ANSWERS-2 "
+    ],
+    [
+      " 84 ",
+      " KEEL-EXITDROP-2 "
+    ],
+    [
+      " 85 ",
+      " KEEL-MARKATTACH-2 "
+    ],
+    [
+      " 86 ",
+      " KEEL-TESTSEL-1 "
+    ],
+    [
+      " 87 ",
+      " KEEL-ROLLBACK-1 "
+    ],
+    [
+      " 88 ",
+      " KEEL-PRIVATTR-1 "
+    ],
+    [
+      " 89 ",
+      " KEEL-ROLLBACK-2 "
+    ],
+    [
+      " 90 ",
+      " KEEL-HOOKVENV-1 "
+    ],
+    [
+      " 91 ",
+      " KEEL-VERIFYTIME-1 "
+    ],
+    [
+      " 92 ",
+      " KEEL-DRIFT-1 "
+    ],
+    [
+      " 93 ",
+      " KEEL-TESTLOOP-1 "
+    ],
+    [
+      " 94 ",
+      " KEEL-SLOWTEST-1 "
+    ],
+    [
+      " 95 ",
+      " KEEL-CICACHE-1 "
+    ],
+    [
+      " 96 ",
+      " KEEL-PKGGATE-2 "
+    ],
+    [
+      " 97 ",
+      " KEEL-TIMEOUT-2 "
+    ],
+    [
+      " 98 ",
+      " KEEL-PREFLIGHT-1 "
+    ],
+    [
+      " 99 ",
+      " KEEL-PREFLIGHT-2 "
+    ],
+    [
+      " 100 ",
+      " KEEL-PREFLIGHT-3 "
+    ],
+    [
+      " 101 ",
+      " KEEL-PREFLIGHT-4 "
+    ],
+    [
+      " 103 ",
+      " KEEL-PREFLIGHT-5 "
+    ],
+    [
+      " 104 ",
+      " KEEL-PREFLIGHT-6 "
+    ],
+    [
+      " 108 ",
+      " KEEL-PREFLIGHT-7 "
+    ],
+    [
+      " 113 ",
+      " KEEL-PREFLIGHT-8 "
+    ],
+    [
+      " 115 ",
+      " KEEL-PREFLIGHT-9 "
+    ],
+    [
+      " 44 ",
+      " KEEL-CHECKID-1 "
+    ],
+    [
+      " 45 ",
+      " KEEL-GENRE-1 "
+    ],
+    [
+      " 46 ",
+      " KEEL-CHLOG-1 "
+    ],
+    [
+      " 47 ",
+      " KEEL-VOCAB-1 "
+    ],
+    [
+      " 48 ",
+      " KEEL-ROADMAP-1 "
+    ],
+    [
+      " 49 ",
+      " KEEL-STATUS-1 "
+    ],
+    [
+      " 50 ",
+      " KEEL-COVSCHEMA-1 "
+    ],
+    [
+      " 51 ",
+      " KEEL-EVALREC-1 "
+    ],
+    [
+      " 52 ",
+      " KEEL-CABINET-1 "
+    ],
+    [
+      " 3 ",
+      " KEEL-TEST-1: nothing stops a test reaching a live store "
+    ],
+    [
+      " 4 ",
+      " KEEL-SEC-1: nothing scans the tree for a committed secret "
+    ],
+    [
+      " 24 ",
+      " KEEL-DOC-1, the defence table "
+    ]
+  ]
+}
