@@ -607,6 +607,7 @@ def test_split_campaign_plans_preserve_ids_and_never_ship(
         dest = tmp_path / "proj"
         generate(dest, project_name="demo_proj", frontend_stack="none")
         assert not (dest / "docs/internals/campaigns").exists()
+        assert not (dest / "tests/fixtures/campaign-plans.json").exists()
         shipped = list(dest.rglob("*.md"))
         for campaign in campaigns.glob("cmp-*.md"):
             assert not any(path.name == campaign.name for path in shipped), campaign

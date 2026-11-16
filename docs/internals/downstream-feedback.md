@@ -5,7 +5,7 @@ layer: n/a
 status: draft
 owner: TBD
 tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, audit, convergence]
-summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. One slice per defect, five passes, each landed as one commit on a green `make verify`.
+summary: The bounded-convergence record for the defects bedrock-platform, the first real project generated from keel, reported back — a red gate on arrival, unknown directories the gate never sees, make targets whose effect nobody declares, and child processes that inherit every credential — plus the command that checks any keel-generated project for all of them. It keeps the queue, the rulings and the open items; each campaign's slices and passes live in its own document under `docs/internals/campaigns/`.
 id: docs-design-downstream-feedback
 created: 2026-10-06
 updated: 2026-11-16
@@ -17,10 +17,9 @@ canonical: true
 
 bedrock-platform was generated from keel at `7f0a68b` and reported five defects.
 Each was reproduced in keel before it was accepted. This document is the worklist:
-the status table is authoritative, the per-slice notes record the measurement and
-the decision.
-
-Campaigns live one per file under `docs/internals/campaigns/`.
+the queue table is authoritative, and each campaign's own document under
+`docs/internals/campaigns/` holds its slice table and the per-slice notes that
+record the measurement and the decision.
 
 Work here is named as CONVENTIONS §20 sets out, and check_Z in
 `scripts/check_structure.py` holds every table and mention below to it: a
