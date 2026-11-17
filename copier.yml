@@ -118,6 +118,11 @@ _exclude:
   # test_copier_generation.py, pruned above, reads it, and a project has no
   # keel campaigns. Never shipped, so no `_migrations` removal.
   - "tests/fixtures/campaign-plans.json"
+  # The fragment test renders this template (config/project.json tests.ship_set
+  # names it) and reads the fragment folders kept out above; a project carries
+  # neither, and `make check-fragments` still runs the assembler there. Never
+  # shipped, so no `_migrations` removal.
+  - "tests/integration/test_reference_fragments.py"
   # The downstream audit is keel-only: it imports THIS checkout's check_structure
   # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would
   # pair an older doer with a newer template's gates. A generated project keeps the

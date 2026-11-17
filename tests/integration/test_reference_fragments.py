@@ -18,6 +18,8 @@ import pytest
 from scripts.child_env import build_child_env
 from test_work_trailers import _run as toy_git
 
+import optional_deps
+
 pytest_plugins = ("test_work_trailers",)
 pytestmark = pytest.mark.integration
 _ROOT = Path(__file__).resolve().parents[2]
@@ -259,7 +261,7 @@ def test_generated_references_ship_without_fragments_after_restamp(
     tmp_path, monkeypatch, answers
 ):
     """Render from the local directory without cloning; copier's tasks restamp it."""
-    copier = pytest.importorskip("copier")
+    copier = optional_deps.importorskip("copier", extra="template")
     template_module = importlib.import_module("copier._template")
 
     # This task forbids a repository clone in scratch. Copier's folder-source
@@ -296,7 +298,7 @@ def test_generated_references_ship_without_fragments_after_restamp(
                 r"(?m)^updated: .*", "updated:", original
             )
         assert (dest / "scripts/assemble_fragments.py").is_file()
-        assert (dest / "tests/integration/test_reference_fragments.py").is_file()
+        assert not (dest / "tests/integration/test_reference_fragments.py").exists()
         manifest = json.loads((dest / "config/project.json").read_text())
         assert manifest["reference_fragments"]["sets"] == []
         roster = (dest / "docs/reference/README.md").read_text()

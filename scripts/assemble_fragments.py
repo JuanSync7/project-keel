@@ -238,6 +238,13 @@ def main(argv: list[str] | None = None) -> ExitCode:
     )
     try:
         args = parser.parse_args(argv)
+        if not args.root.is_dir():
+            return report(
+                ExitCode.USAGE,
+                "assemble_fragments: the root is not an existing directory",
+                config_loader.checkout_name(str(args.root)),
+                "pass --root a checkout directory that exists, then rerun",
+            )
         rendered = assemble(args.root)
         stale = [
             (path, text)

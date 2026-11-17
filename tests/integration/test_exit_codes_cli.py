@@ -382,6 +382,7 @@ _ROOT_CONFIG_FIRST = [
     ("trace_requirements.py", []),
     ("launch.py", ["--dry-run", "--", "true"]),
     ("long_scripts.py", []),
+    ("assemble_fragments.py", ["--check"]),
     ("jobs/build_corpus.py", []),
     ("jobs/check_corpus.py", []),
     ("jobs/build_llms_txt.py", []),

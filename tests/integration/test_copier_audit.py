@@ -812,7 +812,9 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
     served levels every corpus reader acts on, and the `test_quality` block
     whose roots and exemptions the test-quality gates read, and the
     `audit_project` block whose `settings_tables` scripts/audit_project.py
-    reads, carried so a generated project's config loader stays silent.
+    reads, and the `reference_fragments` block whose empty set list
+    scripts/assemble_fragments.py reads, carried so a generated project's
+    config loader stays silent.
     `structure.project_checks` does not: the template never ships it, because a
     key beside `extra_toplevel` would conflict with every project that declared
     one."""
@@ -884,6 +886,7 @@ def test_a_pre_c2_2_project_receives_the_new_child_env_keys_as_arrivals_and_owes
         "models.max_reply_bytes",
         "models.timeout_seconds",
         "refactor",
+        "reference_fragments",
         "rosters",
         "runtimes.max_steps",
         "secrets",
@@ -1016,8 +1019,8 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
     tests/integration/test_doc_drift.py holds since KEEL-DOC-2, each
     `doc_drift.forbidden_phrases` entry the same test refuses since
     KEEL-VOCAB-1, and the
-    `audit_project` block a generated project carries so its config loader
-    stays silent, arrive too. The audit
+    `audit_project` and `reference_fragments` blocks a generated project
+    carries so its config loader stays silent, arrive too. The audit
     reports exactly those keys as
     arrivals and the list as changed, owes no X error, and a real
     update leaves the run date block as the template ships it with its
@@ -1079,6 +1082,7 @@ def test_a_pre_c5_2_project_receives_the_run_date_and_host_list_as_arrivals(
         "models.max_reply_bytes",
         "models.timeout_seconds",
         "refactor",
+        "reference_fragments",
         "rosters",
         "runtimes.max_steps",
         "secrets",
