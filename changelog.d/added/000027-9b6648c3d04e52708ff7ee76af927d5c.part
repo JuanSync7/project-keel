@@ -1,0 +1,6 @@
+- **Every frontend app commits a lockfile that matches its manifest.**
+  `tests/integration/test_frontend_lockfile_gate.py` asks git for each
+  `package.json` the Makefile's `FE_APPS` names and fails one whose
+  `package-lock.json` is untracked or absent, or whose root entry records other
+  dependencies than the manifest, so CI's npm installs the tree its author
+  tested.

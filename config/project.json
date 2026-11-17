@@ -13,6 +13,18 @@
       "/tests/ship_set": {
         "reason": "Keel renders projects with Copier; generated projects are not templates and have no renderer ship set (60aeb900)."
       },
+      "/changelog_fragments/folder": {
+        "reason": "Keel owns unreleased entry sources; generated projects have no source folder and edit their own changelog by hand."
+      },
+      "/changelog_fragments/categories": {
+        "reason": "Keel owns unreleased entry sources; generated projects have no source folder and edit their own changelog by hand."
+      },
+      "/changelog_fragments/unsectioned": {
+        "reason": "Keel owns unreleased entry sources; generated projects have no source folder and edit their own changelog by hand."
+      },
+      "/structure/extra_toplevel": {
+        "reason": "Keel owns unreleased entry sources; generated projects have no source folder and edit their own changelog by hand."
+      },
       "/reference_fragments/sets": {
         "reason": "Keel assembles its two references from template-only fragments; generated projects edit the assembled Markdown by hand and list no fragment sets."
       },
@@ -184,7 +196,7 @@
   },
   "structure": {
     "_comment": "Top-level directories this project adds beyond the CONVENTIONS section 2 taxonomy, by name. scripts/check_structure.py check_B errors on any other non-hidden top-level directory, on a name here that does not exist or is already in the taxonomy, and on a declared directory without README.md and CLAUDE.md. Names only: the directory's own README.md summary says why it exists.",
-    "extra_toplevel": []
+    "extra_toplevel": ["changelog.d"]
   },
   "rosters": {
     "_comment": "The README.md files that are rosters, by repo-relative path. scripts/check_structure.py check_S holds each to its directory through its '## What ships here' table, and errors on a listed README without that table, on a listed path with no file, and on a README carrying the heading that readmes does not list. The list lives here, in a file agents.protected_paths refuses an agent edit to, so a README edit cannot turn its own roster check off; an absent block lists nothing, so every roster README errors.",
@@ -709,6 +721,7 @@
   },
   "tests": {
     "ship_set": [
+      "tests/integration/test_changelog_fragments.py",
       "tests/integration/test_copier_audit.py",
       "tests/integration/test_copier_finish_update.py",
       "tests/integration/test_copier_generation.py",
@@ -918,5 +931,15 @@
         "folder": "docs/reference/features.d"
       }
     ]
+  },
+  "changelog_fragments": {
+    "folder": "changelog.d",
+    "categories": [
+      "added",
+      "changed",
+      "fixed",
+      "security"
+    ],
+    "unsectioned": "general"
   }
 }

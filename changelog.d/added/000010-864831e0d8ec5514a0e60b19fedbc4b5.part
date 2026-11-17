@@ -1,0 +1,5 @@
+- **A cache holds at most the configured number of entries.** pyproject.toml
+  bans `functools.cache` and `functools.lru_cache` through ruff `TID251`; a test
+  module caches through `tests/bounded_cache.py` `bounded`, whose maximum is
+  config/project.json `tests.cache_max_entries` (256). The three caches in keel
+  moved onto it.

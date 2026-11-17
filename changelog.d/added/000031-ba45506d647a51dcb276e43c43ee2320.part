@@ -1,0 +1,6 @@
+- **The docs quote the loader's lines, and a test holds them to it.**
+  Each defaulted key's row in `docs/reference/settings.md` quotes its
+  `[using default]` line, and `docs/guides/limits-and-troubleshooting.md` shows
+  both line shapes and what to do about each;
+  `tests/integration/test_config_default_lines_docs.py` fails a quoted line the
+  loader does not write.

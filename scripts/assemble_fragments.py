@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-title: Reference assembly — one independently mergeable file per table entry
+title: Fragment assembly — independent reference rows and changelog entries
 kind: script
 layer: n/a
-summary: Assembles configured reference tables in sorted filename order; --check reports stale outputs without writing, and malformed, misnamed, duplicate or unregistered sources fail closed.
+summary: Assembles references and Unreleased entries in sorted filename order; --check never writes, release rotates and consumes entries, and invalid sources fail closed.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-fragments
@@ -32,11 +32,21 @@ The output owns its updated: stamp: assembly retains that line verbatim (the
 head supplies it only for a new output). Restamp_docs remains its only date
 writer. --check uses the same retention rule, so a later restamp cannot create
 an assembly repair loop, including when the newest entry is deleted.
+
+Changelog entries use a six-digit positive order, '-', a lowercase UUID hex
+identity and the configured suffix. Parallel lanes take the next order and
+different UUIDs; merging cannot rename or reorder existing entries. Each file
+holds one bullet, its continuation lines and intentional blank separators.
+Release is a consuming operation: it refuses repetition, validates everything
+before writing, atomically publishes the changelog, then deletes its entries.
+It never tags. An interrupted deletion needs recovery before another assembly;
+atomic publication protects individual outputs, not the multi-file operation.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import re
 import sys
 from pathlib import Path
@@ -47,10 +57,17 @@ if __name__ == "__main__":
     sys.dont_write_bytecode = True
 
 import config_loader
+from atomic_write import write_if_changed
 from exit_codes import ExitCode, finish, report
 
 _KEY = ("reference_fragments",)
 _PREFIX = re.compile(r"\d{6}-")
+_CHANGELOG_KEYS = (
+    ("changelog_fragments", "folder"),
+    ("changelog_fragments", "categories"),
+    ("changelog_fragments", "unsectioned"),
+)
+_GOVERNANCE = {"README.md", "AGENT.md", "CLAUDE.md"}
 
 
 class FragmentError(ValueError):
@@ -111,6 +128,20 @@ def _form(entry: Path, key: str, suffix: str) -> str:
     )
 
 
+def validate_names(entries: list[Path]) -> None:
+    """Refuse names exceeding the portable byte limit or differing only by case."""
+    names: dict[str, Path] = {}
+    for entry in entries:
+        if len(entry.name.encode("utf-8")) > 255:
+            raise FragmentError(f"{entry}: entry name exceeds 255 bytes")
+        folded = entry.name.casefold()
+        if folded in names:
+            raise FragmentError(
+                f"{entry}: case-insensitive name collision with {names[folded]}"
+            )
+        names[folded] = entry
+
+
 def _table(folder: Path, suffix: str) -> str:
     head_path = folder / ("head" + suffix)
     head = _text(head_path)
@@ -121,7 +152,9 @@ def _table(folder: Path, suffix: str) -> str:
     keys: set[str] = set()
     forms: dict[str, Path] = {}
     rows = []
-    for entry in sorted(folder.iterdir()):
+    entries = sorted(folder.iterdir())
+    validate_names(entries)
+    for entry in entries:
         if entry == head_path:
             continue
         if not entry.is_file() or entry.suffix != suffix:
@@ -216,15 +249,138 @@ def assemble(root: Path) -> list[tuple[Path, str]]:
         raise FragmentError("duplicate output or fragment folder")
     discovered = set(base.glob("*" + folder_suffix))
     if set(folders) != discovered:
-        raise FragmentError(
-            f"unregistered or missing fragment folders: {sorted(set(folders) ^ discovered)}"
+        paths = ", ".join(
+            str(path.relative_to(root)) for path in sorted(set(folders) ^ discovered)
         )
+        raise FragmentError(f"unregistered or missing fragment folders: {paths}")
     return rendered
+
+
+def _release_arguments(version: str | None, date: str | None, *, check: bool) -> None:
+    if version is None and date is None:
+        return
+    if version is None or date is None or check:
+        raise FragmentError(
+            "--release and --date are required together, without --check"
+        )
+    if not re.fullmatch(
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", version
+    ):
+        raise FragmentError(
+            f"malformed release version: {version}; use X.Y.Z without v"
+        )
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", date):
+        raise FragmentError(f"malformed release date: {date}; use YYYY-MM-DD")
+    try:
+        datetime.date.fromisoformat(date)
+    except ValueError as exc:
+        raise FragmentError(f"malformed release date: {date}") from exc
+
+
+def _changelog_entries(folder: Path, suffix: str) -> tuple[str, list[Path]]:
+    entries = sorted(folder.iterdir())
+    validate_names(entries)
+    texts, sources = [], []
+    for entry in entries:
+        if entry.name in _GOVERNANCE:
+            continue
+        if entry.is_symlink() or not entry.is_file():
+            raise FragmentError(f"{entry}: expected an entry file")
+        if not re.fullmatch(
+            r"[0-9]{6}-[0-9a-f]{32}" + re.escape(suffix), entry.name
+        ) or entry.name.startswith("000000-"):
+            raise FragmentError(
+                f"{entry}: name must be a positive six-digit order, '-', "
+                f"32 lowercase UUID hex digits and {suffix}"
+            )
+        text = _text(entry)
+        lines = text.strip("\n").splitlines()
+        if (
+            not text.endswith("\n")
+            or not lines
+            or not lines[0].startswith("- ")
+            or any(line and not line.startswith((" ", "\t")) for line in lines[1:])
+        ):
+            raise FragmentError(
+                f"{entry}: expected one bullet and indented continuations, ending in a newline"
+            )
+        texts.append(text)
+        sources.append(entry)
+    return "".join(texts), sources
+
+
+def changelog_plan(
+    root: Path, version: str | None, date: str | None
+) -> tuple[list[tuple[Path, str]], list[Path]]:
+    """Return a lossless changelog publication and, for a release, consumed files."""
+    config = config_loader.resolve(
+        config_loader.read(str(root)),
+        config_loader.rows(_KEY, *_CHANGELOG_KEYS),
+        config_loader.CONFIG_FILE,
+    )
+    folder, categories, unsectioned = (config[key] for key in _CHANGELOG_KEYS)
+    if folder is None:
+        if categories or unsectioned is not None or version is not None:
+            raise FragmentError(
+                "changelog fragments disabled: categories must be empty and unsectioned null; release is unavailable"
+            )
+        return [], []
+    base = _path(root, folder)
+    names = [unsectioned, *categories]
+    if (
+        not categories
+        or any(
+            not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_-]*", name)
+            for name in names
+        )
+        or len(set(names)) != len(names)
+    ):
+        raise FragmentError(
+            "changelog categories and unsectioned must be distinct lowercase folder names"
+        )
+    members = sorted(base.iterdir())
+    unexpected = [path for path in members if path.name not in {*names, *_GOVERNANCE}]
+    if unexpected:
+        raise FragmentError(f"{unexpected[0]}: unexpected changelog member")
+    suffix = config[_KEY]["suffix"]
+    body = "\n"
+    sources = []
+    for name in names:
+        path = _path(root, str(base.relative_to(root) / name))
+        text, entries = _changelog_entries(path, suffix)
+        sources.extend(entries)
+        if entries:
+            body += (f"### {name.title()}\n" if name != unsectioned else "") + text
+    output = root / "CHANGELOG.md"
+    current = _text(output)
+    headings = list(re.finditer(r"(?m)^## .*\n", current))
+    unreleased = [
+        i for i, match in enumerate(headings) if match.group() == "## [Unreleased]\n"
+    ]
+    if len(unreleased) != 1:
+        raise FragmentError(
+            "CHANGELOG.md: expected exactly one ## [Unreleased] heading"
+        )
+    index = unreleased[0]
+    heading = headings[index]
+    end = headings[index + 1].start() if index + 1 < len(headings) else len(current)
+    head, tail = current[: heading.end()], current[end:]
+    if version is not None:
+        if re.search(r"(?m)^## \[" + re.escape(version) + r"\](?:\s|$)", current):
+            raise FragmentError(
+                f"CHANGELOG.md: version {version} already has a heading"
+            )
+        if not sources:
+            raise FragmentError("changelog release has no entries")
+        body = f"\n## [{version}] — {date}\n" + body
+    return [(output, head + body + tail)], sources if version is not None else []
 
 
 def main(argv: list[str] | None = None) -> ExitCode:
     """Check or assemble references, reporting every refused input by name."""
-    parser = Parser(description="Assemble configured reference-table entry files.")
+    parser = Parser(
+        description="Assemble configured reference and changelog entry files."
+    )
     parser.add_argument(
         "--root",
         type=Path,
@@ -234,7 +390,13 @@ def main(argv: list[str] | None = None) -> ExitCode:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="Report stale references without writing anything.",
+        help="Report stale references or Unreleased without writing anything.",
+    )
+    parser.add_argument(
+        "--release", help="Rotate entries to version X.Y.Z and delete them; never tag."
+    )
+    parser.add_argument(
+        "--date", help="Explicit release date YYYY-MM-DD (requires --release)."
     )
     try:
         args = parser.parse_args(argv)
@@ -245,7 +407,10 @@ def main(argv: list[str] | None = None) -> ExitCode:
                 config_loader.checkout_name(str(args.root)),
                 "pass --root a checkout directory that exists, then rerun",
             )
+        _release_arguments(args.release, args.date, check=args.check)
         rendered = assemble(args.root)
+        changelog, consumed = changelog_plan(args.root, args.release, args.date)
+        rendered.extend(changelog)
         stale = [
             (path, text)
             for path, text in rendered
@@ -254,24 +419,25 @@ def main(argv: list[str] | None = None) -> ExitCode:
         if args.check and stale:
             return report(
                 ExitCode.FAILURE,
-                "stale reference",
+                "stale fragment output",
                 ", ".join(str(p) for p, _ in stale),
                 "run make assemble-fragments",
             )
         for path, text in stale:
-            with path.open("wb") as stream:
-                stream.write(text.encode("utf-8"))
+            write_if_changed(str(path), text)
+        for path in consumed:
+            path.unlink()
     except config_loader.ConfigError as exc:
         return report(
             ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "fragment configuration refused",
             str(exc),
-            "fix config/project.json reference_fragments",
+            "fix config/project.json reference_fragments or changelog_fragments",
         )
     except (FragmentError, OSError, UnicodeError) as exc:
         return report(
             ExitCode.USAGE,
-            "reference assembly refused",
+            "fragment assembly refused",
             str(exc),
             "fix the named fragment or configuration and rerun",
         )

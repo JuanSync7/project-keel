@@ -1,0 +1,5 @@
+- **The unit-test rule names its mechanism.** `tests/AGENT.md` and the
+  `tests/unit` row of CONVENTIONS.md §2 said a unit test touches no network,
+  disk or process; they now point at `tests.isolation.tiers.unit` and the
+  guard that fails a reach past it.
+

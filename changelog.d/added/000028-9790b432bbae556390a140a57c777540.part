@@ -1,0 +1,12 @@
+- **`make canary` renders each configured project and runs its whole gate.**
+  In the keel template, `scripts/canary.py` renders each config/project.json
+  `canary.answer_sets` set twice, fresh and as a `copier update` from the
+  previous release tag, and runs that project's own `make verify`; one line per
+  set and path says which step failed, and a failed project is kept with its
+  log. CONTRIBUTING.md's Release steps run it before the push, the farm sizes
+  it through `launcher.long_scripts`, and `.github/workflows/canary.yml` runs it
+  weekly. A generated project's `make canary` names the template checkout and
+  exits 2. docs/guides/generate-and-upgrade.md says how to read a canary
+  line and rerun a kept project, and
+  [ADR-K-0023](docs/adr/keel/K-0023-canary-gates-a-release-not-a-commit.md),
+  proposed, records that a red canary blocks a release push and nothing else.

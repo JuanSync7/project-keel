@@ -1,0 +1,5 @@
+- **Mypy ratchet records match their enforcement (KEEL-RATCHET-DOC-1).**
+  Re-measure the pending roots and record their costs. The settings reference
+  states the positive-integer and exit-condition checks and the absence of a
+  measuring gate; the Python style guide names the configured type-check scope.
+  A reader-backed drift test rejects the former measuring-test claim.

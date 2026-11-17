@@ -1,0 +1,12 @@
+- **Test scratch lives under `tests.scratch_root`, not the system temporary
+  directory.** `tests/conftest.py` points `tempfile`, `TMPDIR`, pytest's
+  basetemp and the hermetic git directory at config/project.json
+  `tests.scratch_root` (`~/.cache/project_keel/tests`; `KEEL_TEST_SCRATCH`
+  overrides it) before any test module is imported, and stops pytest with
+  exit 4 on a root that is relative or sits under the system temporary
+  directory or inside the checkout; a root that holds the checkout is
+  accepted, and the checkout stays outside it. `pyproject.toml` keeps a failed test's
+  directory and removes a passed one's, which needs pytest 7.3, now the `dev`
+  extra's floor. `child_env.names` lists `KEEL_TEST_SCRATCH`, so a nested
+  pytest keeps its caller's root. On a host whose home directory is a network
+  mount, set `KEEL_TEST_SCRATCH` to local disk.

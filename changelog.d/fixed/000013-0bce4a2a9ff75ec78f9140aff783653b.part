@@ -1,0 +1,6 @@
+- **The evidence writer's roster row names every `make verify` goal.** The
+  `gate_evidence.py` row of scripts/README.md and its template twin quoted
+  verify's recipe line without `secret-scan` and `test-sh`. Both rows now
+  quote the Makefile's line, and `tests/integration/test_gate_evidence_record.py`
+  fails a row that does not carry that line word for word and any other
+  quote of the recipe line that differs from it.

@@ -1,0 +1,60 @@
+- **A confidential document reaches no reader the project serves.** The
+  corpus recorded each node's visibility, but nothing in `src/backend/showcase`
+  read it. So a `confidential` document's text came back from
+  `/api/wiki/node`, `/api/search` and `/llms-full.txt`, and went into the
+  static export `make site-static` publishes. The practice refactor agent, the
+  index enforcer's summary fill and the doc reviewer could each put a hidden
+  document's text in a model prompt. `scripts/query_corpus.py` printed any
+  node, and a served node's links still named a hidden one by id.
+  One allowlist, config/project.json `corpus.served_visibilities` (`public` and
+  `internal` by default), now decides for every reader: the showcase API, both
+  llms files, the static export, the wiki navigator, the practice refactor
+  agent, `scripts/query_corpus.py`, the index enforcer and the doc reviewer.
+  `scripts/config_loader.py` `is_served` is the one copy of the decision; four
+  copies of the filter are gone, a class fix. `cut_hidden` drops hidden ids
+  from a served node's links, children and parent. A node at any other level
+  is absent rather than redacted, and a request for it is answered as an
+  unknown node. A document that states no level is built as `internal` and
+  served by default; only a corpus row with no `visibility` field is treated
+  as hidden. The doc reviewer reports a finding it withholds, with the reason,
+  and withholds every finding when the corpus or config cannot be read. A
+  level outside the vocabulary, the corpus's `unreadable-readme` marker
+  included, is refused as a config fault (exit 14) naming the member, so
+  nothing is served. A generated project gets the key with its config.
+  `scripts/query_corpus.py` and the agents that retrieve through it (the
+  wiki navigator, the MCP Q&A server, the practice refactor and the doc
+  reviewer's style rules), the doc reviewer's findings, and the showcase's
+  node detail and markdown body also ask the level a node's file states on
+  disk now, through `scripts/corpus_level.py`, the reader
+  `scripts/jobs/build_corpus.py` uses. `config_loader.is_served_now` serves
+  the node only when the stricter of that level and the corpus's is served,
+  so those readers neither send nor serve a document reclassified after the
+  corpus was built, nor name it in a served node's links. A file whose level
+  cannot be read now is not served either. The showcase's doc tree, search,
+  counts and neighbour refs, the `/llms.txt` index, the headings in
+  `/llms-full.txt` and the static `tree.json` still list a reclassified
+  node's title and summary until the corpus is rebuilt; CONVENTIONS §1 lists
+  each reader on each side. CONVENTIONS §1 also names the residual risk: a
+  served document's own link text can name a hidden document's path, which a
+  default id is derived from. A corpus is read only with the files of the
+  checkout that keeps it at `wiki/corpus.json`: `scripts/query_corpus.py`,
+  the wiki navigator, the MCP Q&A server, the doc reviewer and the practice
+  refactor each take a root or a corpus and derive the other
+  (`scripts/corpus_level.py` `checkout`). They refuse a root and a corpus
+  given together, an empty root, which would read their own checkout, a
+  corpus path that is not some directory's `wiki/corpus.json`, and a corpus
+  path that does not exist, so a mistyped
+  corpus is not answered from an empty context. So the MCP Q&A server answers another project's corpus
+  against that project's files. `query_corpus.py` refuses a `--root` that
+  does not exist, and the wiki navigator then raises before a model call.
+  `query_corpus.py` writes to stderr how many nodes it withheld, and where a
+  checkout with no corpus would keep one. Each of the three agents makes a
+  relative path absolute from the caller's directory first. The doc
+  reviewer fails its run when `query_corpus.py` refuses its style-rule
+  retrieval, rather than asking a model for edits with no rules, and
+  `scripts/doc_review.py` then exits 2 naming the root, not with a traceback.
+  An execute run fails the same way when the retrieval finds no rule node at
+  all; a dry run, which calls no model, shows the empty rules section in its
+  preview.
+  `query_corpus.py` refuses a corpus it cannot read with exit 2.
+  (KEEL-VIS-2)

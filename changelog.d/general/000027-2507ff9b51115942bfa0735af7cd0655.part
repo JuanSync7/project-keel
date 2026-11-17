@@ -1,0 +1,4 @@
+- **Private package imports survive constant fallbacks (KEEL-PRIVATTR-2).**
+  check_D resolves imports with only None or scalar constant fallbacks in
+  except handlers; other bindings remain unresolved. The guide states the
+  limits for rebinding, getattr, star imports and private data folders.

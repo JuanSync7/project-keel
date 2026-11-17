@@ -1,0 +1,6 @@
+- **check_S reads which READMEs are rosters from config/project.json.** The
+  new `rosters.readmes` list, not a README's `## What ships here` heading,
+  switches the roster check on: a listed README without the heading and a
+  headed README the list does not name are errors, so an edit that drops the
+  heading fails instead of silencing the check. A project that adds its own
+  roster README lists it there.

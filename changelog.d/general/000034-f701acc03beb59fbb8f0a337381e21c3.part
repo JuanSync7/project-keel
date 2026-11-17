@@ -1,0 +1,3 @@
+- **ADR-K-0022 is accepted.** One config loader in the bottom import layer,
+  a variable over the file only where a key's row names it, and exit 14 for a
+  config fault.

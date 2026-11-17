@@ -1,0 +1,34 @@
+- **A child README can no longer hide a confidential parent.** The corpus
+  ended a module's visibility walk at the nearest `README.md` with an owner or
+  a visibility, so an owned child `README.md` that stated none gave its
+  modules `internal` under a `confidential` parent. `scripts/jobs/build_corpus.py`
+  now gives every doc, section, module and symbol the most restrictive
+  visibility stated on its chain (its own and every `README.md` up to the
+  root), in `scripts/check_structure.py` `VISIBILITY_ORDER`, and `internal`
+  only when the chain states none; a document now takes the `README.md`s above
+  it too. A file reached through a symlink also takes the chain of the file it
+  really is, and a `README.md` that cannot be read, a dangling or looping link
+  or a link to a directory included, passes on a value
+  check_corpus refuses rather than nothing, so it blocks every node below it. check_A fails a governed document
+  that states a less restrictive visibility than a `README.md` above it, naming
+  that `README.md`; it judges a file reached by a link and by its target once,
+  at the path build_corpus keeps for it (the first in a sorted walk,
+  `scripts/check_structure.py` `kept_markdown`), against the `README.md` chain
+  build_corpus ranks the node by, so neither a stricter link directory nor a
+  stricter target directory can hide the contradiction or name the wrong level.
+  That chain (`served_chain`) is the chain of every path the walk reaches one
+  real file by, a link, several links or a chain of links, and of the file it
+  really is, so a file is served at the strictest of them and renaming a
+  directory can no longer publish it; a module reached by several paths is a
+  node at each, every one at that level. check_A also reads the level of a
+  `README.md` in a directory its walk skips, such as `build/`, when a linked
+  file's chain reaches it, through the one reader build_corpus ranks a node by
+  (`scripts/check_structure.py` `read_readme`), so a BOM-saved `README.md`
+  there is read at its stated level, and one that cannot be read (a dangling
+  or looping link, a directory, a mode-000 file) or that states a value such
+  as `secret` is a check_A error naming it, where check_A said nothing before.
+  This fixes the level the corpus records and changes no reader of it: the
+  wiki navigator, and the MCP Q&A server through it, drop `confidential` and
+  `restricted` nodes as they did before. Filtering the showcase API, its
+  `/llms-full.txt` and the static site export by that level is KEEL-VIS-2's,
+  a follow-up this entry does not build.

@@ -1,0 +1,5 @@
+- **Background-job tests wait for their child's startup signal.** This
+  class fix holds make on a bounded `started` wait, written by each
+  short-lived background job as its first statement, before make exits or
+  releases the job, so a slow interpreter start cannot turn a generated
+  project's own suite red (KEEL-REAPRACE-2).

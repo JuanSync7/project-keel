@@ -1,0 +1,16 @@
+- **A generated project's own gate finding warns until a date.**
+  `scripts/expiring_tier.py` judges the findings of the config-reads gate's two
+  finding tests and of the exit gate's helper and shared-module tests. In the
+  template repository every finding is red. In a generated project a finding
+  config/project.json `expiring_tier.baseline` records warns, as an
+  `ExpiringTierWarning`, until `expiring_tier.expires`, and is red from that
+  day; an unrecorded finding and an entry no finding matches are red at once.
+  `make gate-baseline` (`scripts/record_gate_baseline.py`, `[tree,write]`)
+  writes the file from what those tests see and may add entries only when
+  `.copier-answers.yml` `_commit` has moved. `expiring_tier.expires` may be
+  no later than `scripts/expiring_tier_data.py` `CEILING`, 2027-01-31, which
+  copier rewrites on every update. **Action required:** after
+  `copier update`, run `make gate-baseline` once and commit
+  `config/gate-baseline.json`; until then a project's own finding in those
+  gates is red, naming the target. The config-reads gate no longer skips in
+  a generated project.

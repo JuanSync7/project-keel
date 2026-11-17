@@ -1,0 +1,1 @@
+| `scripts/assemble_fragments.py --release` | version | — | explicit release input | `scripts/assemble_fragments.py` | Rotates entry text to a dated X.Y.Z heading, opens empty Unreleased and deletes sources; never tags. | ordinary assembly: omit both release flags | always |

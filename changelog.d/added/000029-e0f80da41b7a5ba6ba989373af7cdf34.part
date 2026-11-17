@@ -1,0 +1,5 @@
+- **A configured value missing or wrong has its own exit code, 14.**
+  `ExitCode.CONFIG` is the refusal of `scripts/config_loader.py`, the one
+  table of declared config keys and the one read of a config file: an unset
+  key with a default says so once in a `[using default]` line, and every
+  unset required key and every wrong value is named before it refuses.

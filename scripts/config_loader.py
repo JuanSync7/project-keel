@@ -901,6 +901,24 @@ KEYS = tuple(
     sorted(
         (
             _row(
+                ("changelog_fragments", "folder"),
+                "repo_path_or_null",
+                None,
+                "unreleased entry root; null disables changelog assembly",
+            ),
+            _row(
+                ("changelog_fragments", "categories"),
+                "list_of_str",
+                [],
+                "ordered changelog category folders; empty when assembly is disabled",
+            ),
+            _row(
+                ("changelog_fragments", "unsectioned"),
+                "nonempty_str_or_null",
+                None,
+                "folder for bullets above the first category; null when assembly is disabled",
+            ),
+            _row(
                 ("reference_fragments",),
                 "object",
                 NONE,

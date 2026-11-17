@@ -1,0 +1,7 @@
+- **The docs state the guard, and a test holds them to it.**
+  `tests/AGENT.md`, `tests/README.md` and `docs/guides/dev-loops.md` name the
+  guard, each key it reads, each axis and the `store_copy` fixture, and
+  `docs/guides/limits-and-troubleshooting.md` shows the guard's failure line,
+  its unused-exemption line and each scratch-root refusal;
+  `tests/integration/test_isolation_docs.py` derives each from the guard and
+  fails a document that drops one.

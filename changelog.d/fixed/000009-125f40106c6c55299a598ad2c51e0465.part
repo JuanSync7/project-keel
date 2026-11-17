@@ -1,0 +1,3 @@
+- **The MCP stdio loop answers a line that is not JSON.** It dropped the line
+  and left the client waiting; it now answers JSON-RPC's parse error, -32700,
+  with a null id.

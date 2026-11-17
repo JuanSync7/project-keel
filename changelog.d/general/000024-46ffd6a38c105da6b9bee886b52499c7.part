@@ -1,0 +1,3 @@
+- **Practice check references use registry ids (KEEL-CHECKID-1, CMP-19.S3).**
+  A practice's `enforced_by` cites a structure check as `check:CHECK-O`; a
+  bare letter is refused with an error naming the id spelling to write.

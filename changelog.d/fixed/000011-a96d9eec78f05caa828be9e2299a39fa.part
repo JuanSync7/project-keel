@@ -1,0 +1,7 @@
+- **A fixture's copy of a script carries every module the script imports.**
+  Ten integration fixtures copied a hand-kept list of scripts into a scratch
+  project, so `scripts/check_structure.py` importing the new
+  `scripts/corpus_level.py` stopped 96 of their tests with
+  `ModuleNotFoundError`. They now copy through
+  `tests/script_copy.py` `copy_with_imports`, which adds each project module a
+  listed file imports, followed to its end.

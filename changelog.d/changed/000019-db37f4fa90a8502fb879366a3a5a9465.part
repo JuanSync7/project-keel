@@ -1,0 +1,3 @@
+- **`check_practices.py` refuses a config/practices.json it cannot read.** It
+  used to scan with no practices and exit 0; a byte-order mark at the start of
+  either config file is now refused, as everywhere else.

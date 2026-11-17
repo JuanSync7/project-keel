@@ -1,0 +1,4 @@
+- **Document mechanisms share path and section parsing (KEEL-CFGCRASH-19).**
+  Checks T and U resolve whitespace and paths containing spaces alike, so a
+  leading space cannot hide an unreachable policy. Writer proofs share the parser.
+

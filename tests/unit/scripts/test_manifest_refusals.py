@@ -73,7 +73,7 @@ _READERS = (
             14,
             "",
             "fragment configuration refused: config/project.json does not exist; fix "
-            "config/project.json reference_fragments\n",
+            "config/project.json reference_fragments or changelog_fragments\n",
         ),
     ),
     (

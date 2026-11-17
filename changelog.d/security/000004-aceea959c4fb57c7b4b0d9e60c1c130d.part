@@ -1,0 +1,80 @@
+- **An audit finding left open has one place to say why, and an end date.**
+  `make fe-audit` (`[read]`, `scripts/audit_dependencies.py`) runs
+  `npm audit --json` in each frontend app and judges it against
+  config/project.json `dependency_audit.accepted`: rows of advisory id,
+  package, reason and `review_by` day per app. It fails a critical or high
+  finding no row covers (`dependency_audit.fail_at`), a row past its day, a
+  row dated more than `dependency_audit.max_review_days` (90) days out, so an
+  acceptance is renewed rather than parked, and a row whose advisory the audit
+  no longer reports; a moderate or low finding
+  is listed, not failed. It refuses a report it cannot trust instead of
+  passing it: counts that disagree with the entries, or no audited
+  dependency while `package.json` declares one (a workspaces root's
+  `workspaces` included, a peer marked optional not), which is how an empty
+  lockfile audits. A failed run shows npm's own cause with every URL path
+  hidden, a scheme-less host's path included, and every userinfo up to its
+  last `@` hidden, a bare `user@` before a host or a bracketed IPv6 host
+  included. A URL keeps its scheme only when npm reaches that scheme (`http`,
+  `https`, `socks`, `socks4`, `socks4a`, `socks5`, `socks5h`, `git`,
+  `git+http`, `git+https`, `git+ssh`, `git+file`, `ssh` and `file`); after any
+  other `://` the userinfo and path are hidden as well. A secret word's value
+  is hidden after `=` or `:` whatever it is, to the end of the line or the
+  next `name=`, so cause text after it on that line goes too; a `<hidden>`
+  another rule wrote, or a scheme name, at the value's start is kept and the
+  rest is still hidden. `Bearer` and `Basic` are keys as a secret word is, so
+  the words after the value the scheme rule hid are judged too, and a
+  `realm=` right after either is kept as written, so npm's `Unable to
+  authenticate, need: Basic realm="..."` keeps the registry's realm. In prose the
+  clause after the secret word opens after a space or any mark (`password,`,
+  `password's`, `[token]:`, `password/`) and goes on past a `<hidden>`
+  another rule wrote, and each of its words is hidden
+  unless the closed vocabulary `scripts/audit_dependencies_data.py` lists
+  holds it, it is three marks or fewer, or it starts with a URL; the URL word
+  ends where the URL does, at a comma or semicolon after its host and port
+  too, so text glued before it or after that mark is a word of its own, and
+  its host is kept only when it is a named host (a dotted name, an IPv4 or a
+  bracketed IPv6 address) and is `<hidden>` otherwise. Each cause word cites the npm or Node.js
+  message that holds it, so `password required`, `token is self-signed` and
+  npm's `401 Unauthorized - POST <url>` read as written. The clause ends at
+  `.`, `!` or `?` only before a capital or the line's end, and never at a
+  period after a single letter (`e.g.`). The costs: a password that is a
+  vocabulary word, a capitalised value after a real sentence end, a secret of
+  three marks or fewer, a value written as a URL's named host after a secret
+  word or as the realm after `Bearer` or `Basic`, and a value joined by `-`,
+  `.`, `_` or nothing to a key word (`auth`, `token`, `password`, `passwd`,
+  `secret`, `key`, `credential`, `cookie`, `Bearer`, `Basic` or
+  `Authorization`), which reads as part of the key's name, are shown; a cause
+  word the vocabulary lacks is
+  hidden, a single-label host such as `localhost` after a secret word is
+  hidden, and a secret word inside a longer word (`monkey`, `Unauthorized`)
+  hides the words after it.
+  The advice reads the raw text and is unchanged. The registry's host is kept when it is a DNS name,
+  a single valid label such as `nexus3`, or a bracketed IPv6 address whose
+  zone id, with only a leading `%25` decoded, is no longer than an interface
+  name (a longer zone is hidden and the host kept); any other host that mixes
+  letters and digits, such as a token passed as the registry or as one of
+  its labels, is hidden whole. A label is kept unless its parts that are no
+  word, taken together, form a run of 20 or more mixed characters, so a token
+  behind or between word parts is hidden; a run that is one word and then a number is a
+  name's shape and is kept, so both
+  `my-domain-111122223333.d.codeartifact...` and
+  `acme2024-111122223333.d.codeartifact...` stay readable. The line is cut to
+  `dependency_audit.max_shown_chars` (500) characters so a registry's long
+  body can neither flood the line nor stall the redaction, and a quoted
+  value the cut splits is hidden whole. A key followed by a letter or digit
+  opens no clause, so a line of `token` repeated is read once rather than
+  once per key, and a clause word is read at most 300 characters at a time,
+  so that pattern's runs are bounded as every other's are. The run says to
+  check the registry URL when npm reports `Invalid URL`, the `.npmrc`
+  credentials when the registry refused the login, and reachability when it
+  could not be reached.
+  It runs npm with every
+  dependency type included, so an
+  `.npmrc` `omit=` cannot narrow it, and writes nothing in the tree; npm
+  writes its own per-user log and cache. It is not a `make verify` goal, because the
+  registry's answer changes day to day. Keel's first row, also shipped to a
+  generated astro project, accepts the postcss-selector-parser 6 finding
+  until 2027-01-21: its only fix is a breaking downgrade of
+  `@tailwindcss/typography`, and it parses the project's own stylesheets.
+  `docs/guides/deterministic-checks.md` section 16 says how to accept a risk.
+

@@ -1,0 +1,15 @@
+- **Every server stops cleanly on SIGTERM, under a memory cap.** The REST
+  entry is now api/rest_fastapi/serve.py (what `make run-api` runs), the MCP
+  servers start through mcp/protocol.py `run_stdio_server`, and gRPC's
+  `serve` does the same: each caps its address space at config/project.json
+  `transports.serve.memory_cap_mb` (4096 MB, RLIMIT_AS; null for none) and
+  names a shutdown owner, scripts/resource_limits.py `shutdown_owner`, that
+  takes the first SIGTERM or SIGINT, writes `<server>: stopping on <signal>`,
+  lets the calls in flight finish for `transports.serve.shutdown_grace_seconds`
+  (10), and exits 0; a second signal sends SIGKILL to the session of
+  every `run_bounded` child still running, which a signal to the server never
+  reaches, then ends the process by that signal (128 plus its number in a
+  shell). An MCP server
+  stops between requests. A setting any of the three refuses, such as a
+  memory cap of 0, exits CONFIG (14) with one line naming the key, through
+  the exit helper, before the server caps memory or serves.

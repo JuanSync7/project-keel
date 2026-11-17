@@ -1,0 +1,10 @@
+- **A bounded child ends with whatever stops its caller.**
+  `scripts/run_make_target.py` now runs make on `scripts/resource_limits.py`'s
+  child supervisor, the one `run_bounded` uses, so its zombie, ignored-SIGCHLD
+  and held-pipe handling is written once. A SIGKILL to the caller ends the
+  child's session through a watcher process; a SIGTERM to a plain CLI ends the
+  child before the CLI; a REST or gRPC server stopped by one signal ends the
+  bounded children still running once it returns, rather than waiting out
+  their limit. `run_bounded` now ends what its child left in its session and
+  names each process by pid and program in a log warning, and names, without
+  signalling, a process outside the session still holding its output.

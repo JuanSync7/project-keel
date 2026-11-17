@@ -1,0 +1,15 @@
+- **An agent edit cannot reach the code that judges it.**
+  `scripts/apply_refactor.py` refuses, before any write and so in a dry run
+  too, an edit to a path config/project.json `agents` protects: a path under
+  `agents.protected_paths` (the checks, tests, config, ADRs and agents), a
+  name or glob in `agents.protected_names` in any directory (`Makefile`,
+  `AGENT.md`, `*.test.*`, `tsconfig*.json`, `.gitignore`), with
+  `agents.editable_names` carving `README.md` back out, and, beneath the list,
+  any file git does not track (`.git`, `.venv`, `node_modules`, an ignored
+  file). A path is judged case-folded on itself and on its realpath, two
+  spellings of one file compose as one, and the block must protect
+  config/project.json. Each agent run binds its edit to the chunk's own file
+  with the new `--allow` flag, and the gate is the caller's `--gate`, never
+  the spec's. It does not reach an interactive agent's direct edit, which
+  needs hooks or permission rules
+  ([ADR-K-0026](docs/adr/keel/K-0026-agent-edits-cannot-reach-the-judge.md)).

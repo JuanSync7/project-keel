@@ -1,0 +1,6 @@
+- **The report-of-a-change scan reads wrapped sentences and more forms
+  (KEEL-VOCAB-2).** `doc_drift.forbidden_phrases` now also refuses "has been
+  renamed to", "is no longer used" and "now runs", and the gate reads each
+  paragraph with its line breaks joined, so a hard wrap cannot hide a report.
+  The manifest-twin parity test compares the parsed render in both directions.
+

@@ -1,0 +1,12 @@
+- **CI installs Node 24, and `make fe-install` refuses another major.**
+  The workflows read the Node major and the Python from config/project.json
+  `toolchain` through their `toolchain` step, where they spelled `22` and
+  `3.11`; `make fe-install` runs `scripts/check_toolchain.py node` first and
+  stops, before npm runs, under a Node whose major is not `toolchain.node_major`.
+  copier asks `toolchain_python`, the release CI installs, after
+  `backend_python` and renders it into `toolchain.python`; its validator
+  refuses a release the floor does not allow, so a project generated with a
+  raised floor arrives with a release that satisfies it. A project that raised
+  `layers.backend.python` above `3.11` before this answers `toolchain_python`
+  on its next `copier update` (under `--defaults`, with
+  `--data toolchain_python=<release>`).

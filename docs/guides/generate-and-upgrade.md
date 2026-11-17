@@ -111,6 +111,7 @@ exactly the files this judgment says arrive.
 | `.venv` | never | the template's own interpreter |
 | `/tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project, and a `tmp` directory deeper in the tree still ships |
 | `docs/internals` | never | one exclusion omits the template's own plans and run records, which name campaigns a new project does not declare |
+| `changelog.d` | never | keel-only unreleased entries; generated projects edit their own changelog by hand |
 | `docs/reference/settings.d` | never | keel-only settings sources; generated projects edit the assembled `settings.md` by hand |
 | `docs/reference/features.d` | never | keel-only feature sources; generated projects edit the assembled `features.md` by hand |
 | `wiki/corpus.json` | absent; `make site-data` builds it | a generated view of the tree |
@@ -122,6 +123,7 @@ exactly the files this judgment says arrive.
 | `tests/render_cache.py` | never | serves only a test of the template itself |
 | `tests/unit/test_render_cache.py` | never | its test |
 | `tests/fixtures/campaign-plans.json` | never | the template's campaign ids and queue rows, read only by a test of the template itself |
+| `tests/integration/test_changelog_fragments.py` | never | renders the template and requires its unreleased entry sources |
 | `tests/integration/test_reference_fragments.py` | never | renders the template and reads its fragment folders; `make check-fragments` still runs the assembler in a project |
 | `scripts/audit_project.py` | never | runs from a template checkout only |
 | `tests/unit/scripts/test_audit_project.py` | never | its test |

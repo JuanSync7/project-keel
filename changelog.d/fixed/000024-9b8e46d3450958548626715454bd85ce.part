@@ -1,0 +1,28 @@
+- **A gate that times out or is interrupted ends every process in make's
+  session.** `scripts/run_make_target.py` killed only make on a timeout,
+  leaving the pytest, copier and uvicorn processes it started running. make now
+  runs in a session of its own, and a timeout, Ctrl-C (exit 130), SIGTERM or
+  SIGHUP sends SIGTERM to every process in that session, in make's process
+  group or in one a member moved to (GNU `timeout` does), then SIGKILL after
+  the grace; nothing outside the session is signalled, so a process that
+  starts a session of its own (`setsid`) escapes the signals, but one that
+  still holds make's output is listed by pid and command in `escaped` and
+  fails the run (exit 1) with the `kill` command that ends it. A timeout sets `timed_out`
+  in the JSON result. A process left in the session after make exits is ended, listed
+  by pid and command in `leaked`, and fails the gate closed: a make that exited
+  0 is red (exit 1), and a make that failed keeps its own status. A zombie in
+  the session is not a leftover. The runner waits on make's exit rather than on
+  its output, so a background job holding the output open no longer holds the
+  run to the limit. A signal the caller ignored (`nohup`) stays ignored, a
+  second interrupt during the grace still sends the SIGKILL, and a SIGTERM
+  during the leftover cleanup still ends the leftovers. make stays unreaped
+  until the runner is done signalling, and a stop signal after that sends
+  nothing, so no signal goes to an id another process could hold. A Ctrl-C,
+  SIGTERM or SIGHUP while make is being started is held until the runner
+  has make's process id, so it no longer leaves make running. A runner
+  that inherited SIGCHLD set to ignore sets it to its default for the run and
+  puts it back afterwards, so make's status is kept and its id stays held;
+  off the main thread, where that cannot be done, the run is refused. A make
+  that another waiter in the runner's process reaps first is red at once with
+  `reaped` true and its status unknown, and nothing is signalled after it;
+  the window left is the moment between the runner's check and a signal.

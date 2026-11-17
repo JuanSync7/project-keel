@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-11-07
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -154,6 +154,7 @@ In a checkout of keel, the install step takes `.[dev,template]`, as above.
 ├── demo/           # runnable demos / examples
 ├── containers/     # Dockerfiles, compose, image build context
 ├── evals/          # eval harness and suites; `make verify` replays them
+├── changelog.d/    # keel only: unreleased changelog entries, one file each
 ├── ops/            # deploy, IaC, runbooks, observability
 ├── models/         # model backends the agents/app run on (adapters + registry)
 ├── runtimes/       # agent control flow: a neutral Plan, engines as adapters

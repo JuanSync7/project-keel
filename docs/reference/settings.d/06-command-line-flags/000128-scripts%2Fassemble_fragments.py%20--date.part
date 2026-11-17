@@ -1,0 +1,1 @@
+| `scripts/assemble_fragments.py --date` | date | — | explicit release input | `scripts/assemble_fragments.py` | Explicit YYYY-MM-DD release date; required with --release, refused with --check. | ordinary assembly: omit both release flags | always |

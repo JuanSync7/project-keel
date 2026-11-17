@@ -1,0 +1,6 @@
+- **Private submodule attribute access fails check_D (KEEL-PRIVATTR-1).**
+  Imported chains such as `pkg._sub`, including aliases and dotted imports,
+  respect the package boundary. Binding resolution excludes shadowing locals
+  and parameters; private attributes without a submodule on disk and a
+  package's own access remain allowed.
+

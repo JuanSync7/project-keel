@@ -8,7 +8,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-11-07
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -63,9 +63,15 @@ which replaces the order in decision 4 of
 `tests/integration/test_release_identity.py` fails `make verify` while a dated
 version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:
 
-1. Rotate `[Unreleased]` in `CHANGELOG.md` into a dated `## [<version>]`
-   heading, update every line that tells a reader which version to check out,
-   and commit. ADR-K-0016 lists those lines for the keel template itself.
+1. In keel, run `python3 scripts/assemble_fragments.py --release <version> --date <YYYY-MM-DD>`
+   to rotate the entry files into `## [<version>] — <YYYY-MM-DD>`, open an empty
+   `[Unreleased]`, and delete the consumed entries. It refuses an existing
+   version, malformed version or date, and an empty release before writing.
+   A generated project edits its own changelog by hand. Update every version
+   checkout line and commit the changelog and entry deletions together.
+   ADR-K-0016 lists those lines for the keel template itself. The assembler
+   never tags. Each file publication is atomic; an interrupted deletion needs
+   recovery of the remaining sources before another assembly.
 2. Tag that commit locally: `git tag -a v<version> -m "v<version>"`.
 3. Run `make verify`.
 4. In the keel template, run `make canary` too, through

@@ -151,9 +151,9 @@ check-exit-codes: check-python ## [local] The exit-code table in the limits guid
 	$(PY) scripts/exit_code_table.py --check
 	$(PY) scripts/exit_code_table.py --shell --check
 .PHONY: assemble-fragments check-fragments
-assemble-fragments: check-python ## [tree] Assemble reference tables from their entry files
+assemble-fragments: check-python ## [tree] Assemble reference tables and Unreleased from entry files
 	$(PY) scripts/assemble_fragments.py
-check-fragments: check-python ## [local] Fail stale reference tables without writing
+check-fragments: check-python ## [local] Fail stale reference tables or Unreleased without writing
 	$(PY) scripts/assemble_fragments.py --check
 check-docs: check check-fragments ## [local] The structure gate + strict doc freshness: what every doc-review edit is gated on
 	$(PY) scripts/jobs/review_docs.py --strict

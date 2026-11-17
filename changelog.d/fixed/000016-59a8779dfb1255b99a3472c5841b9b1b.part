@@ -1,0 +1,4 @@
+- **A model call's time limit covers name resolution.** `openai-compatible`
+  resolves a host name within the time left, refusing a lookup that does not
+  finish as ModelUnavailable naming the host, and gives each address of a
+  name only the time left.

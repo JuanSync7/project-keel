@@ -1,0 +1,9 @@
+- **Each toolchain version has one home, and the tree is held to it.**
+  config/project.json `toolchain` names the Node major (`node_major`), the
+  Python CI installs (`python`) and the runner images a workflow may use
+  (`runner_images`). `scripts/check_toolchain.py versions` prints the first two
+  for each workflow's `toolchain` step; `tests/integration/test_toolchain_gate.py`
+  fails a setup-node or setup-python step that spells a version instead of
+  reading that step, a `runs-on` label the list does not name, a configured
+  Python below `layers.backend.python` or `requires-python`, and an
+  `fe-install` recipe that installs before it checks Node.

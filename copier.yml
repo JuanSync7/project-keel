@@ -88,6 +88,7 @@ _exclude:
   # Exclude their whole cabinet, keeping the public design README for projects.
   - "docs/internals"
   # Keel's settings sources are template-only; projects edit settings.md by hand.
+  - "changelog.d"
   - "docs/reference/settings.d"
   # Keel's feature sources are template-only; projects edit features.md by hand.
   - "docs/reference/features.d"
@@ -122,6 +123,7 @@ _exclude:
   # names it) and reads the fragment folders kept out above; a project carries
   # neither, and `make check-fragments` still runs the assembler there. Never
   # shipped, so no `_migrations` removal.
+  - "tests/integration/test_changelog_fragments.py"
   - "tests/integration/test_reference_fragments.py"
   # The downstream audit is keel-only: it imports THIS checkout's check_structure
   # API (run_checks, CHECKS, JSON_CONFIGS), so a copy shipped into a project would

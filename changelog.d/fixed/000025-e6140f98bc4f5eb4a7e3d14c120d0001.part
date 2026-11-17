@@ -1,0 +1,7 @@
+- **A live candidate records the model's reply.** `make eval-live` wrote the
+  doer's answer into a candidate's `recorded.response`, while replay hands
+  that field to the doer as the model's reply; a doer that parses or strips the
+  reply would have had its own output promoted in place of what the model
+  said. The candidate now carries the reply the backend returned, and
+  `tests/integration/test_evals_live_stub.py` expects one candidate file per
+  suite.

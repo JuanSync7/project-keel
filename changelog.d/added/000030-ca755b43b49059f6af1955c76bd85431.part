@@ -1,0 +1,10 @@
+- **A direct read of a config file or a declared variable is red outside the
+  loader.** `tests/integration/test_config_reads_gate.py` walks the code roots
+  config/project.json `config_reads.roots` names and fails an open of
+  `config/project.json` or `config/practices.json`, or a read of a variable the
+  config declares, anywhere but `scripts/config_loader.py`. The files that
+  still read directly are listed in `config_reads.allowed` with a reason, and
+  the list can only shrink. In the template repository a finding is red; in
+  a generated project the two finding tests judge through the expiring tier
+  below, so a project's own reader warns until a date once it is recorded;
+  `docs/guides/generate-and-upgrade.md` says what to do.

@@ -1,0 +1,9 @@
+- **An agent `--execute` run is held to an approved model-call cap.**
+  `scripts/doc_review.py`, `scripts/refactor_practice.py` and the two Stop
+  hooks refuse an execute run with exit 2 before any model is built when its
+  bound (`--max-chunks`, `--max-nodes`, or one call for triage) is over
+  config/project.json `agents.max_model_calls`, or is negative and bounds
+  nothing; the key ships as `0`, which approves none, and a value the
+  loader refuses is exit 14 (`scripts/model_budget.py`). With no `--model`,
+  each names on stderr the registry default it will use
+  (`models.choose_model`). The doc-review Stop hook gains `--max-chunks`.

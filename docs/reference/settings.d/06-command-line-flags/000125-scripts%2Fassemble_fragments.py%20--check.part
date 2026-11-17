@@ -1,1 +1,1 @@
-| `scripts/assemble_fragments.py --check` | flag | — | present or absent | `scripts/assemble_fragments.py` | Compares all configured references without writing and names stale files. | repairing a reference: run without this flag | always |
+| `scripts/assemble_fragments.py --check` | flag | — | present or absent | `scripts/assemble_fragments.py` | Compares references and Unreleased without writing and names stale files. | repairing a reference: run without this flag | always |

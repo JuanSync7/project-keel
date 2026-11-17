@@ -6,16 +6,17 @@ summary: Synthetic fragment sets prove branch-union assembly, fixed points, read
 """
 
 import datetime
-import importlib
 import json
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 from scripts.child_env import build_child_env
+from test_copier_generation import clean_template as clean_template
+from test_copier_generation import generate as generate
+from test_copier_generation import renders as renders
 from test_work_trailers import _run as toy_git
 
 import optional_deps
@@ -258,74 +259,46 @@ def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):
     ids=["defaults", "minimal", "astro-all-transports"],
 )
 def test_generated_references_ship_without_fragments_after_restamp(
-    tmp_path, monkeypatch, answers
+    tmp_path, generate, answers
 ):
-    """Render from the local directory without cloning; copier's tasks restamp it."""
-    copier = optional_deps.importorskip("copier", extra="template")
-    template_module = importlib.import_module("copier._template")
-
-    # This task forbids a repository clone in scratch. Copier's folder-source
-    # mode renders the working tree directly, including uncommitted entry files.
-    monkeypatch.setattr(template_module, "get_repo", lambda _url: None)
+    """Render through the shared clean-template and answer-set cache fixtures."""
+    optional_deps.importorskip("copier", extra="template")
     dest = tmp_path / "generated"
-    # Folder mode must honor local ignores before traversing the destination.
-    ignored = toy_git(
-        _ROOT,
-        build_child_env(),
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "--directory",
-        "-z",
-    )
-    try:
-        copier.run_copy(
-            str(_ROOT),
-            str(dest),
-            data=answers,
-            defaults=True,
-            unsafe=True,
-            quiet=True,
-            exclude=[path for path in ignored.split("\0") if path],
+    generate(dest, **answers)
+    for name in ("settings", "features"):
+        assert not (dest / f"docs/reference/{name}.d").exists()
+        before = (dest / f"docs/reference/{name}.md").read_text()
+        original = (_ROOT / f"docs/reference/{name}.md").read_text()
+        # The task owns only the date; no answer removes reference rows.
+        assert re.sub(r"(?m)^updated: .*", "updated:", before) == re.sub(
+            r"(?m)^updated: .*", "updated:", original
         )
-        for name in ("settings", "features"):
-            assert not (dest / f"docs/reference/{name}.d").exists()
-            before = (dest / f"docs/reference/{name}.md").read_text()
-            original = (_ROOT / f"docs/reference/{name}.md").read_text()
-            # The task owns only the date; no answer removes reference rows.
-            assert re.sub(r"(?m)^updated: .*", "updated:", before) == re.sub(
-                r"(?m)^updated: .*", "updated:", original
-            )
-        assert (dest / "scripts/assemble_fragments.py").is_file()
-        assert not (dest / "tests/integration/test_reference_fragments.py").exists()
-        manifest = json.loads((dest / "config/project.json").read_text())
-        assert manifest["reference_fragments"]["sets"] == []
-        roster = (dest / "docs/reference/README.md").read_text()
-        members = set(re.findall(r"^\| `([^`]+)` \|", roster, re.MULTILINE))
-        assert {"settings.md", "features.md"} <= members
-        assert members <= {"README.md", "settings.md", "features.md"}
-        assert "## Authoring entries" not in roster
-        for script, args in (
-            ("scripts/assemble_fragments.py", ["--check"]),
-            ("scripts/jobs/restamp_docs.py", ["--today", "2030-02-03"]),
-            ("scripts/assemble_fragments.py", ["--check"]),
-        ):
-            run = subprocess.run(
-                [sys.executable, "-B", str(dest / script), *args],
-                cwd=dest,
-                env=build_child_env(),
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            assert run.returncode == 0, run.stdout + run.stderr
-        for name in ("settings", "features"):
-            after = (dest / f"docs/reference/{name}.md").read_text()
-            original = (_ROOT / f"docs/reference/{name}.md").read_text()
-            assert re.sub(r"(?m)^updated: .*", "updated:", after) == re.sub(
-                r"(?m)^updated: .*", "updated:", original
-            )
-    finally:
-        if dest.exists():
-            shutil.rmtree(dest)
+    assert (dest / "scripts/assemble_fragments.py").is_file()
+    assert not (dest / "tests/integration/test_reference_fragments.py").exists()
+    manifest = json.loads((dest / "config/project.json").read_text())
+    assert manifest["reference_fragments"]["sets"] == []
+    roster = (dest / "docs/reference/README.md").read_text()
+    members = set(re.findall(r"^\| `([^`]+)` \|", roster, re.MULTILINE))
+    assert {"settings.md", "features.md"} <= members
+    assert members <= {"README.md", "settings.md", "features.md"}
+    assert "## Authoring entries" not in roster
+    for script, args in (
+        ("scripts/assemble_fragments.py", ["--check"]),
+        ("scripts/jobs/restamp_docs.py", ["--today", "2030-02-03"]),
+        ("scripts/assemble_fragments.py", ["--check"]),
+    ):
+        run = subprocess.run(
+            [sys.executable, "-B", str(dest / script), *args],
+            cwd=dest,
+            env=build_child_env(),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert run.returncode == 0, run.stdout + run.stderr
+    for name in ("settings", "features"):
+        after = (dest / f"docs/reference/{name}.md").read_text()
+        original = (_ROOT / f"docs/reference/{name}.md").read_text()
+        assert re.sub(r"(?m)^updated: .*", "updated:", after) == re.sub(
+            r"(?m)^updated: .*", "updated:", original
+        )

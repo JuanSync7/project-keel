@@ -1,0 +1,5 @@
+- **Document forms are explicit (Backlog: KEEL-GENRE-1).** Every `kind: doc`
+  source and template twin carries `form` from `scripts/check_structure.py`
+  `FORMS`; `check_A` refuses missing or invalid forms, forms on other kinds,
+  and a tree with `docs/` but zero judged `kind: doc` documents.
+

@@ -1,0 +1,7 @@
+- **The scripts, the evals, the OpenAI-compatible adapter and the MCP
+  question server read config through the loader.** `scripts/child_env.py`,
+  `scripts/run_date.py`, `scripts/gate_evidence.py`,
+  `scripts/exit_code_table.py`, `scripts/check_practices.py`,
+  `scripts/run_make_target.py`, `evals/_config.py`, `evals/_run.py`,
+  `models/openai_compatible.py` and `mcp/qa_server.py` leave
+  `config_reads.allowed`, which lists ten files in keel.
