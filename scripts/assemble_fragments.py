@@ -3,7 +3,7 @@
 title: Reference assembly — one independently mergeable file per table entry
 kind: script
 layer: n/a
-summary: Assembles configured reference tables in sorted filename order; --check reports stale outputs without writing, and malformed, duplicate or unregistered sources fail closed.
+summary: Assembles configured reference tables in sorted filename order; --check reports stale outputs without writing, and malformed, misnamed, duplicate or unregistered sources fail closed.
 effect: writes
 rerun: fixed-point
 rerun_proof: make:check-fragments
@@ -18,9 +18,12 @@ them. Keel's fragment folders are excluded from generation. This script ships;
 generated projects list no fragment sets and edit their references by hand.
 
 An entry's first cell names its key (its first code span, or the whole cell).
-Sorted tables use percent-encoded keys as filenames. Historical unsorted tables
-use six-digit order prefixes followed by the encoded key; append a new entry with
-the next prefix, using its distinct key to keep parallel additions independent.
+An entry's file name is its percent-encoded key (urllib quote, nothing safe),
+either alone or after a six-digit order prefix and "-"; one table uses one
+form. Key-named tables sort by encoded key; prefixed tables keep their
+historical order, and a new entry takes the next prefix. A name that does not
+encode its key, or a table that mixes the forms, is an error, so two parallel
+additions with distinct keys never share a file name.
 Keys must be unique within a table. Every entry is exactly one complete table row
 with the header's column count. Unexpected files, missing heads or registered
 folders, duplicate keys and stray folders under the configured root are errors.
@@ -38,6 +41,7 @@ import re
 import sys
 from pathlib import Path
 from typing import NoReturn
+from urllib.parse import quote
 
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
@@ -46,6 +50,7 @@ import config_loader
 from exit_codes import ExitCode, finish, report
 
 _KEY = ("reference_fragments",)
+_PREFIX = re.compile(r"\d{6}-")
 
 
 class FragmentError(ValueError):
@@ -81,6 +86,31 @@ def _cells(row: str) -> list[str]:
     return [cell.strip() for cell in re.split(r"(?<!\\)\|", row.strip())[1:-1]]
 
 
+def entry_key(cell: str) -> str:
+    """Return the key a row's first cell names: its first code span, or itself."""
+    code = re.search(r"`([^`]+)`", cell)
+    return code.group(1) if code else cell
+
+
+def entry_stem(key: str) -> str:
+    """Return the file stem a key-named entry must have."""
+    # safe="" encodes "/" too, so a key never names a subdirectory.
+    return quote(key, safe="")
+
+
+def _form(entry: Path, key: str, suffix: str) -> str:
+    stem, name = entry_stem(key), entry.name
+    if name == stem + suffix:
+        return "key-named"
+    prefix = _PREFIX.match(name)
+    if prefix and name[prefix.end() :] == stem + suffix:
+        return "prefixed"
+    raise FragmentError(
+        f"{entry}: file name must be {stem}{suffix}, optionally after a "
+        "six-digit order prefix and '-', because the name is the encoded key"
+    )
+
+
 def _table(folder: Path, suffix: str) -> str:
     head_path = folder / ("head" + suffix)
     head = _text(head_path)
@@ -89,6 +119,7 @@ def _table(folder: Path, suffix: str) -> str:
         raise FragmentError(f"{head_path}: table head must end with its separator")
     columns = len(_cells(lines[-2]))
     keys: set[str] = set()
+    forms: dict[str, Path] = {}
     rows = []
     for entry in sorted(folder.iterdir()):
         if entry == head_path:
@@ -99,11 +130,17 @@ def _table(folder: Path, suffix: str) -> str:
         cells = _cells(row)
         if len(cells) != columns or not cells[0]:
             raise FragmentError(f"{entry}: expected {columns} cells and a nonblank key")
-        code = re.search(r"`([^`]+)`", cells[0])
-        key = code.group(1) if code else cells[0]
+        key = entry_key(cells[0])
         if key in keys:
             raise FragmentError(f"{entry}: duplicate key {key!r}")
         keys.add(key)
+        forms.setdefault(_form(entry, key, suffix), entry)
+        if len(forms) > 1:
+            raise FragmentError(
+                f"{entry}: table mixes key-named and prefixed entries "
+                f"(also {forms['key-named'].name}, {forms['prefixed'].name}); "
+                "use one form per table"
+            )
         rows.append(row)
     return head + "".join(rows)
 

@@ -75,6 +75,12 @@ def _fragment_set(root):
     (folder / "tail.part").write_text("\nFixed footer.\n")
     (table / "head.part").write_text("## Entries\n\n| Key | Meaning |\n|---|---|\n")
     (table / "base.part").write_text("| `base` | baseline |\n")
+    # Prefix order disagrees with key order, so a key sort would reorder rows.
+    ordered = folder / "02-ordered"
+    ordered.mkdir()
+    (ordered / "head.part").write_text("\n## Ordered\n\n| Key | Meaning |\n|---|---|\n")
+    (ordered / "000001-zeta.part").write_text("| `zeta` | first by prefix |\n")
+    (ordered / "000002-alpha%20one.part").write_text("| `alpha one` | second |\n")
     assert _assemble(root).returncode == 0
     return folder, table, root / "docs/reference/example.md"
 
@@ -174,6 +180,34 @@ def test_check_catches_a_hand_added_row_and_assembly_overwrites_it(toy):
     assert _assemble(root).returncode == 0
     assert output.read_text() == assembled
     assert _assemble(root, "--check").returncode == 0
+
+
+def test_entry_file_names_follow_their_keys(toy):
+    """A name is the encoded key, or a prefix plus it, one form per table."""
+    root, _env, _commit = toy
+    folder, table, output = _fragment_set(root)
+    text = output.read_text()
+    assert 0 < text.index("`zeta`") < text.index("`alpha one`")
+    ordered = folder / "02-ordered"
+    misnamed = [
+        (table / "wrong.part", "| `right` | key-named table |\n"),
+        (table / "000003-gamma.part", "| `gamma` | prefix in a key-named table |\n"),
+        (ordered / "000003-wrong.part", "| `right` | prefixed table |\n"),
+        (ordered / "gamma.part", "| `gamma` | no prefix in a prefixed table |\n"),
+        (ordered / "000003-a b.part", "| `a b` | unencoded key |\n"),
+    ]
+    for path, row in misnamed:
+        path.write_text(row)
+        before = _tree(root)
+        for args in (("--check",), ()):
+            refused = _assemble(root, *args)
+            assert refused.returncode != 0, path.name
+            assert path.name in refused.stderr, refused.stderr
+            assert _tree(root) == before
+        path.unlink()
+    (ordered / "000003-a%2Fb.part").write_text("| `a/b` | encoded |\n")
+    assert _assemble(root).returncode == 0
+    assert "`a/b`" in output.read_text()
 
 
 def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):

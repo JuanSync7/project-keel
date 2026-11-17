@@ -134,8 +134,9 @@ by its sorted row files. The tail holds the fixed text after the final table.
 A table already sorted by key names each entry with its percent-encoded key.
 An unsorted table keeps its historical order with a six-digit prefix and the
 encoded key. A new entry takes the next prefix; two lanes may share a prefix
-because their distinct keys keep their filenames independent. The non-Markdown
-suffix is configured. Fragments have no frontmatter and links read relative
+because their distinct keys keep their filenames independent. The assembler
+refuses an entry whose name does not encode its key, and a table that mixes
+the two forms. The non-Markdown suffix is configured. Fragments have no frontmatter and links read relative
 to the assembled file, where check_Q judges them; check_A and the freshness
 rule judge only the assembled Markdown.
 

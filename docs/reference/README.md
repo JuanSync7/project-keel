@@ -37,10 +37,14 @@ the first code span in the first cell, or the whole cell when there is none.
 Keys are unique within a table; the assembler refuses duplicates and malformed
 entries before writing any output.
 
-Tables already sorted by key use percent-encoded keys as filenames. Other
-tables keep their historical order with six-digit prefixes. A new entry in
-one of those tables takes the next prefix and its encoded key; parallel
-entries may share a prefix because their distinct keys keep filenames apart.
+An entry's file name is its key percent-encoded with nothing left safe
+(`/` becomes `%2F`, a space `%20`), plus the `.part` suffix. Tables already
+sorted by key use that name alone. Other tables keep their historical order
+by putting a six-digit prefix and `-` before it. A new entry in one of those
+tables takes the next prefix; parallel entries may share a prefix because
+their distinct keys keep filenames apart. The assembler refuses, before
+writing any output, a name that does not encode its key and a table that
+mixes the two forms.
 Do not rename existing entries to insert a row. Run `make assemble-fragments`,
 then `make restamp-docs` and `make check-fragments`. Readers use the assembled
 Markdown files. Fragments carry no frontmatter and their links are relative to
