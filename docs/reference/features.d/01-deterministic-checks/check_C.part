@@ -1,0 +1,1 @@
+| `check_C` package boundary | Refuses a `src/` directory holding Python without an `__init__.py` that defines `__all__`. | `make check` | — | Only `src/`; it does not judge what `__all__` exports. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

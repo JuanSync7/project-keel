@@ -1,0 +1,1 @@
+| `scripts/make_help.py --effect` | string | `''` | any | `scripts/make_help.py` | Keep targets whose label holds this word. | running a target: `scripts/run_make_target.py` | always |

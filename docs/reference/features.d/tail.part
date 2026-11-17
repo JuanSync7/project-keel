@@ -1,0 +1,27 @@
+
+## Conventions
+
+- **Key.** A row's key is the first code span in its Feature cell. The test
+  derives every key of these shapes from the tree: `check_<letter>`,
+  `make <target>`, `model:<name>`, `runtime:<name>`, a `.py` path (a
+  checker script, a copier job, an MCP server, a gate test or a shared script
+  module), an `agents/<name>/` or `.claude/skills/<name>/` directory and a
+  `.github/workflows/` file. Any other key is a feature the tree cannot list
+  for itself, such as a discipline or a transport.
+- **Derived rows.** In the template, the rows of the derived shapes equal the
+  tree exactly. In a generated project, every derived feature still needs a
+  row, so a project's own new make target, agent or workflow reds the test
+  until it has one, and a row for a feature the project's answers pruned must
+  say so in Ships.
+- **Effect label.** A make target's Feature cell carries the label its `## `
+  help opens with, character for character.
+- **Settings.** A Settings cell links each setting to its section of the
+  [settings reference](settings.md); `—` means the feature reads none.
+- **Ships.** `always` means every generated project receives the feature.
+  `when <question>[=<value>]` names the copier answer that keeps it, and
+  `when <question>!=<value>` the one answer that drops it.
+  `keel maintainers only` means only the template checkout has it. A feature
+  that does not ship always is cited by a code span, never a link, so the
+  link cannot dangle in a project without it.
+- **Limits.** Every row says where the feature stops or what it is not for; an
+  empty cell fails the test.

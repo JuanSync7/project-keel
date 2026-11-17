@@ -1,0 +1,9 @@
+
+## Command-line flags
+
+Each row is one `add_argument` in the code roots, keyed as the script's path
+and then its flag or positional name. A Default cell in code is the Python
+source of a literal default; `—` means the flag has no default.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

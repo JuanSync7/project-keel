@@ -1,0 +1,1 @@
+| `work_naming.slice_id` | string | `CMP-<n>.S<m>` | `work_naming.campaign_id` plus a literal separator and `<m>` | check_Z; `tests/integration/test_work_trailers.py` | Changes how a slice is named. | a backlog item: `work_naming.backlog_id` | always |

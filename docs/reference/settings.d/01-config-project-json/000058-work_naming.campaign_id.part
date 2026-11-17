@@ -1,0 +1,1 @@
+| `work_naming.campaign_id` | string | `CMP-<n>` | a template with one `<n>` | check_Z; `tests/integration/test_work_trailers.py` | Changes how a campaign is named. | a slice: `work_naming.slice_id` | always |

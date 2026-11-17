@@ -1,0 +1,8 @@
+## Deterministic checks
+
+`scripts/check_structure.py` runs one check per letter. Each check reads the
+tree and writes nothing; `make check` runs all of them.
+[deterministic-checks.md](../guides/deterministic-checks.md) explains each one.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

@@ -1,0 +1,1 @@
+| `child_env.config_injection_names` | list of strings | git's three configuration-injection names | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` never copies a listed name, and an allowlist that admits one is a check_X error. | repository context: `child_env.repo_context_names` | always |

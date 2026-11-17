@@ -1,0 +1,1 @@
+| `scripts/jobs/declare_no_app.py --finish-with` | string | `None` | any | `scripts/jobs/declare_no_app.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

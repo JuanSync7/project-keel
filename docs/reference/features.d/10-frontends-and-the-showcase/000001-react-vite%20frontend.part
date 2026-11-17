@@ -1,0 +1,1 @@
+| `react-vite frontend` | A React and Vite app under `src/frontend/react-vite/`. | `make run-web` | [`frontend_stack`](settings.md#copier-questions) | One stack per project; switching stacks on update deletes the old app. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | when frontend_stack=react-vite |

@@ -1,0 +1,1 @@
+| `make site-data` `[local]` | Rebuilds the corpus, and the agent `llms.txt` files where the showcase ships. | `make site-data` | — | Without the showcase it builds the corpus only and says so. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

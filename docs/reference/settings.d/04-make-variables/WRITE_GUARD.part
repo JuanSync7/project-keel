@@ -1,0 +1,1 @@
+| `WRITE_GUARD` | recipe line | a make `$(error)` when `MAKEFLAGS` carries `i`, then a test that exits 1 when `CI` or `RALPH` is set | not set by a caller | every `[write]` recipe, which opens with it | Nothing to set: check_W requires every `[write]` recipe to open with it. | a read-only target, which does not need it | always |

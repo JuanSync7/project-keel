@@ -1,0 +1,1 @@
+| `make check-python` `[local]` | Fails early when the interpreter is older than `requires-python`. | `make check-python` | [`PY`](settings.md#make-variables) | Judges the version, not the installed packages. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

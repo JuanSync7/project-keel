@@ -1,0 +1,1 @@
+| `adr.project_dir` | string | `docs/adr` | a directory path | check_Y | Moves where this project's own ADRs, `NNNN-<slug>.md`, are judged. | the template's ADRs: `adr.template_dir` | always |

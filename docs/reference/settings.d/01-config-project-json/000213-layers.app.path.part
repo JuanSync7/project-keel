@@ -1,0 +1,1 @@
+| `layers.app.path` | string | `src/app` | an existing directory | check_H; `scripts/run_app.py` | Moves the composition root. | the backend: `layers.backend.path` | always |

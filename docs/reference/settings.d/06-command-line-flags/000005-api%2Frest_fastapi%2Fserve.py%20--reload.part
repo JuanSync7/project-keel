@@ -1,0 +1,1 @@
+| `api/rest_fastapi/serve.py --reload` | switch | — | `true` when given | `api/rest_fastapi/serve.py` | restart on a source change (development) | stopping the server: `transports.serve.shutdown_grace_seconds` | always |

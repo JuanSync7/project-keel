@@ -1,0 +1,1 @@
+| `practices[].scope` | string | `universal` or `domain` | `universal`, `domain` | the showcase only | Changes how the showcase groups the practice. | enabling a domain practice: `practices[].profile` | always |

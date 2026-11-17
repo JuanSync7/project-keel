@@ -1,0 +1,1 @@
+| `e2e.server.app` | string | `app:app` | a uvicorn `module:attribute` resolved inside the `rest` transport directory | `tests/live_server.py` | Changes which ASGI app the scenario server runs. | `make run-api`, whose port stays a Makefile literal | always |

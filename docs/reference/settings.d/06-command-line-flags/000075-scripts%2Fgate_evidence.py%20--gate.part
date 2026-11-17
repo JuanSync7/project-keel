@@ -1,0 +1,1 @@
+| `scripts/gate_evidence.py --gate` | string | — | a lower-case name: letters, digits and `-` | `scripts/gate_evidence.py` | The gate's name: the record's file name under `evidence.dir` and its `gate` field. | running one target: `scripts/run_make_target.py` | always |

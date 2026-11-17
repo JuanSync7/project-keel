@@ -1,0 +1,1 @@
+| `FE_APPS` | word list | the directories under `src/frontend` holding a `package.json` | computed | the frontend recipes | Nothing to set: it is computed from the tree. | the declared stack: `config/project.json` `layers.frontend.stack` | always |

@@ -1,0 +1,1 @@
+| `evals.report_schema` | string | `config/evals/eval-report.schema.json` | a repo-relative path to a JSON Schema with a `schema_version.const` | `evals/_config.py` | Names the schema the run report cites and takes its `schema_version` from. | the case format: `evals.case_schema` | always |

@@ -1,0 +1,1 @@
+| `make check-fragments` `[local]` | Checks reference tables without writing. | `make check-fragments` | [`reference_fragments`](settings.md#configprojectjson) | Reference tables only; date stamps belong to `make restamp-docs`. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

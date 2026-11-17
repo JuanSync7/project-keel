@@ -1,0 +1,1 @@
+| `scripts/cdmon_sync.py --config` | string | `config/cdmon/cdmon.yaml` | any | `scripts/cdmon_sync.py` | The cdmon config file. | the doc gate: `make check-docs` | always |

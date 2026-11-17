@@ -1,0 +1,1 @@
+| `PYTHONPATH` | path list | `src:.` | colon-separated directories | every Python recipe | Changes where the recipes import from. | a child's environment, which gets it only when a caller passes it | always |

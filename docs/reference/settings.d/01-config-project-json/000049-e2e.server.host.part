@@ -1,0 +1,1 @@
+| `e2e.server.host` | string | `127.0.0.1` | a loopback address; anything else is refused | `tests/live_server.py`; `tests/stub_model_server.py` | Changes the address the scenario server binds and is probed on. The port is not a setting: the OS assigns a free one each run. | `make run-api`'s address and port | always |

@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --json` | switch | — | `true` when given | `scripts/apply_refactor.py` | Emit the result as JSON. | choosing the edit: `scripts/refactor_practice.py` | always |

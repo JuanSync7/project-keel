@@ -1,0 +1,1 @@
+| `.DEFAULT_GOAL` | target name | `help` | a target | make | Changes what a bare `make` runs. | filtering help: `EFFECT` and `AREA` | always |

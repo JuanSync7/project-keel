@@ -1,0 +1,1 @@
+| `make_targets.area_dir` | string or null | `null` | a directory of `<area>.mk` makefiles, or `null` for areas off | check_W; `scripts/make_help.py` | Turns `##@` help areas on, which `make help AREA=` filters by. | effect filtering: `make help EFFECT=` | always |

@@ -1,0 +1,1 @@
+| `launcher.farm.adapter` | string | `none` | a name `launcher.farm.adapters` defines | `scripts/launch.py` (`load_launcher_config`); `decide` | Chooses the farm a long script on a shared host is submitted to; an adapter of kind `none` means no farm, so the script runs here limited. | where a model runs: `models.default` | always |

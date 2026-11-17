@@ -1,0 +1,1 @@
+| `make new` `[local]` | Generates a new project from this checkout with copier's questions. | `make new DEST=../my-project` | [`DEST`](settings.md#make-variables), [`ALLOW_DIRTY`](settings.md#make-variables) | Refuses a checkout without git or with a dirty tree; needs the `template` extra. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | always |

@@ -1,0 +1,1 @@
+| `demo/aad_reference_agent/app.py --port` | integer | `51000` | a whole number | `demo/aad_reference_agent/app.py` | The port the reference agent listens on. | the project's own API: `make run-api` | always |

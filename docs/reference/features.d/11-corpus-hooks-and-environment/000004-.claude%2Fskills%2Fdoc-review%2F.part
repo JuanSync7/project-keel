@@ -1,0 +1,1 @@
+| `.claude/skills/doc-review/` | An agent skill that runs the doc review and, when asked, applies gated edits. | ask the agent to review the docs | — | Dry-run by default. | [doc-style.md](../guides/doc-style.md) | always |

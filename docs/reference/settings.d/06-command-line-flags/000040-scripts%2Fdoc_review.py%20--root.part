@@ -1,0 +1,1 @@
+| `scripts/doc_review.py --root` | string | `None` | a non-empty path | `scripts/doc_review.py` | Repo root to review (default: this repo); an empty one is refused with exit 2. | code practices: `scripts/refactor_practice.py` | always |

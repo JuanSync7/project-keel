@@ -1,0 +1,1 @@
+| `scripts/hooks/on_stop_doc_review.py --execute` | switch | — | `true` when given | `scripts/hooks/on_stop_doc_review.py` | Also propose + apply gated edits (default: dry-run). | an on-demand review: `make doc-review` | always |

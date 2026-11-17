@@ -1,0 +1,1 @@
+| `evals.live.model` | string or null | `null` | `null`, or a name `models.list_models()` returns | `evals/_run.py` (`run_live`) | Names the adapter `make eval-live` sends each case to; `null` or an unknown name is refused with exit 2 before any call. | `make eval`, which replays recordings and calls no model | always |

@@ -1,0 +1,1 @@
+| `scripts/jobs/rebuild_index.py --out` | string | `'-'` | any | `scripts/jobs/rebuild_index.py` | Output file under --root when relative; an explicit absolute file authorizes its parent directory, and an escape exits 2. '-' writes stdout. | the corpus: `scripts/jobs/build_corpus.py` | always |

@@ -1,0 +1,1 @@
+| `scripts/canary.py --path` | string | `'both'` | `fresh`, `update` or `both` | `scripts/canary.py` | Render fresh, as an update from the previous release, or both. | the sets themselves: `config/project.json` `canary.answer_sets` | keel maintainers only |

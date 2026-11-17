@@ -1,0 +1,1 @@
+| `scripts/install_sources.py source` | positional string | — | `browser_download_host`, `npm_registry`, `python_index` | `scripts/install_sources.py` | the install source whose configured URL to print | the scanner's mirror, which `scripts/install_scanner.py` reads itself from `secrets.scanner.release_url` | always |

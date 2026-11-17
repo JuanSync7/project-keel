@@ -1,0 +1,1 @@
+| `practices[].row` | integer | `9999` | an integer; text, a float, a boolean or null is refused | the showcase only (`src/backend/showcase/_repo.py`) | Changes the row the showcase displays; practices sort by row, then by id. | ordering a check | always |

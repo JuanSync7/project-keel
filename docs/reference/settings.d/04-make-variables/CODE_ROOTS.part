@@ -1,0 +1,1 @@
+| `CODE_ROOTS` | word list | `src tests api models mcp agents demo scripts runtimes evals` | directory names | the lint and type-check recipes | Changes which roots the recipes scan; `scripts/check_structure.py` `CODE_ROOTS` must agree. | the roots that exist: `PY_ROOTS` | always |

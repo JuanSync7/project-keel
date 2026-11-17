@@ -1,0 +1,1 @@
+| `doc_drift.settings_reference` | string | `docs/reference/settings.md` | a Markdown path | `tests/integration/test_reference_drift.py`; `tests/integration/test_doc_drift.py` | Names this page, whose rows the reference-drift test holds to the code. | the guide index: `doc_drift.roster` | always |

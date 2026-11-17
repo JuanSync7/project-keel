@@ -1,0 +1,1 @@
+| `adr.template_dir` | string | `docs/adr/keel` | a directory path | check_Y | Moves where the template's ADRs are judged. | this project's ADRs: `adr.project_dir` | always |

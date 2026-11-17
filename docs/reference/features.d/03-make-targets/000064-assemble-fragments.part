@@ -1,0 +1,1 @@
+| `make assemble-fragments` `[tree]` | Writes reference tables from configured fragments. | `make assemble-fragments` | [`reference_fragments`](settings.md#configprojectjson) | Reference tables only; date stamps belong to `make restamp-docs`. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

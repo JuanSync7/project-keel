@@ -1,0 +1,1 @@
+| `doc_drift.one_hop.<doc>` | list of strings | entries for `README.md` and `docs/README.md` | documents the entry document links to directly | `tests/integration/test_doc_drift.py` | An entry document that stops linking a listed document fails the test. | a document's full reading order | always |

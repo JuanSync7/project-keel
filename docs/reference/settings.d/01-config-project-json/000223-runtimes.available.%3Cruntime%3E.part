@@ -1,0 +1,1 @@
+| `runtimes.available.<runtime>` | string | `inprocess` and `langgraph`, both in `runtimes` | a runtime name mapped to its directory | check_H | Declares an engine; a missing directory is an error. | registering it: `runtimes/registry.py` | always |

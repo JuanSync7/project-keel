@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --allow` | string, repeatable | — | repo-relative file paths | `scripts/apply_refactor.py` | A file this run may edit, repeatable; an edit to any other file is refused before any write. | the files no edit may reach: `config/project.json` `agents.protected_paths` | always |

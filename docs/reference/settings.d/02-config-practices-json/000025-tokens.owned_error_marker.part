@@ -1,0 +1,1 @@
+| `tokens.owned_error_marker` | string | `practice: owned-error-base` | a comment marker | nothing: a dead key, queued and not wired | Nothing. | the frozen-config marker: `tokens.config_marker` | always |

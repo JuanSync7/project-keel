@@ -1,0 +1,1 @@
+| `scripts/jobs/declare_no_app.py --root` | string | `'.'` | any | `scripts/jobs/declare_no_app.py` | The project (default: .). | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

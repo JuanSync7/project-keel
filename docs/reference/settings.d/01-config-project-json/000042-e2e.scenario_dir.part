@@ -1,0 +1,1 @@
+| `e2e.scenario_dir` | string | `tests/e2e` | a directory path under the repo root | `tests/integration/test_e2e_coverage.py` | Moves where the gate reads `@pytest.mark.endpoint` markers; a marker outside it is an unreadable-marker finding. | where pytest collects tests: `pyproject.toml` `testpaths` | always |

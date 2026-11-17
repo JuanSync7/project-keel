@@ -1,0 +1,1 @@
+| `scripts/jobs/restamp_docs.py --today` | string | `None` | any | `scripts/jobs/restamp_docs.py` | The date to stamp (default: SOURCE_DATE_EPOCH in UTC, else the gate run's date, else today). | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |

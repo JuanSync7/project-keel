@@ -1,0 +1,1 @@
+| `doc_drift.audiences` | list of strings | `["adopter", "contributor"]` | audience words, in the order a roster row names them | `tests/integration/test_doc_drift.py` | Changes the audience vocabulary a guide index row may use. | a document's `kind` | always |

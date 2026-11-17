@@ -1,0 +1,1 @@
+| `rulesets.ruff.extend_select` | list of strings | the ruff rule families keel selects | ruff rule codes or families | check_M | A listed family missing from `pyproject.toml` is a check_M error, so the lint policy cannot silently loosen. | a family kept off: `rulesets.ruff.deferred` | always |

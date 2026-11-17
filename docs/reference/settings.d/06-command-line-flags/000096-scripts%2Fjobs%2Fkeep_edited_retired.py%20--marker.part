@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --marker` | string | `None` | a line with an `{adapter}` field | `scripts/jobs/keep_edited_retired.py` | The line a `--retire` adapter keel wrote carries; it only shapes the kept file's stderr line, never the verdict. Required with a non-empty `--retire`. | the gate's marker check: `config/project.json` `ci_pipeline.marker` | always |

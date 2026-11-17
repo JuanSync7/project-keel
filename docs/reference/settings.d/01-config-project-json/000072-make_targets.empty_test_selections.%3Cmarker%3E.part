@@ -1,0 +1,1 @@
+| `make_targets.empty_test_selections.<marker>` | string | `{}` | a pytest marker mapped to the reason a run of it may select zero tests | check_W; `tests/selection_guard.py` | Lets a `-m <marker>` recipe run zero tests; an entry whose run selected a test is stale. | any other selection, which fails on zero tests | always |

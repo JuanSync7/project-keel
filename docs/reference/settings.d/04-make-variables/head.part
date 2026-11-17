@@ -1,0 +1,9 @@
+
+## Make variables
+
+The Makefile assigns or reads these. Pass one on the command line, as in
+`make new DEST=../my-project`; the gate runner accepts only those in
+`config/project.json` `make_targets.gate_vars`.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

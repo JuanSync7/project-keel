@@ -1,0 +1,1 @@
+| `scripts/doc_review.py --json` | switch | — | `true` when given | `scripts/doc_review.py` | Emit the report as JSON. | code practices: `scripts/refactor_practice.py` | always |

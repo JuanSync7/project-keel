@@ -1,0 +1,1 @@
+| `runtime:inprocess` | The default, dependency-free Plan executor, with dry-run, durability, human-in-the-loop, fan-out and streaming. | `get_runtime("inprocess")` | [`runtimes.default`](settings.md#configprojectjson) | One process: a checkpoint survives a restart, not a lost host. | [agent-runtimes.md](../guides/agent-runtimes.md) | always |

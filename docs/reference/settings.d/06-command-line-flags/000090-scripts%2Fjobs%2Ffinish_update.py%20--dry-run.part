@@ -1,0 +1,1 @@
+| `scripts/jobs/finish_update.py --dry-run` | switch | — | `true` when given | `scripts/jobs/finish_update.py` | Print each command it would run as one JSON line; run nothing. | starting an update: `copier update` | always |

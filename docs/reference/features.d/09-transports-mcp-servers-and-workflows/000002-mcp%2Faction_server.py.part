@@ -1,0 +1,1 @@
+| `mcp/action_server.py` | State-changing MCP tools that delegate to `scripts/jobs/` doers, dry-run by default. | `python3 mcp/action_server.py` | — | A dry run unless the caller asks to execute. | [agent-surface.md](../guides/agent-surface.md) | always |

@@ -1,0 +1,1 @@
+| `make check-cdmon` `[local]` | Runs the cdmon code-to-doc drift check. | `make check-cdmon` | — | A stated skip until cdmon and its config exist. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

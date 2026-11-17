@@ -1,0 +1,1 @@
+| `vertical slices` | A task is cut into end-to-end slices, each verified and committed alone. | name it in a plan doc | [`work_naming.slice_trailer`](settings.md#configprojectjson) | check_Z holds the names; the slicing itself is review's. | [dev-loops.md](../guides/dev-loops.md) | always |

@@ -1,0 +1,1 @@
+| `scripts/cdmon_sync.py --check` | switch | — | `true` when given | `scripts/cdmon_sync.py` | Alias for `lint` (used by pre-commit). | the doc gate: `make check-docs` | always |

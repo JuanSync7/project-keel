@@ -1,0 +1,1 @@
+| `AREA` | string | unset | a `##@` area name | `make help`, through `scripts/make_help.py --area` | Keeps one help area; with `make_targets.area_dir` null there are no areas, and naming one is an error. | effect filtering: `EFFECT` | always |

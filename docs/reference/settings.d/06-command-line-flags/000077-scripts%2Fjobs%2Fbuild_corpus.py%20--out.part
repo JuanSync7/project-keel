@@ -1,0 +1,1 @@
+| `scripts/jobs/build_corpus.py --out` | string | `wiki/corpus.json` | any | `scripts/jobs/build_corpus.py` | Output path (default: wiki/corpus.json), confined to --root when relative; an explicit absolute file authorizes its parent directory, and an escape exits 2. | checking a corpus: `scripts/jobs/check_corpus.py` | always |

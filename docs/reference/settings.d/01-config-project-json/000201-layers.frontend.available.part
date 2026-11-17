@@ -1,0 +1,1 @@
+| `layers.frontend.available` | list of strings | the copier answer `frontend_stack` (`["react-vite", "astro"]` in keel) | stack directory names under `layers.frontend.root` | check_H | A listed stack with no directory warns, and a stack directory not listed warns. | choosing the stack: `layers.frontend.stack` | when `frontend_stack` is not `none` |

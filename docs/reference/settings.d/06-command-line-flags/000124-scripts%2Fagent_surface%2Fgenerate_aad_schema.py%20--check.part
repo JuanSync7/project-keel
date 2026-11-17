@@ -1,0 +1,1 @@
+| `scripts/agent_surface/generate_aad_schema.py --check` | switch | — | `true` when given | `scripts/agent_surface/generate_aad_schema.py` | Exit 1 if the committed schema is stale (CI / pre-commit). | the REST contract: `api/rest_fastapi/export_openapi.py` | always |

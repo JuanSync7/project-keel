@@ -1,0 +1,1 @@
+| `scripts/jobs/review_docs.py --today` | string | `None` | any | `scripts/jobs/review_docs.py` | The date a modified file must carry (default: SOURCE_DATE_EPOCH in UTC, else the gate run's date, else today; tests pin it). | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |

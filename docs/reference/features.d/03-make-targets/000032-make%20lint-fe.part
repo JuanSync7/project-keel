@@ -1,0 +1,1 @@
+| `make lint-fe` `[local]` | Lints each frontend app with ESLint. | `make lint-fe` | [`FE_APPS`](settings.md#make-variables) | Exits 0 when no frontend app, `npm` or `node_modules` is found. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The convergence record, slices and decisions for CMP-11.
 id: docs-internals-campaigns-cmp-11
 created: 2026-10-06
-updated: 2026-11-16
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -27,15 +27,14 @@ takes either side of that conflict and runs the assembly target again, which
 writes the file from the union of both lanes' entry files. Each slice's starting
 test runs that workflow on two branches.
 
-CMP-11 leaves three things out. A generated project keeps its references and
-changelog written by hand, exactly as today: the entry folders do not ship, and
-the generated project's config lists no fragment set. Adopting fragments in a
-generated project needs a migrate step the user runs on purpose, which turns the
-rows they wrote into entry files, and that is a separate item. Two slices of
-the same campaign still edit that campaign's one file, so the CMP-6.S3 and
-CMP-6.S6 collision in the queue below is not removed. `config/project.json`, its
-twin and `docs/adr/keel/README.md` stay one file each. CMP-11 therefore does not
-finish KEEL-FRAG-1.
+CMP-11 leaves three things out. A generated project keeps its changelog
+written by hand; the changelog entry folder does not ship. Reference-table
+fragments and their assembler do ship, with the same configured sets as keel,
+so generation's restamp task and the assembly check agree. Two slices of the
+same campaign still edit that campaign's one file, so the CMP-6.S3 and
+CMP-6.S6 collision in the queue below is not removed. `config/project.json`,
+its twin and `docs/adr/keel/README.md` stay one file each. CMP-11 therefore
+does not finish KEEL-FRAG-1.
 
 The cap is three passes, one slice each in the order S1 to S3, and a slice's
 review gets at most three fix rounds. The stop point is CMP-11.S3 green or the
@@ -75,54 +74,47 @@ check_Z requires campaign ids with no gap, so a campaign id is reserved on
 order in CONVENTIONS §20's prose and changes no rule. S1 writes no assembler,
 because the plan keeps no derived list.
 
-CMP-11.S2 owns `scripts/assemble_fragments.py`, both references, their fragment
-folders and the `config/project.json` key that lists the fragment sets: each
-set names its output, its head and its folder. The generated project's twin
-lists no set. A fragment set's folder that is missing fails the check, and so
-does a fragment folder no set names, so a project with no set is checked to
-hold no stray folder rather than passing over nothing. An entry file is not a
-governed document: it has no frontmatter, its links are written as they read
-from the assembled file, and check_Q reads them there. Its suffix is a config
-value, and it is not `.md`, so the doc gates and `scripts/jobs/review_docs.py`
-do not read it. Each fragment folder gets the roster row
-`docs/reference/README.md` requires, and the `copier.yml` `_exclude` entry and
-its row in `docs/guides/generate-and-upgrade.md` that keep it out of a generated
-project. Because check_S fails a roster row whose member is missing, and the
-folders do not ship, S2 adds `docs/reference/README.md.jinja` without those
-rows, declares it in `config/project.json` `template.twins` (check_N), and
-asserts the generated roster names only `settings.md` and `features.md`. S2 adds a `[tree]` make target that writes the assembled files and a
-`[local]` target that runs `--check`, the label ADR K-0011 gives a target that
-only reads this machine. The `[local]` target becomes a prerequisite of
-`check-all`, which `make verify` runs, so a stale reference fails the gate.
-A script `check-all` reaches needs its catalogue row, so S2 adds the
-assembler's error-tier row to `docs/guides/deterministic-checks.md`; and it
-needs its exit-code rows, so S2 regenerates
-`docs/guides/limits-and-troubleshooting.md` with `make exit-codes`, which
-`make check-exit-codes` holds. S3 regenerates that table again for the
-release mode's exits. A new script needs its roster row, so S2 adds the
-assembler's row to `scripts/README.md` and to `scripts/README.md.jinja`, which
-check_S compares with the directory in keel and in a generated project.
-The settings reference gets a row for each assembler flag and both targets. The
-assembler is a writer, so its header carries `effect: writes`,
-`rerun: fixed-point` and a `rerun_proof:` that resolves (check_V). A new config
-key gets a `KEYS` row in `scripts/config_loader.py` and its line in
-`docs/reference/settings.md`. The assembler owns an assembled file's body and
-the freshness rule owns its `updated:` line: the assembler reads no clock, keeps
-the `updated:` value already in the output (or the head's when the output is
-new), and `--check` compares everything but that line. A lane that changes a
-fragment restamps the reference with `scripts/jobs/restamp_docs.py`, as it does
-for any document it changes. S3 runs after S2 and adds the changelog to the same
-assembler, so there is one assembler and one pair of targets.
-S2's first commit writes the entry file contract into this section before
-any code: how an entry names its section and row key, how the assembler
-writes each section's table head once, the filename rule that keeps two
-lanes' entries apart, the refusal of a malformed or duplicate entry, and the
-configured fragment root that finds an unregistered folder when no set is
-listed. Its tests use synthetic fixtures wherever they can, so they ship and
-pass in a generated project, and a case that needs keel's own fragments
-carries the `copier.yml` guard `test_copier_generation.py` already uses; a
-shipped case shows the empty-set check accepts a hand-edited reference and
-writes nothing.
+CMP-11.S2 owns `scripts/assemble_fragments.py`, both reference files and
+their fragment folders. `config/project.json` and its twin carry
+`reference_fragments`: the discovery root, folder suffix, entry suffix and
+the sets naming output, head and folder. The configured discovery root finds
+unregistered folders even when the set list is empty. Missing registered
+folders, unregistered folders, malformed entries and duplicate table keys fail
+before an output is written. Both roots ship, so their roster rows in
+`docs/reference/README.md` ship too and need no separate twin.
+
+The entry contract is one `.part` file per complete table row, including its
+final newline. Its table is the numbered subfolder that contains it. Its key
+is the first code span in its first cell, or that whole cell when there is no
+code span. A row has the same cell count as its table header. A root holds
+`head.part`, sorted table subfolders and `tail.part`; each table subfolder
+holds `head.part` for section prose and the two table header lines, followed
+by its sorted row files. The tail holds the fixed text after the final table.
+A table already sorted by key names each entry with its percent-encoded key.
+An unsorted table keeps its historical order with a six-digit prefix and the
+encoded key. A new entry takes the next prefix; two lanes may share a prefix
+because their distinct keys keep their filenames independent. The non-Markdown
+suffix is configured. Fragments have no frontmatter and links read relative
+to the assembled file, where check_Q judges them; check_A and the freshness
+rule judge only the assembled Markdown.
+
+The `[tree]` target `assemble-fragments` writes the references. The `[local]`
+target `check-fragments` runs `--check` from both `check-all` and `check-docs`.
+The assembler retains the output's `updated:` line, using the head's only for
+a new output; it reads no clock. `scripts/jobs/restamp_docs.py` owns that
+line, so restamping after deleting an entry on a later date leaves assembly
+at a fixed point. The script has its roster rows in both scripts indexes,
+its catalogue row and regenerated exit-code row, and settings and features
+have their new rows authored as fragments.
+
+`tests/integration/test_reference_fragments.py` uses the `toy` helpers from
+`tests/integration/test_work_trailers.py` for both merge-side cases and the
+later pinned restamp case. Its first assertion fails without the assembler.
+Its generation cases render directly from the local folder without cloning,
+prove default, minimal and Astro/all-transports answers retain the rows,
+and run the generated script's check after Copier's task and a later restamp.
+This regression module is template-only and has its own Copier exclusion and
+upgrade-guide row; generated projects keep the assembler's make gate.
 
 CMP-11.S3 owns `CHANGELOG.md`, `changelog.d/`, the assembler's changelog and
 release modes, and the release steps in `CONTRIBUTING.md`. `changelog.d/` is a

@@ -1,0 +1,1 @@
+| `make advise` `[local]` | Runs the advisory checks: answer keys, practice smells, unowned nodes and stale stamps. | `make advise` | — | Never fails the build. | [generic-solution.md](../guides/generic-solution.md) | always |

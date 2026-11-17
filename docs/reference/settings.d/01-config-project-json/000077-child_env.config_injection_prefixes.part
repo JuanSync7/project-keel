@@ -1,0 +1,1 @@
+| `child_env.config_injection_prefixes` | list of strings | `["GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"]` | name prefixes | `scripts/child_env.py` (check_X) | Same as `child_env.config_injection_names`, for the numbered names. | the copied prefixes: `child_env.prefixes` | always |

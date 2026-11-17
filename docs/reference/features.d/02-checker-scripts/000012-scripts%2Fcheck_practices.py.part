@@ -1,0 +1,1 @@
+| `scripts/check_practices.py` | Flags coding-practice smells, such as a provider constructed inline or a long `isinstance` chain. | `make advise` | [a practice's `status`](settings.md#configpracticesjson) | Advisory only: these are judgment calls. | [coding-practices.md](../guides/coding-practices.md) | always |

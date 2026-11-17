@@ -1,0 +1,1 @@
+| `template.manifest_differences.<path>.reason` | string | required per exemption | non-blank | `tests/integration/test_doc_drift.py` | The parity test rejects an absent or blank reason. | conditions: `matches_when` | keel maintainers only |

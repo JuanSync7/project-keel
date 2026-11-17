@@ -1,0 +1,1 @@
+| `layers.frontend.journey.server_timeout_ms` | integer | `120000` | a positive integer, in milliseconds | `src/frontend/<stack>/playwright.config.ts` (`make test-fe-e2e`) | Changes how long the journey waits for the build and the preview server to answer before it fails. | a single test's timeout, which stays the runner's own | when `frontend_stack` is not `none` |

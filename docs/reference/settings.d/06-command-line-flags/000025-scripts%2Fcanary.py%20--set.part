@@ -1,0 +1,1 @@
+| `scripts/canary.py --set` | string, repeatable | — | any | `scripts/canary.py` | Run only this answer set; repeat for more (default: every set). | the sets themselves: `config/project.json` `canary.answer_sets` | keel maintainers only |

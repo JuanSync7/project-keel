@@ -1,0 +1,1 @@
+| `REST API` | A thin FastAPI app over `src/`, with a health route and an example resource. | `make run-api` | [`transports.enabled`](settings.md#configprojectjson) | Holds no domain logic; `api/` stays thin. | [agent-surface.md](../guides/agent-surface.md) | always |

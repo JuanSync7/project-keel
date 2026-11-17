@@ -1,0 +1,1 @@
+| `REST CORS default` | The REST app allows any origin, `GET` only, so a browser frontend can read it in development. | `make run-api` | — | Not a production policy: narrow the origins before you deploy. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

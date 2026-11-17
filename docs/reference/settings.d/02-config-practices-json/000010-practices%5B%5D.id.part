@@ -1,0 +1,1 @@
+| `practices[].id` | string | one per practice | a unique slug | `scripts/check_practices.py`; `agents/practice_refactor/` | Renames the practice that `scripts/refactor_practice.py` takes as its argument. | the display title: `practices[].title` | always |

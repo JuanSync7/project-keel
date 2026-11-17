@@ -1,0 +1,1 @@
+| `CANARY_FLAGS` | word list | empty | the flags `scripts/canary.py --help` lists | `make canary` | Passes flags to the canary, such as `--set skeleton` to render one answer set or `--path fresh` to skip the update path. | the sets themselves: `config/project.json` `canary.answer_sets` | always |

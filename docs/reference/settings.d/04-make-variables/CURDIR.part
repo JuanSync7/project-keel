@@ -1,0 +1,1 @@
+| `CURDIR` | path | make's working directory | set by make | `make audit-project` | Nothing to set: make provides it. | the project to audit: `DEST` | always |

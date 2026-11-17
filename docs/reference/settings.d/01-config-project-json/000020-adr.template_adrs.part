@@ -1,0 +1,1 @@
+| `adr.template_adrs` | list of strings | every ADR file the template ships | file names in `adr.template_dir` | check_Y | A file in `adr.template_dir` that is not listed, or a listed file that is missing, is a check_Y error; `copier update` rewrites the list. | a project's own decision: write it in `adr.project_dir` | always |

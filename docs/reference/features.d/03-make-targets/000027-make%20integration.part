@@ -1,0 +1,1 @@
+| `make integration` `[local]` | Runs the integration tests only. | `make integration` | — | Some skip without git or an optional dependency. | [dev-loops.md](../guides/dev-loops.md) | always |

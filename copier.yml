@@ -54,6 +54,7 @@ _tasks:
 # own defaults, re-listed below, need only the row.
 # tests/integration/test_copier_shipping.py holds all of it.
 _exclude:
+  - "tests/integration/test_reference_fragments.py"
   # A custom _exclude REPLACES copier's built-in defaults, so re-list them here.
   - "copier.yml"
   - "copier.yaml"

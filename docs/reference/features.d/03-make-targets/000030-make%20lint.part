@@ -1,0 +1,1 @@
+| `make lint` `[local]` | Lints Python, the frontend and the shell scripts, and checks Python and shell formatting. | `make lint` | — | The frontend half exits 0 without `npm` or `node_modules`; the shell half exits 11 when a shell script exists and its tool is missing. | [python-style.md](../guides/python-style.md) | always |

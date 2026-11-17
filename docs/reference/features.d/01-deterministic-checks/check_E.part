@@ -1,0 +1,1 @@
+| `check_E` authored coverage | Refuses an `__all__`-exported symbol with no docstring, because the corpus uses it as the symbol's summary. | `make check` | — | Judges presence only, not whether the docstring is true. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

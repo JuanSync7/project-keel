@@ -1,0 +1,1 @@
+| `launcher.long_scripts.<name>.minutes` | integer | `make verify` gets `180`; `make test` gets `120`; `make canary` gets `360` | a whole number of minutes, 1 or more | `scripts/launch.py` (`load_launcher_config`) | Sets the time limit a farm submission asks for the listed launch key. | how long to wait for the farm to start it: `launcher.farm.wait_seconds` | always |

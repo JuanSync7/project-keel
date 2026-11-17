@@ -1,0 +1,1 @@
+| `runtime:langgraph` | Compiles a neutral Plan into a LangGraph state graph. | `get_runtime("langgraph")` | [`runtimes.available`](settings.md#configprojectjson) | Needs the `langgraph` profile's dependencies installed. | [agent-runtimes.md](../guides/agent-runtimes.md) | always |

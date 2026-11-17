@@ -138,7 +138,7 @@ canary: ## [read] Render each configured answer set fresh and as an update from 
 check: ## [local] Validate structure + frontmatter (3.6-safe)
 	$(PY) scripts/check_structure.py
 
-check-all: check-venv check check-corpus check-openapi check-aad check-cdmon check-exit-codes ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
+check-all: check-venv check check-corpus check-openapi check-aad check-cdmon check-exit-codes check-fragments ## [local] All deterministic checks (project interpreter; see docs/guides/deterministic-checks.md)
 check-corpus: check-python ## [local] Corpus integrity + build determinism (needs the project interpreter)
 	$(PY) scripts/jobs/check_corpus.py
 check-openapi: ## [local] Committed openapi.json in sync with the app (skips if FastAPI absent)
@@ -150,7 +150,12 @@ check-cdmon: ## [local] cdmon code-doc drift (a stated skip until cdmon and conf
 check-exit-codes: check-python ## [local] The exit-code table in the limits guide, and the shell helper scripts/exit_codes.sh, are what scripts/exit_codes.py and the gate's scripts say (needs the project interpreter)
 	$(PY) scripts/exit_code_table.py --check
 	$(PY) scripts/exit_code_table.py --shell --check
-check-docs: check ## [local] The structure gate + strict doc freshness: what every doc-review edit is gated on
+.PHONY: assemble-fragments check-fragments
+assemble-fragments: check-python ## [tree] Assemble reference tables from their entry files
+	$(PY) scripts/assemble_fragments.py
+check-fragments: check-python ## [local] Fail stale reference tables without writing
+	$(PY) scripts/assemble_fragments.py --check
+check-docs: check check-fragments ## [local] The structure gate + strict doc freshness: what every doc-review edit is gated on
 	$(PY) scripts/jobs/review_docs.py --strict
 
 restamp-docs: ## [tree] Set a stale `updated:` to today on every changed, new or committed-stale doc (the fix check-docs names)

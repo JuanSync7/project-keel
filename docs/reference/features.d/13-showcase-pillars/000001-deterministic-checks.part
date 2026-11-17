@@ -1,0 +1,1 @@
+| `deterministic-checks` | Deterministic checks | `make check-all`, `scripts/check_structure.py` |

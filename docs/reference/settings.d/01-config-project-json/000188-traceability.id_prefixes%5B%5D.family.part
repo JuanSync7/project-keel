@@ -1,0 +1,1 @@
+| `traceability.id_prefixes[].family` | string | `requirement` | `requirement`, `goal` | `scripts/traceability.py` (`load_policy`) | `requirement` makes ids under the prefix units a test must name; `goal` makes them recognised in a spec heading and never traced. | where the ids are defined: `traceability.id_prefixes[].source` | always |

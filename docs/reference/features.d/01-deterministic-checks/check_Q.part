@@ -1,0 +1,1 @@
+| `check_Q` cross-references | Refuses a relative Markdown link or a `§N` citation that names nothing. Shared scanning hides HTML block types 1 to 7; types 6 and 7 end before a blank line, so prose after HTML is checked. | `make check` | — | A link inside a code span is not a link. It does not fetch URLs. | [doc-style.md](../guides/doc-style.md) | always |

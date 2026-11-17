@@ -1,0 +1,1 @@
+| `make_targets.write_shape_exempt.<target>` | string | `{}` | a write-shaped target that is not a write, mapped to the reason it keeps its label | check_W | Lets the named target keep a label narrower than `[write]`; an entry naming no such target is stale. | a target that writes: label it `[write]` | always |

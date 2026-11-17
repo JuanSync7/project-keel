@@ -1,0 +1,1 @@
+| `launcher.default_size.minutes` | integer | `120` | a whole number of minutes, 1 or more | `scripts/launch.py` (`load_launcher_config`) | Sets the time limit a farm submission asks for an unlisted launch key. | a listed script's size: `launcher.long_scripts.<name>.minutes` | always |

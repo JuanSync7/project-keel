@@ -1,0 +1,1 @@
+| `scripts/accountability_report.py` | Lists corpus nodes that resolve to no owner and those that name no owner source, and counts apart those on the default owner and those with a real owner. | `make advise` | — | Informational: it never fails the build. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

@@ -1,0 +1,1 @@
+| `layers.app.language` | string | `python` | a language name | the showcase only (`src/backend/showcase/_repo.py`) | Changes the language the showcase displays for the app. | any check, which does not read it | always |

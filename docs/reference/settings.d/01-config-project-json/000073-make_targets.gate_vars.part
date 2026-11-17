@@ -1,0 +1,1 @@
+| `make_targets.gate_vars` | list of strings | `["PY"]` | make variable names | check_W; `scripts/run_make_target.py`; `scripts/child_env.py` | The gate runner accepts only these as `NAME=VALUE`, each value one path-like word. | the environment a child inherits: `child_env.names` | always |

@@ -1,0 +1,1 @@
+| `api/rest_fastapi/export_openapi.py --check` | switch | — | `true` when given | `api/rest_fastapi/export_openapi.py` | Exit 1 if the committed openapi.json is stale (CI / pre-commit). | the AAD schema: `scripts/agent_surface/generate_aad_schema.py` | always |

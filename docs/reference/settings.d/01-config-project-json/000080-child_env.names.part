@@ -1,0 +1,1 @@
+| `child_env.names` | list of strings | the tools, locale, proxy, CA-bundle, git-configuration, scratch, cache and reproducibility names | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` copies a listed name from the parent to every child. | a credential: `models.credential_env` | always |

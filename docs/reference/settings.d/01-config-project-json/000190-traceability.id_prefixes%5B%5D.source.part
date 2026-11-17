@@ -1,0 +1,1 @@
+| `traceability.id_prefixes[].source` | string | `self` | `self`, `spine` | `scripts/traceability.py` (`load_policy`) | `self` lets a spec in this project define the prefix's ids; `spine` says another system defines them, so a spec here that defines one is refused with exit 2. | what a test covers: `traceability.id_prefixes[].family` | always |

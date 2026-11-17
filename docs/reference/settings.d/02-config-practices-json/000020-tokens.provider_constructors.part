@@ -1,0 +1,1 @@
+| `tokens.provider_constructors` | list of strings | model-provider client class names | class names | `scripts/check_practices.py` | Changes which constructor calls the dependency-injection advisory reports. | the model adapters: `models/` | always |

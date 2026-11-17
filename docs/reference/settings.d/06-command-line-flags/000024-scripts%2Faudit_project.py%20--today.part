@@ -1,0 +1,1 @@
+| `scripts/audit_project.py --today` | string | — | any | `scripts/audit_project.py` | The date freshness calls today (default: SOURCE_DATE_EPOCH, else the gate run's date, else the clock). | updating the project: `copier update` | keel maintainers only |

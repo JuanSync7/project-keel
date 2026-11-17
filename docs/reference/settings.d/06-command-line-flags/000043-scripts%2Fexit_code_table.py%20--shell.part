@@ -1,0 +1,1 @@
+| `scripts/exit_code_table.py --shell` | switch | — | `true` when given | `scripts/exit_code_table.py` | Write the shell helper scripts/exit_codes.sh instead of the guide; with --check, exit 1 if it is stale or absent, whatever `shell.enabled` says. | switching the shell tools off: `shell.enabled` | always |

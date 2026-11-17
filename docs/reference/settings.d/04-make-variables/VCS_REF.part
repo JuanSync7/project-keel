@@ -1,0 +1,1 @@
+| `VCS_REF` | git ref | `HEAD` | a commit, tag or branch | `make new` | Generates from another ref, for example a release tag. | the destination: `DEST` | always |

@@ -1,0 +1,1 @@
+| `runtimes.default` | string | `inprocess` | a key of `runtimes.available` | check_H only: declarative | Nothing at run time: `runtimes.registry.DEFAULT_RUNTIME` (`inprocess`) decides what `get_runtime()` returns with no name, and nothing ties the two together. | choosing the runtime: change `runtimes/registry.py` | always |

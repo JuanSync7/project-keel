@@ -1,0 +1,1 @@
+| `.github/workflows/scheduled.yml` | Runs the doc review nightly and uploads its JSON as an artifact, the same doer `ops/scheduled/` runs from cron. | the schedule, or a manual run | — | Reports only: it changes nothing in the repository. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

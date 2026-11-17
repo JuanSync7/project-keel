@@ -1,0 +1,1 @@
+| `make check-corpus` `[local]` | Proves the corpus build is valid and reproducible. | `make check-corpus` | — | Passes when no local corpus exists. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

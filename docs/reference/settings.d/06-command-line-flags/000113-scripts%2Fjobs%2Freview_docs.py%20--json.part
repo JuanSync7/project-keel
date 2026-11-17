@@ -1,0 +1,1 @@
+| `scripts/jobs/review_docs.py --json` | switch | — | `true` when given | `scripts/jobs/review_docs.py` | Emit findings as JSON. | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |

@@ -1,0 +1,1 @@
+| `api/rest_fastapi/serve.py --host` | string | `'127.0.0.1'` | any | `api/rest_fastapi/serve.py` | the address to bind | the scenario server's address: `e2e.server.host` | always |

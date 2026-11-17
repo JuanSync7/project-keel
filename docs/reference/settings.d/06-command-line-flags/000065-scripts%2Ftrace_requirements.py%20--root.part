@@ -1,0 +1,1 @@
+| `scripts/trace_requirements.py --root` | string | `None` | any | `scripts/trace_requirements.py` | project root (default: this file's repo) | moving the specs: `traceability.specs_root` | always |

@@ -1,0 +1,1 @@
+| `JUNIT_XML` | path | unset | a file path | the `test` recipe, as pytest's `--junitxml` | Makes pytest write a junit report there; `scripts/gate_evidence.py` sets it per goal so the record counts tests from pytest's own report. | a nested pytest run, which never sees it because it is a make variable, not `PYTEST_ADDOPTS` | always |

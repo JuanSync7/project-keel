@@ -1,0 +1,1 @@
+| `edge nginx` | An nginx edge in front of the REST app. | see `api/edge_nginx/` | [`transports`](settings.md#copier-questions) | Present only when the project chose it; a config, not a hardened deployment. | `api/edge_nginx/` | when transports=edge_nginx |

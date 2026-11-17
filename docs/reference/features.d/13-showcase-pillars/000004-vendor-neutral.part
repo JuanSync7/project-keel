@@ -1,0 +1,1 @@
+| `vendor-neutral` | Vendor-neutral by design | `model:openai-compatible`, `runtime:inprocess`, `child_env` |

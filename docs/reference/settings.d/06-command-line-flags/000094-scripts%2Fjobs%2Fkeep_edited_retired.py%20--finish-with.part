@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --finish-with` | string | `None` | any | `scripts/jobs/keep_edited_retired.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

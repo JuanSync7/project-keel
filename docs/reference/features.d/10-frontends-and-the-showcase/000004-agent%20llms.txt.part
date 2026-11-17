@@ -1,0 +1,1 @@
+| `agent llms.txt` | Writes `llms.txt` and `llms-full.txt` from the corpus for agents to read. | `make site-data` | [`showcase`](settings.md#copier-questions), [`corpus.served_visibilities`](settings.md#configprojectjson) | Generated, never hand-edited, and not committed. Holds only nodes at a served level. | `docs/guides/showcase-site.md` | when showcase |

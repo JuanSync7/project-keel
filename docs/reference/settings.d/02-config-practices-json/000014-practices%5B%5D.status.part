@@ -1,0 +1,1 @@
+| `practices[].status` | string | `on` or `deferred` | `on`, `deferred` | `scripts/check_practices.py` | `deferred` keeps an advisory from firing. | the tier: `practices[].tier` | always |

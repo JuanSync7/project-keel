@@ -390,6 +390,16 @@ PRINCIPLES: tuple[Principle, ...] = (
 # Mirrors docs/guides/deterministic-checks.md. `present` is set at load time.
 CHECKS: tuple[Check, ...] = (
     Check(
+        slug="reference-fragments",
+        name="Reference fragments",
+        script="scripts/assemble_fragments.py",
+        gate="error",
+        interpreter="project",
+        command="make check-fragments",
+        when="Docs checks and CI",
+        purpose="Reference tables equal their configured fragments, retaining the output's updated stamp.",
+    ),
+    Check(
         slug="structure",
         name="Structure & frontmatter",
         script="scripts/check_structure.py",

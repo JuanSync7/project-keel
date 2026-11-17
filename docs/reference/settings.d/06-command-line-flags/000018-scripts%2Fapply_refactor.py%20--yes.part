@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --yes` | switch | — | `true` when given; requires `--discard-journal` | `scripts/apply_refactor.py` | Confirm human journal discard; refused alone. | confirming a refactor proposal: use the caller's edit policy instead | always |

@@ -1,0 +1,1 @@
+| `scripts/jobs/build_llms_txt.py --out-dir` | string | `wiki` | any | `scripts/jobs/build_llms_txt.py` | Output directory (default: wiki/); relative paths stay under --root, an explicit absolute directory authorizes that directory, and an escape exits 2. | the static site: `scripts/jobs/export_showcase_static.py` | when `showcase` is true |

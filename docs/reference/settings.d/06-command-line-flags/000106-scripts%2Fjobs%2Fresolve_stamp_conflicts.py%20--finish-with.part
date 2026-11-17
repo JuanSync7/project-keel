@@ -1,0 +1,1 @@
+| `scripts/jobs/resolve_stamp_conflicts.py --finish-with` | string | `None` | any | `scripts/jobs/resolve_stamp_conflicts.py` | Run as a copier update migration: a refusal names the command that finishes the update under this interpreter. | restamping: `scripts/jobs/restamp_docs.py` | always |

@@ -1,0 +1,1 @@
+| `scripts/check_generic.py` | Flags a distinctive literal that a test asserts and `src/` hardcodes, the answer-key smell. | `make advise` | — | Advisory only: it never fails the build, and it over- and under-flags. | [generic-solution.md](../guides/generic-solution.md) | always |

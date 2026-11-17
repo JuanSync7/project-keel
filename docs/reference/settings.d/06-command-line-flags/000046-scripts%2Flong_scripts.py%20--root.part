@@ -1,0 +1,1 @@
+| `scripts/long_scripts.py --root` | string | `None` | any | `scripts/long_scripts.py` | the project whose config/project.json and durations file are read (default: the project this script ships in) | deciding where a script runs: `scripts/launch.py` | always |

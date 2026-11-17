@@ -1,0 +1,1 @@
+| `work_naming.backlog_trailer` | string | `Backlog` | a git trailer key | `tests/integration/test_work_trailers.py` | Changes the optional trailer that carries a backlog id. | the slice trailer: `work_naming.slice_trailer` | always |

@@ -1,0 +1,1 @@
+| `work_naming.plan_kinds` | list of strings | `["design"]` | frontmatter `kind` values | check_Z | A Markdown document of a listed kind that holds a slice table is a plan doc. | an ADR, which check_Y holds | always |

@@ -1,0 +1,1 @@
+| `e2e.server.request_timeout_s` | number | `30` | a positive number of seconds | `tests/live_server.py` | Bounds each request a scenario makes, so a hung route fails rather than blocks. | the readiness bound: `e2e.server.ready_timeout_s` | always |

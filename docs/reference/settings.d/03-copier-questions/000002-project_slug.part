@@ -1,0 +1,1 @@
+| `project_slug` | string, not asked | computed: `project_name` lowercased, each space and hyphen turned into `_` | derived only | copier, rendering `config/project.json` `name` and `pyproject.toml` | Nothing directly: change `project_name`. | display text: `project_title` | always |

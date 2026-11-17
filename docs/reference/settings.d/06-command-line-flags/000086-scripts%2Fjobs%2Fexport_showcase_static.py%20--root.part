@@ -1,0 +1,1 @@
+| `scripts/jobs/export_showcase_static.py --root` | string | this checkout | any | `scripts/jobs/export_showcase_static.py` | Repo root (default: this repo). | llms.txt alone: `scripts/jobs/build_llms_txt.py` | when `showcase` is true |

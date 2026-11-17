@@ -1,0 +1,1 @@
+| `scripts/query_corpus.py --max-nodes` | integer | `8` | a whole number | `scripts/query_corpus.py` | Max candidate nodes. | building the corpus: `scripts/jobs/build_corpus.py` | always |

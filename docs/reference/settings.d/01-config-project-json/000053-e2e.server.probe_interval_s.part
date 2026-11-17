@@ -1,0 +1,1 @@
+| `e2e.server.probe_interval_s` | number | `0.1` | a positive number of seconds | `tests/live_server.py`; `tests/stub_model_server.py` | Changes how often the probe is polled while the server starts. | the readiness bound: `e2e.server.ready_timeout_s` | always |

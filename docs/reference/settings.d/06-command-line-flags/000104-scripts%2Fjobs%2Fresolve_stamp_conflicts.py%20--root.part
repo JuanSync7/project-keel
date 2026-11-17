@@ -1,0 +1,1 @@
+| `scripts/jobs/resolve_stamp_conflicts.py --root` | string | `None` | any | `scripts/jobs/resolve_stamp_conflicts.py` | The project (default: the current directory). | restamping: `scripts/jobs/restamp_docs.py` | always |

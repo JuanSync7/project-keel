@@ -1,0 +1,1 @@
+| `transports.grpc.port` | integer | `50051` | a whole number from 1 to 65535 | `api/grpc/server.py` (`serve`) | Sets the TCP port the gRPC server listens on; a `port` argument to `serve` overrides it. Absent, `serve` writes `[using default] transports.grpc.port = 50051` to stderr. | the REST API's port: `make run-api` | always |

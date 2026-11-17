@@ -1,0 +1,1 @@
+| `make help` `[local]` | Lists every annotated target with its effect label. | `make help` | [`EFFECT`](settings.md#make-variables), [`AREA`](settings.md#make-variables) | Lists annotated targets only. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

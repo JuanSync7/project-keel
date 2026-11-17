@@ -1,0 +1,1 @@
+| `launcher.farm.adapters.<name>.kind` | string | `none` gets `none`; `slurm` gets `argv` | `none` (no farm) or `argv` (submit through the command `submit` names) | `scripts/launch.py` (`load_launcher_config`) | Says how the adapter reaches its farm; an adapter of kind `none` takes no other key. | choosing the adapter: `launcher.farm.adapter` | always |

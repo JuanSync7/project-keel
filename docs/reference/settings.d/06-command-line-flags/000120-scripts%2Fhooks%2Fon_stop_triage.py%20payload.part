@@ -1,0 +1,1 @@
+| `scripts/hooks/on_stop_triage.py payload` | positional string | `'-'` | any | `scripts/hooks/on_stop_triage.py` | Event payload, or '-' to read stdin. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |

@@ -1,0 +1,1 @@
+| `tokens.acquire_apis` | list of strings | resource-acquiring calls such as `open` and `connect` | dotted call names | `scripts/check_practices.py` | Changes which calls the resource-context-manager advisory expects inside `with`. | tensor types: `tokens.tensor_base_types` | always |

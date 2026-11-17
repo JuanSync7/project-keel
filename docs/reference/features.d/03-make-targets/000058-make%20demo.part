@@ -1,0 +1,1 @@
+| `make demo` `[local]` | Runs the demo in `demo/`. | `make demo` | — | An illustration, not a test. | [agent-runtimes.md](../guides/agent-runtimes.md) | always |

@@ -1,0 +1,1 @@
+| `DEST` | path | unset | a directory | `make new`, `make audit-project` | Names the project to generate into, or the project to audit. | the template ref: `VCS_REF` | always |

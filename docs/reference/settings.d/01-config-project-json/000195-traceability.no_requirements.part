@@ -1,0 +1,1 @@
+| `traceability.no_requirements` | string or null | `null` | `null`, or the non-blank reason the project has no requirement yet | `scripts/traceability.py` (`judge`) | A reason lets zero requirements pass; `null` makes zero requirements a finding, and a reason is a finding once a requirement or a marker exists. | excusing one unit: `traceability.gaps` | always |

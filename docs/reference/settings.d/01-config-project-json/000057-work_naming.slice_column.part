@@ -1,0 +1,1 @@
+| `work_naming.slice_column` | string | `Slice` | a table header cell | check_Z | Changes the first header cell that marks a plan doc's slice table. | the commit trailer: `work_naming.slice_trailer` | always |

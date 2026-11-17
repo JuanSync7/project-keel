@@ -1,0 +1,1 @@
+| `work_naming.adoption_boundary` | string or null | `null` | a commit, or `null` for every commit | check_Z; `tests/integration/test_work_trailers.py` | Commits before the boundary are not judged for trailers. | plan docs, which are judged whatever their age | always |

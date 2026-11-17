@@ -1,0 +1,1 @@
+| `transports` | list of strings | `[]` | any of `grpc`, `edge_nginx`; REST and MCP always ship | copier `_exclude` and `_migrations`; `config/project.json.jinja` | Keeps the listed add-on transports: an unlisted one drops `api/grpc` (with `tests/unit/api/test_grpc_server.py`) or `api/edge_nginx` and its `transports` entries. | REST and MCP, which every project keeps | always |

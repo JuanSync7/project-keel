@@ -1,0 +1,1 @@
+| `rulesets.mypy.flags` | list of strings | `["strict", "warn_unreachable"]` | mypy configuration flags | check_M | A listed flag off in `pyproject.toml` `[tool.mypy]` is a check_M error. | where mypy runs: `rulesets.mypy.scope` | always |

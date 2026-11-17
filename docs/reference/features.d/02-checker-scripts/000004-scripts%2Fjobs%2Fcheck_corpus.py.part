@@ -1,0 +1,1 @@
+| `scripts/jobs/check_corpus.py` | Proves a fresh corpus build is valid, acyclic and reproducible, and that a local `wiki/corpus.json` is current. | `make check-corpus` | — | Passes when no local corpus has been built; it then judges a fresh build only. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

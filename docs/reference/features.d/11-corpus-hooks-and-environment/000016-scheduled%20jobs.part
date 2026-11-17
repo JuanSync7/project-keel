@@ -1,0 +1,1 @@
+| `scheduled jobs` | Runs a `scripts/jobs/` doer on a cadence through a thin cron or systemd adapter in `ops/scheduled/`. | install the example adapter | — | Examples only: nothing is scheduled until you install one. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

@@ -1,0 +1,1 @@
+| `CI` | flag | unset | any non-empty value | `WRITE_GUARD` | Makes every `[write]` target refuse to run. | the gate runner's marker: `RALPH` | always |

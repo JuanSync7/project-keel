@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --discard-journal` | switch | — | `true` when given; requires `--yes`; mutually exclusive with `--dry-run` and `--recover` | `scripts/apply_refactor.py` | Human only: delete the configured journal without changing targets, even if the evidence is corrupt. | restoring targets: `--recover` | always |

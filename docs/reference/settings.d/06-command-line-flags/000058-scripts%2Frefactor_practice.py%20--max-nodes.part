@@ -1,0 +1,1 @@
+| `scripts/refactor_practice.py --max-nodes` | integer | `8` | a whole number | `scripts/refactor_practice.py` | The knowledge-graph neighbourhood budget (chunks to walk). | documents: `scripts/doc_review.py` | always |

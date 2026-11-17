@@ -1,0 +1,1 @@
+| `scripts/audit_project.py --json` | switch | — | `true` when given | `scripts/audit_project.py` | Canonical JSON (sort_keys) on stdout. | updating the project: `copier update` | keel maintainers only |

@@ -1,0 +1,1 @@
+| `PUBLIC_DATA_MODE` | string | unset: live API; the Pages workflow sets `static` | `static`, or unset | `src/frontend/astro/src/layouts/Layout.astro`; `src/frontend/astro/src/lib/api.ts`; `.github/workflows/pages.yml` | `static` makes the app read exported JSON instead of calling the API. | the API origin: `PUBLIC_API_BASE` | when `frontend_stack` is `astro` |

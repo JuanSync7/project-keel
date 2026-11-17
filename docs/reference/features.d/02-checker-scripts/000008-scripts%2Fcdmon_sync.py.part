@@ -1,0 +1,1 @@
+| `scripts/cdmon_sync.py` | Runs the external cdmon code-to-doc drift check, as the worked example of a thin adapter over an external tool. | `make check-cdmon` | — | A stated skip until `cdmon` is on PATH and `config/cdmon/cdmon.yaml` exists; cdmon is not on PyPI. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

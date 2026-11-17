@@ -1,0 +1,1 @@
+| `layers.backend.path` | string | `src/backend` | an existing directory | check_H | Moves where the backend is looked for; a missing directory is an error. | the composition root: `layers.app.path` | always |

@@ -1,0 +1,1 @@
+| `make check-docs` `[local]` | Runs the structure gate and the strict freshness review, which every doc-review edit is gated on. | `make check-docs` | — | Judges stamps and structure, not prose quality. | [doc-style.md](../guides/doc-style.md) | always |

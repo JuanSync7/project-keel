@@ -1,0 +1,1 @@
+| `rulesets.mypy.ratchet.<root>.removed_when` | string | the condition under which the root joins `scope` | non-empty prose | `tests/integration/test_gate_scope.py` | Changes the stated exit condition, which must be non-empty; nothing checks that the condition is met. | the recorded count: `rulesets.mypy.ratchet.<root>.errors` | always |

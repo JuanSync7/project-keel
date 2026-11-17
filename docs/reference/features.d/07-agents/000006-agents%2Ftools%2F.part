@@ -1,0 +1,1 @@
+| `agents/tools/` | The shared tool specs: how an agent invokes a `scripts/` doer, its effect and when not to use it. | read by the agents | — | Specs, not code; check_F and check_G hold them. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

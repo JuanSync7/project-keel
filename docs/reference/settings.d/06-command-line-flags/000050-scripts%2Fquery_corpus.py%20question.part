@@ -1,0 +1,1 @@
+| `scripts/query_corpus.py question` | positional string | — | any | `scripts/query_corpus.py` | The question / keywords to retrieve for. | building the corpus: `scripts/jobs/build_corpus.py` | always |

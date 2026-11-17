@@ -1,0 +1,1 @@
+| `make restamp-docs` `[tree]` | Sets a stale `updated:` to today on each document that needs it, the fix `make check-docs` names. | `make restamp-docs` | [`scripts/jobs/restamp_docs.py --today`](settings.md#command-line-flags) | Changes the stamp only; it does not review the change. | [idempotency.md](../guides/idempotency.md) | always |

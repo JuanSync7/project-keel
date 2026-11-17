@@ -1,0 +1,1 @@
+| `scripts/jobs/check_corpus.py --corpus` | string | `None` | any | `scripts/jobs/check_corpus.py` | Validate this existing corpus file instead of a fresh build; also warns if it is stale vs a fresh build. | writing the corpus: `scripts/jobs/build_corpus.py` | always |

@@ -1,0 +1,1 @@
+| `layers.app.module` | string | `app` | an importable module | check_H; `scripts/run_app.py` | Changes the module `make run` runs as `__main__`. | an API server: `make run-api` | always |

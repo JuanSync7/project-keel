@@ -1,0 +1,1 @@
+| `make run` `[local]` | Runs the composition root `config/project.json` `layers.app` declares. | `make run` | [`layers.app`](settings.md#configprojectjson) | Refuses when `layers.app` is `null`. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | always |

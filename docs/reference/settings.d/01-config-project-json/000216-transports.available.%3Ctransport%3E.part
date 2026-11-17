@@ -1,0 +1,1 @@
+| `transports.available.<transport>` | string | `rest` and `mcp`, plus `grpc` and `edge_nginx` when answered | a transport name mapped to its directory | check_H; the showcase | Declares a transport and its directory; an `api/` subdirectory not declared warns. | enabling it: `transports.enabled` | always |

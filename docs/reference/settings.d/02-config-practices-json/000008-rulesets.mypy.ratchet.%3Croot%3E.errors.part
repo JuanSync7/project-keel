@@ -1,0 +1,1 @@
+| `rulesets.mypy.ratchet.<root>.errors` | integer | the recorded error measurement of each root outside `scope` | an integer `>= 1` | `tests/integration/test_gate_scope.py` | Changes the recorded measurement only; no gate measures the root's errors against it. | a root in `scope` | always |

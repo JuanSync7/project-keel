@@ -1,0 +1,1 @@
+| `gate runner` | Runs only a gate-labelled make target and fails a run that changed what git sees. | `python3 scripts/run_make_target.py <target>` | [`make_targets.gate_effects`](settings.md#configprojectjson) | Sees only what git lists: a write to an ignored path passes. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

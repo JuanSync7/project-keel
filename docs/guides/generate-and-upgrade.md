@@ -9,7 +9,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with one checklist row per task and migration an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-16
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -110,6 +110,7 @@ exactly the files this judgment says arrive.
 | `.svn` | never | another tool's metadata |
 | `.venv` | never | the template's own interpreter |
 | `/tmp` | never | a person's scratch at the root, ignored by `.gitignore`; the entry keeps a force-added file out of every generated project, and a `tmp` directory deeper in the tree still ships |
+| `tests/integration/test_reference_fragments.py` | never | template regression scenarios use the template's branch fixtures; projects receive the assembler and its read-only make gate |
 | `docs/internals` | never | one exclusion omits the template's own plans and run records, which name campaigns a new project does not declare |
 | `wiki/corpus.json` | absent; `make site-data` builds it | a generated view of the tree |
 | `wiki/llms.txt` | absent; `make site-data` builds it with the showcase | a generated view of the corpus |

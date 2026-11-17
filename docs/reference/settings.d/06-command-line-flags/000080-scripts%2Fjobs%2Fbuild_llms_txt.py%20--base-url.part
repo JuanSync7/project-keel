@@ -1,0 +1,1 @@
+| `scripts/jobs/build_llms_txt.py --base-url` | string | `''` | any | `scripts/jobs/build_llms_txt.py` | Absolute site base for links (default: relative). | the static site: `scripts/jobs/export_showcase_static.py` | when `showcase` is true |

@@ -1,0 +1,1 @@
+| `SOURCE_DATE_EPOCH` | integer seconds | unset: the gate run's date (`KEEL_GATE_RUN_DATE`), else the local clock | seconds since the epoch | `scripts/jobs/review_docs.py`, whose `resolve_today` `scripts/jobs/restamp_docs.py` shares | Pins the date the doc review and the restamper call today, read in UTC. | the date flag: `--today` | always |

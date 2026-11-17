@@ -1,0 +1,1 @@
+| `scripts/jobs/restamp_docs.py --quiet` | switch | — | `true` when given | `scripts/jobs/restamp_docs.py` | Do not list the files written. | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |

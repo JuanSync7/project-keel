@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --recover` | switch | — | `true` when given; mutually exclusive with `--dry-run` and `--discard-journal` | `scripts/apply_refactor.py` | Replay or clean the configured journal and exit without reading a spec or stdin. | abandoning recovery: `--discard-journal --yes` | always |

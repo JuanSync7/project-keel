@@ -1,0 +1,1 @@
+| `make agent-surface-schema` `[tree]` | Regenerates the committed AAD JSON Schema from the model. | `make agent-surface-schema` | — | Writes the tree; `make check-aad` is the gate. | [agent-surface.md](../guides/agent-surface.md) | always |

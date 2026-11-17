@@ -1,0 +1,1 @@
+| `scripts/doc_review.py --max-chunks` | integer | `8` | a whole number | `scripts/doc_review.py` | Chunks to review per run. | code practices: `scripts/refactor_practice.py` | always |

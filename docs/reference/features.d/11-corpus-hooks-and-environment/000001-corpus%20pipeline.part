@@ -1,0 +1,1 @@
+| `corpus pipeline` | Compiles documents, modules and symbols into one knowledge graph that agents query. | `make site-data` | — | Edges come from a closed set of kinds; a stale local corpus fails `make check-corpus`. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

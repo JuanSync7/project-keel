@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --dry-run` | switch | — | `true` when given | `scripts/apply_refactor.py` | Validate + show the planned files, write nothing. | choosing the edit: `scripts/refactor_practice.py` | always |

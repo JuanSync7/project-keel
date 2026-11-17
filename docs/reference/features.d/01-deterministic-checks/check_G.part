@@ -1,0 +1,1 @@
+| `check_G` tool and agent binding | Refuses a tool that an agent's `tools.md` lists without the spec's `## Used by` naming that agent, or the reverse. | `make check` | — | Judges the two lists agree; it does not run the tool. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

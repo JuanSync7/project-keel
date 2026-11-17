@@ -1,0 +1,7 @@
+
+## Model and runtime adapters
+
+A provider is a thin adapter behind a registry, so no doer names a vendor.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

@@ -1,0 +1,1 @@
+| `make openapi` `[tree]` | Regenerates the committed OpenAPI contract from the live app. | `make openapi` | — | Writes the tree; `make check-openapi` is the gate. Requires FastAPI and the app's dependencies. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

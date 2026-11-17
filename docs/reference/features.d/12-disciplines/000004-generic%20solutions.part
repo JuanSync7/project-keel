@@ -1,0 +1,1 @@
+| `generic solutions` | A change solves the class of inputs, never the example a test names. | `make advise` | — | `make advise` flags answer keys; it never fails the build. | [generic-solution.md](../guides/generic-solution.md) | always |

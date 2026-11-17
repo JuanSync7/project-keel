@@ -1,0 +1,1 @@
+| `check_J` owned exceptions | Refuses a `raise` of an exception type imported from a foreign module in `src`, `models`, `runtimes` and `agents`. | `make check` | [a practice's `status`](settings.md#configpracticesjson) | Waivable with `# practice-ok: <reason>`. Other code roots are not judged. | [coding-practices.md](../guides/coding-practices.md) | always |

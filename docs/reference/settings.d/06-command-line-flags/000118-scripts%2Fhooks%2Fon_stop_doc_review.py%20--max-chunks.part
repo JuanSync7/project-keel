@@ -1,0 +1,1 @@
+| `scripts/hooks/on_stop_doc_review.py --max-chunks` | integer | `8` | a whole number | `scripts/hooks/on_stop_doc_review.py` | Chunks to review per run. | an on-demand review: `make doc-review` | always |

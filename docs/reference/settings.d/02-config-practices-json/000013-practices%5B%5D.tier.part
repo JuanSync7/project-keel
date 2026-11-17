@@ -1,0 +1,1 @@
+| `practices[].tier` | string | `gate`, `advisory` or `doc` | `gate`, `advisory`, `doc` | `scripts/check_practices.py`; `agents/practice_refactor/`; the showcase | `scripts/check_practices.py` runs only the `advisory` practices; a `gate` practice is carried by a check and a `doc` practice by a guide. | the enforcing mechanism: `practices[].enforced_by` | always |

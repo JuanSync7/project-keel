@@ -8,7 +8,7 @@ owner: TBD
 summary: Every setting keel reads, with its type, default, valid values, reader, effect, what it is not for, and which projects receive it. The rows are derived-equal to the code by tests/integration/test_reference_drift.py.
 id: docs-reference-settings
 created: 2026-10-09
-updated: 2026-11-16
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -273,6 +273,12 @@ the checks named per row), and CONVENTIONS §15 says what it is for.
 | `expiring_tier.baseline` | string | `config/gate-baseline.json` (required, no default in the loader) | a repo-relative path with no `..` part | `scripts/expiring_tier.py` (`load_policy`, `read_baseline`), `scripts/record_gate_baseline.py` | Names the file of a generated project's recorded gate findings. Each finding it records warns until `expiring_tier.expires`; a finding it does not record is red, and an entry no finding matches is red. `make gate-baseline` writes it. The template repository has no such file, because there every finding is red. The writer refuses a resolved escape from the project with CONFIG before running checks. | excusing a whole file's reads: `config_reads.allowed.<name>`, which carries a reason | always |
 | `expiring_tier.expires` | string | `2027-01-31` (required, no default in the loader) | a calendar date written YYYY-MM-DD, no later than `scripts/expiring_tier_data.py` `CEILING` | `scripts/expiring_tier.py` (`load_policy`) | Sets the day a generated project's recorded findings turn red. An earlier date ends the grace sooner. A date later than the ceiling, or not a calendar date, fails every gate test that adopts the tier, because the ceiling is keel's and copier rewrites it on every update. | moving the ceiling itself: that is `scripts/expiring_tier_data.py`, which keel owns | always |
 | `practices.profiles.<profile>` | boolean | `false` for `ai`, `cuda` and `langgraph`, or `true` for each copier `profiles` answer | `true` or `false`; a profile defined in `config/practices.json` `profiles` | check_H; check_L; `scripts/check_practices.py` | `true` turns that domain profile's checks on; a non-boolean is an error and a name with no defined profile warns; with `practices.profiles` absent no profile is on and `scripts/check_practices.py` writes `[using default] practices.profiles = {}` to stderr. | defining a profile: `config/practices.json` | always |
+| `reference_fragments.root` | string | `docs/reference` | project-relative directory to scan for unregistered folders | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
+| `reference_fragments.folder_suffix` | string | `.d` | suffix identifying fragment roots under the discovery directory | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
+| `reference_fragments.suffix` | string | `.part` | entry suffix; .md is refused because fragments are not governed documents | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
+| `reference_fragments.sets[].output` | string | `docs/reference/settings.md`, `docs/reference/features.md` | assembled Markdown paths | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
+| `reference_fragments.sets[].head` | string | the corresponding folder's `head.part` | frontmatter and introductory fixed text | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
+| `reference_fragments.sets[].folder` | string | `docs/reference/settings.d`, `docs/reference/features.d` | one root per reference, containing sorted per-table directories and fixed head and tail files | `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Configures deterministic reference assembly and its read-only check. | date stamping: `scripts/jobs/restamp_docs.py` | always |
 
 ## config/practices.json
 
@@ -524,6 +530,8 @@ source of a literal default; `—` means the flag has no default.
 | `scripts/hooks/on_stop_triage.py --model` | string | `None` | any | `scripts/hooks/on_stop_triage.py` | Model name from models/ registry. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |
 | `scripts/agent_surface/generate_aad_schema.py --out` | string | `config/agent_surface/aad-v1.0.schema.json` | any | `scripts/agent_surface/generate_aad_schema.py` | Output path (default: the schema file under config/agent_surface/). Relative paths stay inside the project; an explicit absolute path authorizes its parent directory. Escapes exit 2. | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
 | `scripts/agent_surface/generate_aad_schema.py --check` | switch | — | `true` when given | `scripts/agent_surface/generate_aad_schema.py` | Exit 1 if the committed schema is stale (CI / pre-commit). | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
+| `scripts/assemble_fragments.py --check` | flag | — | present or absent | `scripts/assemble_fragments.py` | Compares all configured references without writing and names stale files. | repairing a reference: run without this flag | always |
+| `scripts/assemble_fragments.py --root` | path | this script's checkout root | project directory | `scripts/assemble_fragments.py` | Loads the target project's fragment configuration. | choosing an individual table: edit that table's entry file | always |
 
 ## Illustrative examples
 

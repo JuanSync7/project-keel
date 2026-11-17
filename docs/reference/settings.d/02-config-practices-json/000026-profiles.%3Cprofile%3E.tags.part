@@ -1,0 +1,1 @@
+| `profiles.<profile>.tags` | list of strings | corpus tags per profile | corpus node tags | `agents/practice_refactor/` | Scopes the profile's checks to corpus nodes carrying a listed tag. | enabling the profile: `config/project.json` `practices.profiles.<profile>` | always |

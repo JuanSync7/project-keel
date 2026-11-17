@@ -1,0 +1,1 @@
+| `RALPH` | flag | unset; the gate runner sets `1` | any non-empty value | `WRITE_GUARD` | Makes every `[write]` target refuse to run. | CI: `CI` | always |

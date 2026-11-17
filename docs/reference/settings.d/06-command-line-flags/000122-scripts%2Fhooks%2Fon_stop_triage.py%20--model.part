@@ -1,0 +1,1 @@
+| `scripts/hooks/on_stop_triage.py --model` | string | `None` | any | `scripts/hooks/on_stop_triage.py` | Model name from models/ registry. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |

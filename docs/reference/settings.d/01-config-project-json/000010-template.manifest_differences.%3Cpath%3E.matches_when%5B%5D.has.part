@@ -1,0 +1,1 @@
+| `template.manifest_differences.<path>.matches_when[].has` | JSON value | no default; one operator per condition | any JSON value; the parity test refuses `has` on a question whose answer is not a list | `tests/integration/test_doc_drift.py` | The condition holds on an answer set whose list answer contains the value. | selecting a question: `answer` | keel maintainers only |

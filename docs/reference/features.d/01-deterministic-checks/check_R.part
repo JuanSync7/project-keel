@@ -1,0 +1,1 @@
+| `check_R` catalogue parity | Refuses a disagreement between the checks catalogue and the Makefile and pre-commit triggers that run the checks. | `make check` | — | Silent without a catalogue; the shapes it cannot read are WARNs. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

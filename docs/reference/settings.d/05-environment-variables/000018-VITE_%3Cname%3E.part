@@ -1,0 +1,1 @@
+| `VITE_<name>` | string; dynamic | unset | any | Vite, which exposes a variable with this prefix to the browser code | Makes a value visible to the react-vite frontend at build time. | a secret, which must never carry this prefix | when `frontend_stack` is `react-vite` |

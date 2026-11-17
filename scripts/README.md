@@ -9,7 +9,7 @@ tags: []
 summary: Dev and CI automation, one-shots, and the deterministic checks.
 id: scripts-readme
 created: 2026-06-17
-updated: 2026-11-13
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -33,6 +33,7 @@ is the template; see [ADR-K-0004](../docs/adr/keel/K-0004-project-templating-cop
 
 | Member | Purpose | Not for | Run by |
 |--------|---------|---------|--------|
+| `assemble_fragments.py` | Assembles configured reference tables from independent entry files; `--check` names stale references without writing | Stamping dates: `jobs/restamp_docs.py` owns `updated:`; prose authoring stays in the fragments | `make assemble-fragments`; `make check-fragments` (from `check-all` and `check-docs`) |
 | `changed_cache.py` | Shared checkout-relative cache shape and confinement without git, plus git write validation for the runner; stdlib-only and 3.6-safe for check_structure and its evidence-writer importers | Running pytest — `changed_tests.py`; ending a process — the caller handles its refusal | Imported by `changed_tests.py` and `check_structure.py`; no CLI |
 | `changed_tests.py` | Runs pytest's failure-only loop with a checkout-local ignored cache; uses changed_cache.py for cache shape plus git write validation, where check_H judges shape only, and refuses a disabled cacheprovider before collection | The gate — `make verify` runs every check without this cache | `make test-changed`; `--help` describes the runner |
 | `atomic_write.py` | Publishes UTF-8 text or bytes through a sibling temporary file, preserving existing permissions or the creation umask for a new target; flushes and fsyncs before replacement, removes the temporary file on error and leaves identical contents untouched | Authorizing output paths — callers do that; secret-scanner records — `scan_secrets.py` owns their publication policy | `jobs/build_corpus.py`, `jobs/link_corpus.py`, `jobs/build_llms_txt.py`; imported, no CLI |

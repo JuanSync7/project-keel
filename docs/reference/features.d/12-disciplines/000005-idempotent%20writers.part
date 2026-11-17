@@ -1,0 +1,1 @@
+| `idempotent writers` | A writer declares what a second run does and reaches a fixed point. | `make check` | — | check_V holds the declaration; the proof is a test or a `--check` target. | [idempotency.md](../guides/idempotency.md) | always |

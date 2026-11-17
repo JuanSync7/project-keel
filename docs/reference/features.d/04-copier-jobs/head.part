@@ -1,0 +1,9 @@
+
+## Copier jobs
+
+Each job runs under `copier copy` or `copier update` and refuses, naming the
+file, the line and the command that finishes the update, when a file it reads
+holds a conflict hunk.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

@@ -1,0 +1,1 @@
+| `scripts/hooks/on_stop_doc_review.py payload` | positional string | `'-'` | any | `scripts/hooks/on_stop_doc_review.py` | Event payload, or '-' to read stdin (ignored: the review is of the tree). | an on-demand review: `make doc-review` | always |

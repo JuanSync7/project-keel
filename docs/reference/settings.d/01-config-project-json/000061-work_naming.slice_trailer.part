@@ -1,0 +1,1 @@
+| `work_naming.slice_trailer` | string | `Slice` | a git trailer key | `tests/integration/test_work_trailers.py` | Changes the trailer a delivering commit carries its slice id in. | the plan doc's column: `work_naming.slice_column` | always |

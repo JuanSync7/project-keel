@@ -1,0 +1,1 @@
+| `schema_version` | integer | `1` | an integer | nothing: a dead key, queued and not wired | Nothing. | versioning the corpus, which has its own `schema_version` | always |

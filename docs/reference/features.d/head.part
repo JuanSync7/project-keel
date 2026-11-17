@@ -1,0 +1,24 @@
+---
+title: Feature catalogue
+kind: doc
+form: reference
+layer: n/a
+status: template
+owner: TBD
+summary: Every feature keel ships, with what it does and why, how to run it, the settings it reads, where it stops and what it is not for, the guide that explains it, and which projects receive it. The rows of the shapes the tree declares are derived-equal to the tree by tests/integration/test_reference_drift.py.
+id: docs-reference-features
+created: 2026-10-09
+updated: 2026-11-12
+visibility: internal
+canonical: true
+---
+
+# Feature catalogue
+
+This page lists every feature keel ships, one row each, with its limits.
+`config/project.json` `doc_drift.features_reference` names this page, and
+`tests/integration/test_reference_drift.py` holds its rows to the tree. Every
+section's table has the same seven columns, and the first code span in the
+Feature cell is the row's key. The `## Conventions` section at the end says
+which keys the test derives and what the Ships column means.
+

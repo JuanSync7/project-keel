@@ -1,0 +1,8 @@
+
+## Make targets
+
+Each annotated target, with the effect label its `## ` help opens with. `make
+help` lists them; `make help EFFECT=<word>` filters by label.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

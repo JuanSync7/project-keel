@@ -1,0 +1,1 @@
+| `scripts/child_env_entry.py` | Wraps entry functions so an escaping child environment refusal returns a CONFIG report through `finish(main())`. | imported by entry scripts | — | Library operations keep raising. Not the policy builder: `scripts/child_env.py` decides refusals. Stdlib-only and Python 3.6-safe. | [python-style.md](../guides/python-style.md) | always |

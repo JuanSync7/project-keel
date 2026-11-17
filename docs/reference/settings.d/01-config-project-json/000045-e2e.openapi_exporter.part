@@ -1,0 +1,1 @@
+| `e2e.openapi_exporter` | string | `export_openapi.py` | a script file name inside the `rest` transport directory that takes `--out <path>` | `tests/integration/test_e2e_coverage.py` | Names the script the `openapi` derivation runs to write the app's OpenAPI document. | serving the document: the app serves it at `/openapi.json` | always |

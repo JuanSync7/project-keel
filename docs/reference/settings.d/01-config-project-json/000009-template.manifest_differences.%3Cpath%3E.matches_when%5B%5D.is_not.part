@@ -1,0 +1,1 @@
+| `template.manifest_differences.<path>.matches_when[].is_not` | JSON value | no default; one operator per condition | any JSON value | `tests/integration/test_doc_drift.py` | The condition holds on an answer set whose completed answer does not equal the value. | selecting a question: `answer` | keel maintainers only |

@@ -1,0 +1,1 @@
+| `make_targets.write_shapes` | list of strings | `[]` | target-name suffixes | check_W | A target whose name ends in a listed suffix must be labelled `[write]`. | an exemption: `make_targets.write_shape_exempt` | always |

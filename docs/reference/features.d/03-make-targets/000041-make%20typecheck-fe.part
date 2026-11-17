@@ -1,0 +1,1 @@
+| `make typecheck-fe` `[local]` | Type-checks each frontend app. | `make typecheck-fe` | [`FE_APPS`](settings.md#make-variables) | Exits 0 when no frontend app or `node_modules` is found. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

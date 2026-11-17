@@ -1,0 +1,1 @@
+| `traceability.id_prefixes[].digits` | integer | `4` | a positive integer | `scripts/traceability.py` (`load_policy`) | Fixes how many ASCII digits follow the prefix; an id with any other count does not parse. | the criterion number after `#AC-`, which has no fixed width | always |

@@ -9,7 +9,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-11-10
+updated: 2026-11-17
 visibility: internal
 canonical: true
 ---
@@ -517,6 +517,7 @@ and holds their conflict and duplicate-key paths to this contract.
 |--------|------|
 | `api/rest_fastapi/export_openapi.py` | 0, 1 |
 | `scripts/agent_surface/generate_aad_schema.py` | 0, 1, 2 |
+| `scripts/assemble_fragments.py` | 0, 1, 2, 14 |
 | `scripts/cdmon_sync.py` | 0, 2, 14, passes through |
 | `scripts/check_python_version.py` | 0, 1 |
 | `scripts/check_structure.py` | 0, 1, 2, 14 |

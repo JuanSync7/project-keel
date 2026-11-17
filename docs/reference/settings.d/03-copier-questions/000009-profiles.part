@@ -1,0 +1,1 @@
+| `profiles` | list of strings | `[]` | any of `ai`, `cuda`, `langgraph` | `config/project.json.jinja` | Sets each listed profile's `practices.profiles` flag to `true`. | defining a profile: `config/practices.json` `profiles` | always |

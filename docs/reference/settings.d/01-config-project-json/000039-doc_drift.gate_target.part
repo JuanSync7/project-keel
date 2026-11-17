@@ -1,0 +1,1 @@
+| `doc_drift.gate_target` | string | `verify` | a make target | `tests/integration/test_doc_drift.py` | Names the target whose scripts' exit codes the limits guide must list. | the targets the gate runner allows: `make_targets.gate_effects` | always |

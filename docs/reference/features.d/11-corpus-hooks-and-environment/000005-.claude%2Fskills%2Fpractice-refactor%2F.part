@@ -1,0 +1,1 @@
+| `.claude/skills/practice-refactor/` | An agent skill that refactors toward one named practice, gating every edit on `make verify`. | ask the agent to apply a practice | [a practice's `id`](settings.md#configpracticesjson) | One practice per run. | [coding-practices.md](../guides/coding-practices.md) | always |

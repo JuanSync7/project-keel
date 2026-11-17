@@ -1,0 +1,1 @@
+| `e2e.server.ready_timeout_s` | number | `30` | a positive number of seconds | `tests/live_server.py`; `tests/stub_model_server.py` | Bounds the wait for the probe to answer 200; past it the server is killed and the failure names this key, the probe URL and the server's log. | each request a scenario makes: `e2e.server.request_timeout_s` | always |

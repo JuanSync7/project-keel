@@ -1,0 +1,1 @@
+| `make unit` `[local]` | Runs unit tests except those marked `slow` (`-m "unit and not slow"`); never the gate. | `make unit` | — | The isolation guard holds a unit test to `tests.isolation.tiers.unit`: no network, writes only under its scratch, and no live store; a child process it starts is not judged. | [dev-loops.md](../guides/dev-loops.md) | always |

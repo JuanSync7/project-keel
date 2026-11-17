@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --from` | string | — | any | `scripts/jobs/keep_edited_retired.py` | The ref the project was generated from. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

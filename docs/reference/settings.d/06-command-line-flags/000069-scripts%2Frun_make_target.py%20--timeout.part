@@ -1,0 +1,1 @@
+| `scripts/run_make_target.py --timeout` | integer | — | a whole number from 1 to 604800, as `make_targets.gate_timeout_seconds` | `scripts/run_make_target.py` | Seconds before the runner ends make's session and reports a timeout; unset, `make_targets.gate_timeout_seconds` applies. | listing targets: `scripts/make_help.py` | always |

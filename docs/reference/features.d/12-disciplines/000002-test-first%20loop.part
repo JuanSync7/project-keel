@@ -1,0 +1,1 @@
+| `test-first loop` | A new behaviour starts as a failing mirror test, then the smallest change that passes it. | follow the loop | — | A discipline, not a check: `make verify` gates the result, not the order. | [dev-loops.md](../guides/dev-loops.md) | always |

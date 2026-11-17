@@ -1,0 +1,1 @@
+| `launcher.default_size.mem_gb` | integer | `8` | a whole number of gibibytes (GiB), 1 or more | `scripts/launch.py` (`load_launcher_config`) | Sets the memory a farm submission asks for an unlisted launch key. | a listed script's size: `launcher.long_scripts.<name>.mem_gb` | always |

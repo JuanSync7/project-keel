@@ -1,0 +1,1 @@
+| `make_targets.gate_runner_var` | string | `RALPH` | one of `make_targets.unattended_vars` | check_W; `scripts/run_make_target.py` | The gate runner sets this variable to 1, last, so `WRITE_GUARD` refuses a `[write]` target. | CI: `make_targets.unattended_vars` | always |

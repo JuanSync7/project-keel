@@ -1,0 +1,1 @@
+| `evals.threshold` | number | `1.0` | a number above 0 and at most 1 | `evals/_report.py` (`verdict`) | A suite passes when its passed cases over its total reach this, compared as exact fractions; lower it to let a suite pass with some failing cases. | excusing an errored or stale case, which fails its suite whatever the score | always |

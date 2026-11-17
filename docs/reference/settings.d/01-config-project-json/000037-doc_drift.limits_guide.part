@@ -1,0 +1,1 @@
+| `doc_drift.limits_guide` | string | `docs/guides/limits-and-troubleshooting.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide that must list every waiver and every exit code of a script the gate runs. | the upgrade steps: `doc_drift.upgrade_guide` | always |

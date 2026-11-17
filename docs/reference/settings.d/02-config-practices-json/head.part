@@ -1,0 +1,9 @@
+
+## config/practices.json
+
+The practice registry: data read by path, never imported.
+`scripts/check_structure.py`, `scripts/check_practices.py` and
+`agents/practice_refactor/` read it.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

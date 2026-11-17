@@ -1,0 +1,1 @@
+| `rulesets.ruff.deferred.<code>` | string | `E501`, `RUF022` and `UP`, each with its reason | a ruff code mapped to why it stays off | check_M | A listed code selected in `pyproject.toml` is a check_M error. | a per-file waiver: `rulesets.ruff.per_file_ignores` | always |

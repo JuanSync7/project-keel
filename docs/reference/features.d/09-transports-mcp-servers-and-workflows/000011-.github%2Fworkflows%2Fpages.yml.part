@@ -1,0 +1,1 @@
+| `.github/workflows/pages.yml` | Builds the static showcase and deploys it to GitHub Pages on a push to `main`. | push to `main` | [`frontend_stack`](settings.md#copier-questions) | Present only with the astro stack, and only useful with the showcase. | `docs/guides/showcase-site.md` | when frontend_stack=astro |

@@ -1,0 +1,8 @@
+
+## Environment variables
+
+The code reads these from its environment. A Ships cell that starts with
+`when` names the copier answer that keeps the readers.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

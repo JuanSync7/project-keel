@@ -1,0 +1,1 @@
+| `PUBLIC_API_BASE` | URL | `''`: same origin | an API base URL | `src/frontend/astro/src/lib/api.ts` | Points the Astro app's API calls at another origin. | the dev proxy: `API_PROXY_TARGET` | when `frontend_stack` is `astro` |

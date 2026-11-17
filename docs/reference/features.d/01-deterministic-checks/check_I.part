@@ -1,0 +1,1 @@
+| `check_I` agent-rules symlink | Refuses a `CLAUDE.md` that is not a symlink to its sibling `AGENT.md`, so every agent tool reads one file. | `make check` | — | Not for the content of the rules. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

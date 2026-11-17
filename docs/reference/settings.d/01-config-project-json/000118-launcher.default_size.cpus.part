@@ -1,0 +1,1 @@
+| `launcher.default_size.cpus` | integer | `4` | a whole number, 1 or more | `scripts/launch.py` (`load_launcher_config`) | Sets the cpus a farm submission asks for a launch key `launcher.long_scripts` does not list. | a listed script's size: `launcher.long_scripts.<name>.cpus` | always |

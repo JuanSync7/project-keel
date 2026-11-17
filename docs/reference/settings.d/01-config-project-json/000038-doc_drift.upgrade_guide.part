@@ -1,0 +1,1 @@
+| `doc_drift.upgrade_guide` | string | `docs/guides/generate-and-upgrade.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide that gives every copier task and migration its own row, judged in the template only. | waivers and exit codes: `doc_drift.limits_guide` | always |

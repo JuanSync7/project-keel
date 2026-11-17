@@ -1,0 +1,41 @@
+
+## Illustrative examples
+
+These files show the shape of a configuration a project may add. No code
+loads them, so they have no rows above: `config/default.example.toml`,
+`config/rag.example.toml`, `models/config/default.example.toml` and
+`config/cdmon/cdmon.example.yaml`. Copy one without the `.example` part of
+its name to start a real file, and add its rows here when code reads it.
+
+## Conventions
+
+- **`_comment`.** A `_comment` key at any depth of a JSON file is prose for
+  the reader; no code reads it, and it has no row. The blocks
+  `make_targets`, `adr`, `work_naming` and `child_env` refuse any other key
+  they do not know, and tolerate `_comment`. In `make_targets` only
+  `gate_timeout_seconds` and `gate_stop_grace_seconds` may be absent.
+- **Key syntax.** A JSON key is its dotted path. `<name>` stands for one key
+  of a map whose keys the project chooses, such as `<target>` or `<adapter>`.
+  `[]` stands for each element of a list of objects, as in `practices[].id`.
+  A command-line key is the script's path, a space, and the flag or
+  positional name.
+- **Ships.** `always` means every generated project receives the setting.
+  `when ...` names the copier answer that keeps the files that read it.
+  `keel maintainers only` means only the template checkout has it.
+- **`dynamic`.** An environment variable whose name the code builds or takes
+  as an argument, instead of spelling it, carries `dynamic` in its Type cell;
+  `tests/integration/test_reference_drift.py` does not look for a reader of
+  it.
+- **Values held in code.** A make, environment or command-line Default is
+  a literal in the file its Read by cell names, not a config key: a project
+  changes it by passing the variable or flag, or by editing that file. Three
+  installed values have no setting at all: the REST API's port `8000`, which
+  the Makefile `run-api` recipe passes to `api/rest_fastapi/serve.py --port`
+  and the `run-web` recipe spells out; the Astro dev
+  proxy's fallback target in `src/frontend/astro/astro.config.mjs`; and the
+  model and runtime a caller gets by default, `models.registry.DEFAULT_MODEL`
+  and `runtimes.registry.DEFAULT_RUNTIME`, which `models.default` and
+  `runtimes.default` above do not drive.
+- **Defaults.** A JSON row's Default is the value keel ships; a copier,
+  make or command-line Default in code is the literal the code holds, and the
+  test compares it character for character.

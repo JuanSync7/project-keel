@@ -1,0 +1,1 @@
+| `ASTRO_ALLOWED_HOSTS` | string | unset: localhost only | comma-separated host names, or `true` for any host | `src/frontend/astro/astro.config.mjs` | Lets the Astro dev server answer requests for the listed hosts. | the proxy target: `API_PROXY_TARGET` | when `frontend_stack` is `astro` |

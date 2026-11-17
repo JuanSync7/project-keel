@@ -1,0 +1,1 @@
+| `PY` | path | `$(if $(wildcard .venv/bin/python),.venv/bin/python,python3)` | a Python interpreter | every Python recipe; the gate runner passes it through | Runs the recipes under another interpreter. | the declared minimum: `config/project.json` `layers.backend.python` | always |

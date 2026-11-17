@@ -1,0 +1,1 @@
+| `scripts/refactor_practice.py --root` | string | `None` | a directory, never with `--corpus` | `scripts/refactor_practice.py` | the checkout to refactor, whose `wiki/corpus.json` is walked and whose `agents.max_model_calls` holds `--execute` (default: this repo); an empty one is refused with exit 2 | documents: `scripts/doc_review.py` | always |

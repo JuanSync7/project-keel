@@ -1,0 +1,1 @@
+| `make check-all` `[local]` | Runs every gating deterministic check on the project interpreter. | `make check-all` | [`PY`](settings.md#make-variables) | Not the whole gate: lint, types and tests are `make verify`'s. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

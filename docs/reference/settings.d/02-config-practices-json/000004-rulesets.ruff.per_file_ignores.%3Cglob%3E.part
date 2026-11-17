@@ -1,0 +1,1 @@
+| `rulesets.ruff.per_file_ignores.<glob>` | list of strings | the mirror of `pyproject.toml` per-file ignores | a file glob mapped to ruff codes | check_M | Declares a per-file waiver that `pyproject.toml` must mirror. | a project-wide waiver: `rulesets.ruff.deferred` | always |

@@ -1,0 +1,1 @@
+| `scripts/exit_code_table.py --check` | switch | — | `true` when given | `scripts/exit_code_table.py` | Write nothing; exit 1 if the table in the guide is stale. | choosing the guide: `doc_drift.limits_guide` | always |

@@ -1,0 +1,1 @@
+| `agent surface (AAD)` | Lets a service describe itself as a discoverable agent through a typed description. | `make agent-surface-schema` | — | A reference demo, not a registry or a discovery service. | [agent-surface.md](../guides/agent-surface.md) | always |

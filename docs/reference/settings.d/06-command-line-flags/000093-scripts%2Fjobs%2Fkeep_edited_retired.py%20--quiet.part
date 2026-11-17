@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --quiet` | switch | — | `true` when given | `scripts/jobs/keep_edited_retired.py` | No summary on stdout. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

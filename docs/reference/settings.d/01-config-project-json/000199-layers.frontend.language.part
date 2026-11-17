@@ -1,0 +1,1 @@
+| `layers.frontend.language` | string | `typescript` | a language name | the showcase only (`src/backend/showcase/_repo.py`) | Changes the language the showcase displays for the frontend. | any check, which does not read it | when `frontend_stack` is not `none` |

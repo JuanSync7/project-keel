@@ -1,0 +1,1 @@
+| `scripts/jobs/link_corpus.py --corpus` | string | `wiki/corpus.json` | any | `scripts/jobs/link_corpus.py` | Corpus path (default: wiki/corpus.json), confined to the project when relative; an explicit absolute file authorizes its parent directory, and an escape exits 2. | building nodes: `scripts/jobs/build_corpus.py` | always |

@@ -901,6 +901,12 @@ KEYS = tuple(
     sorted(
         (
             _row(
+                ("reference_fragments",),
+                "object",
+                NONE,
+                "reference fragment discovery root, folder and entry suffixes, and output/head/folder sets",
+            ),
+            _row(
                 ("audit_project", "settings_tables"),
                 "list_of_str",
                 ["tool.pytest.ini_options"],

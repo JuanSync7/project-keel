@@ -1,0 +1,1 @@
+| `make_targets.unattended_vars` | list of strings | `["CI", "RALPH"]` | environment variable names | check_W; the Makefile `WRITE_GUARD`; `scripts/child_env.py` | `WRITE_GUARD` refuses a `[write]` target when any listed variable is set, and the child allowlist copies them. | the gate runner's own marker: `make_targets.gate_runner_var` | always |

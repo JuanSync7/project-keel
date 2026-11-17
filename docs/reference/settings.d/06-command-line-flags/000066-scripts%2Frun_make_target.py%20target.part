@@ -1,0 +1,1 @@
+| `scripts/run_make_target.py target` | positional string | — | any | `scripts/run_make_target.py` | Make target (e.g. verify, check, lint, test). | listing targets: `scripts/make_help.py` | always |

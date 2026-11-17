@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --template` | string | — | any | `scripts/jobs/keep_edited_retired.py` | The template checkout. | finishing a stopped update: `scripts/jobs/finish_update.py` | always |

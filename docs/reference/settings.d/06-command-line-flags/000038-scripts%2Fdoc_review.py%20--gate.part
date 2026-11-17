@@ -1,0 +1,1 @@
+| `scripts/doc_review.py --gate` | string | `'check-docs'` | any | `scripts/doc_review.py` | Make target every edit is gated on (default: check-docs). | code practices: `scripts/refactor_practice.py` | always |

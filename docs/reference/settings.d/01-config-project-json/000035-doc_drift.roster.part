@@ -1,0 +1,1 @@
+| `doc_drift.roster` | string | `docs/guides/README.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide index whose rows each name their audiences. | a directory roster: a README's `## What ships here` table, which check_S holds | always |

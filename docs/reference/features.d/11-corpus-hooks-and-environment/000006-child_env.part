@@ -1,0 +1,1 @@
+| `child_env` | Starts every Python child process from an allowlisted environment, never the parent's whole one. | automatic in each spawn | [`child_env.names`](settings.md#configprojectjson) | Defence-in-depth, not a sandbox: a same-user child can still read its parent's environment. | [limits-and-troubleshooting.md](../guides/limits-and-troubleshooting.md) | always |

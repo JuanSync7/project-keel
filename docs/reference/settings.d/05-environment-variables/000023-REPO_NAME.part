@@ -1,0 +1,1 @@
+| `REPO_NAME` | string | set by the Pages workflow from the repository | a repository name | `.github/workflows/pages.yml` | Decides whether the site is served at the root or under the repository's name. | the base path itself: `PUBLIC_BASE_PATH` | when `frontend_stack` is `astro` |

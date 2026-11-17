@@ -1,0 +1,1 @@
+| `scripts/jobs/keep_edited_retired.py --answer-all` | string | `None` | an answer value | `scripts/jobs/keep_edited_retired.py` | The `--answer-key` value that chose every adapter (copier.yml passes `both`); without it only a value equal to the adapter's name chose it. | the adapter names: `config/project.json` `ci_pipeline.adapters` | always |

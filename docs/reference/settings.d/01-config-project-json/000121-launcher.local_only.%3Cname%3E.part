@@ -1,0 +1,1 @@
+| `launcher.local_only.<name>` | string | `{}` | a launch key mapped to a one-line reason | `scripts/launch.py` (`load_launcher_config`); `decide` | Keeps the launch key off the farm: on a shared host it runs here limited, and the decision line prints the reason. | a credential a farm job may receive: `launcher.credentials` | always |

@@ -1,0 +1,1 @@
+| `child_env.prefixes` | list of strings | `["LC_"]` | name prefixes | `scripts/child_env.py` (check_X) | `build_child_env` copies every name starting with a listed prefix. | single names: `child_env.names` | always |

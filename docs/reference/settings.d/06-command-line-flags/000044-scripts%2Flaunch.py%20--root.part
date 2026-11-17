@@ -1,0 +1,1 @@
+| `scripts/launch.py --root` | string | `None` | any | `scripts/launch.py` | the project whose config/project.json and state files are read (default: the project this script ships in) | where a farm job runs: `launcher.farm.adapter` | always |

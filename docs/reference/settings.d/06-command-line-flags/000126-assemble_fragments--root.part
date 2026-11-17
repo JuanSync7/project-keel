@@ -1,0 +1,1 @@
+| `scripts/assemble_fragments.py --root` | path | this script's checkout root | project directory | `scripts/assemble_fragments.py` | Loads the target project's fragment configuration. | choosing an individual table: edit that table's entry file | always |

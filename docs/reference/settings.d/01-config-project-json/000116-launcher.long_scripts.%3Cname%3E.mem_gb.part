@@ -1,0 +1,1 @@
+| `launcher.long_scripts.<name>.mem_gb` | integer | `make verify`, `make test` and `make canary` get `16` | a whole number of gibibytes (GiB), 1 or more | `scripts/launch.py` (`load_launcher_config`) | Sets the memory a farm submission asks for the listed launch key. | the size of an unlisted script: `launcher.default_size` | always |

@@ -1,0 +1,1 @@
+| `project_title` | string, not asked | computed: `project_name` with `_` and `-` turned into spaces, title-cased | derived only | copier, rendering the docs' titles | Nothing directly: change `project_name`. | identifiers: `project_slug` | always |

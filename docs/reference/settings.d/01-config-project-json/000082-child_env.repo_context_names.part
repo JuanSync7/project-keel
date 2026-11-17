@@ -1,0 +1,1 @@
+| `child_env.repo_context_names` | list of strings | the variables git binds to its repository | environment variable names | `scripts/child_env.py` (check_X) | `build_child_env` drops them unless a call passes `repo_context=True`, and an allowlist that admits one is a check_X error. | configuration injection: `child_env.config_injection_names` | always |

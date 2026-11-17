@@ -1,0 +1,1 @@
+| `scripts/run_make_target.py --json` | switch | — | `true` when given | `scripts/run_make_target.py` | Emit the result as JSON. | listing targets: `scripts/make_help.py` | always |

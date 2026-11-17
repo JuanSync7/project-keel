@@ -1,0 +1,8 @@
+
+## Checker scripts
+
+Each script below is one row of the checks catalogue or is reached from
+`make check-all`.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

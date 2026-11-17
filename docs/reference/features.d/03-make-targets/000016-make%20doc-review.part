@@ -1,0 +1,1 @@
+| `make doc-review` `[local]` | Lists the doc review's findings, rules and baseline without a model. | `make doc-review` | — | A dry run: it writes nothing. | [doc-style.md](../guides/doc-style.md) | always |

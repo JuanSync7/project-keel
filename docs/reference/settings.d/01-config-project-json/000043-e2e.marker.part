@@ -1,0 +1,1 @@
+| `e2e.marker` | string | `endpoint` | a pytest marker name registered in `pyproject.toml` `markers` | `tests/integration/test_e2e_coverage.py` | Renames the marker a scenario names its endpoint with. | the `e2e` marker, which selects scenarios to run and names no endpoint | always |

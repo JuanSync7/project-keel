@@ -1,0 +1,1 @@
+| `make fmt` `[tree]` | Formats Python with ruff. | `make fmt` | — | Writes the tree; the gate runs `make fmt-check` instead. | [python-style.md](../guides/python-style.md) | always |

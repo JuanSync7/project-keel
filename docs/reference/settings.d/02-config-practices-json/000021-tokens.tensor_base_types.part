@@ -1,0 +1,1 @@
+| `tokens.tensor_base_types` | list of strings | `Tensor`, `ndarray` and four more | type names | check_L | Changes which bare annotations check_L warns about; an empty list silences check_L, with no fallback. | exception modules: `tokens.stdlib_exception_modules` | always |

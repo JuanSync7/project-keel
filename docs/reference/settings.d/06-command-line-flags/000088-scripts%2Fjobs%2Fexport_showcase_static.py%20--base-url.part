@@ -1,0 +1,1 @@
+| `scripts/jobs/export_showcase_static.py --base-url` | string | `''` | any | `scripts/jobs/export_showcase_static.py` | Site base for llms.txt links (e.g. /my-project); default: relative. | llms.txt alone: `scripts/jobs/build_llms_txt.py` | when `showcase` is true |

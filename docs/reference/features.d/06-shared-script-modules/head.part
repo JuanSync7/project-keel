@@ -1,0 +1,13 @@
+
+## Shared script modules
+
+`scripts/` holds entry points, and these modules besides: each is imported by
+a module outside `tests/`, which makes it shared library code (the CONVENTIONS
+§2 note). `tests/integration/test_reference_drift.py` `shared_script_modules`
+derives the set from the import graph `tests/source_tree.py` resolves, so a
+new import of a scripts module fails the reference-drift test until the module
+has a row. A shared module that also plays another role keeps its row under
+that role, such as `scripts/check_structure.py` under Checker scripts.
+
+| Feature | What it does and why | How to run | Settings | Limits / not for | Deep doc | Ships |
+|---------|----------------------|------------|----------|------------------|----------|-------|

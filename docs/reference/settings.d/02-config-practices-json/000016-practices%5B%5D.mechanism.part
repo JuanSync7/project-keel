@@ -1,0 +1,1 @@
+| `practices[].mechanism` | string | one per practice | prose | the showcase only | Changes the prose a reader sees for how the practice is enforced. | the checked claim: `practices[].enforced_by` | always |

@@ -1,0 +1,1 @@
+| `PY_ROOTS` | word list | the entries of `CODE_ROOTS` that exist | computed | the lint and type-check recipes | Nothing to set: change `CODE_ROOTS`. | the declared list: `CODE_ROOTS` | always |

@@ -1,0 +1,1 @@
+| `make typecheck-py` `[local]` | Type-checks Python with mypy in strict mode, over the files `pyproject.toml` names. | `make typecheck-py` | — | Only the files `[tool.mypy] files` lists. | [python-style.md](../guides/python-style.md) | always |

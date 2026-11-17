@@ -1,0 +1,1 @@
+| `transports.grpc.workers` | integer | `8` | a whole number, 1 or more | `api/grpc/server.py` (`serve`) | Sets how many threads answer gRPC calls at once; a call past them waits for a free thread. Absent, `serve` writes `[using default] transports.grpc.workers = 8` to stderr. | how long one call may take: the calling client's deadline | always |

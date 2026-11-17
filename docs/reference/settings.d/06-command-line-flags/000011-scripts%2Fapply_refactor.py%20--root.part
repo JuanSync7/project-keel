@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --root` | string | `'.'` | any | `scripts/apply_refactor.py` | Repo root the edit paths are relative to. | choosing the edit: `scripts/refactor_practice.py` | always |

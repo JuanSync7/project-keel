@@ -1,0 +1,10 @@
+
+## Showcase pillars
+
+The showcase home page shows one card per pillar. Each pillar names the rows
+above that deliver it; `tests/unit/backend/test_showcase.py` holds this table
+equal to the showcase's curated features, slug and title, where the showcase
+ships.
+
+| Pillar slug | Title | Rows |
+|-------------|-------|------|

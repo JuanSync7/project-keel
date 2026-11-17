@@ -1,0 +1,1 @@
+| `make check-aad` `[local]` | Fails when the AAD schema differs from the model. | `make check-aad` | — | Skips without pydantic. | [agent-surface.md](../guides/agent-surface.md) | always |

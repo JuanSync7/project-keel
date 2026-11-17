@@ -1,0 +1,1 @@
+| `make fmt-check` `[local]` | Checks Python formatting without writing. | `make fmt-check` | — | Python only. | [python-style.md](../guides/python-style.md) | always |

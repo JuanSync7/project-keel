@@ -1,0 +1,1 @@
+| `scripts/launch.py --dry-run` | switch | — | `true` when given | `scripts/launch.py` | print the decision line and run nothing | proposing long scripts: `launcher.long_scripts` | always |

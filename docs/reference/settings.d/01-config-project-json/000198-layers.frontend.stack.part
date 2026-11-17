@@ -1,0 +1,1 @@
+| `layers.frontend.stack` | string | the copier answer `frontend_stack`: `react-vite` by default; `null` in keel, which ships both stacks | one of `layers.frontend.available` | check_H | Names the frontend whose directory under `layers.frontend.root` must exist. | the backend: `layers.backend` | when `frontend_stack` is not `none` |

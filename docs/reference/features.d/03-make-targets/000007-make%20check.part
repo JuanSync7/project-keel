@@ -1,0 +1,1 @@
+| `make check` `[local]` | Runs checks A–Z and the project's own checks. | `make check` | — | Structure only: no lint, types or tests. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

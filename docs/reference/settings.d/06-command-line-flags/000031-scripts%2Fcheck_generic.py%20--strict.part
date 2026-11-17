@@ -1,0 +1,1 @@
+| `scripts/check_generic.py --strict` | switch | — | `true` when given | `scripts/check_generic.py` | Experimental: lower the string threshold and include 4+ digit numbers (noisier; not wired into any make target). | structure: `scripts/check_structure.py` | always |

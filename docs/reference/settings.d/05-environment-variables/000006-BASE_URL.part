@@ -1,0 +1,1 @@
+| `BASE_URL` | URL | set by the build: the site base path | a base path | `.github/workflows/pages.yml`; the Astro app's links and API client | Changes the base every internal link and asset respects. | the configured base: `PUBLIC_BASE_PATH` | when `frontend_stack` is `astro` |

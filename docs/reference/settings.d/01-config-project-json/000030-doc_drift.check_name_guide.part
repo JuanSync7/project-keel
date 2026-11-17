@@ -1,0 +1,1 @@
+| `doc_drift.check_name_guide` | string | `docs/guides/doc-style.md` | a Markdown path | `tests/integration/test_doc_drift.py` | Names the guide whose check-name sentence must agree with the citation scan on each mark's side, effect and spacing. | the check catalogue: `doc_drift.features_reference` | always |

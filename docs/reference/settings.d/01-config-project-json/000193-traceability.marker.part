@@ -1,0 +1,1 @@
+| `traceability.marker` | string | `req` | an ASCII Python identifier that is not a keyword, registered in `pyproject.toml` `markers` | `scripts/traceability.py` (`scan_tests`) | Renames the marker a test names its requirement with; a call to the old name is no longer read, so its units turn `uncovered`. | the endpoint marker: `e2e.marker` | always |

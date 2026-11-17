@@ -1,0 +1,1 @@
+| `models.default` | string | `claude-code-headless` | a key of `models.available` | check_H; the showcase, which marks it | Nothing at run time: `models.registry.DEFAULT_MODEL` (`claude-code-headless`) decides what `get_model()` returns with no name, and nothing ties the two together. | choosing the model: change `models/registry.py` | always |

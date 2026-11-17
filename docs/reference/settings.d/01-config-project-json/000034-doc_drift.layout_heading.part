@@ -1,0 +1,1 @@
+| `doc_drift.layout_heading` | string | `Top-level layout` | a `## ` heading of `README.md` | `tests/integration/test_doc_drift.py` | Names the README section whose tree must list every top-level directory that ships. | the CONVENTIONS §2 taxonomy, which check_B holds | always |

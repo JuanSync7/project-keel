@@ -1,0 +1,1 @@
+| `RALPH` | flag | unset; the gate runner sets `1` | any non-empty value | the Makefile, through `config/project.json` `make_targets.unattended_vars` | Makes every `[write]` target refuse to run. | CI: `CI` | always |

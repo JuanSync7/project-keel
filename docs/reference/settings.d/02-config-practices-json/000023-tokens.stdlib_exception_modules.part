@@ -1,0 +1,1 @@
+| `tokens.stdlib_exception_modules` | list of strings | standard-library module names | module names | check_J | Changes which modules' exceptions check_J treats as foreign; absent or empty, check_J falls back to a built-in list. | tensor types: `tokens.tensor_base_types`, which has no fallback | always |

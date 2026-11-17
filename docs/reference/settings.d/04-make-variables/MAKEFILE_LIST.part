@@ -1,0 +1,1 @@
+| `MAKEFILE_LIST` | word list | the makefiles make read | set by make | `make help` | Nothing to set: make provides it. | the area directory: `config/project.json` `make_targets.area_dir` | always |

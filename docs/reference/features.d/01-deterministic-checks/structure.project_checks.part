@@ -1,0 +1,1 @@
+| `structure.project_checks` | Runs a project's own structure checks, from modules in a declared directory, after A–Z. | `make check` | [`structure.project_checks`](settings.md#configprojectjson) | Not for editing `scripts/check_structure.py`, which `copier update` merges and may conflict. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

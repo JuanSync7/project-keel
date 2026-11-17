@@ -1,0 +1,1 @@
+| `practices[].enforced_by` | list of strings | one or more references per practice | the closed mechanism grammar `check:`, `script:`, `test:`, `make:`, `doc:`, `ruff:`, `mypy:` | check_T | A reference that does not resolve is a check_T error. | prose: `practices[].mechanism` | always |

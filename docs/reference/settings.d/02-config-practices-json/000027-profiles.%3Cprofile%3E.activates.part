@@ -1,0 +1,1 @@
+| `profiles.<profile>.activates` | list of strings | the practice ids the profile turns on | practice ids | the showcase only: display | Changes what the showcase says the profile activates; no check reads it. | the practice's own link: `practices[].profile` | always |

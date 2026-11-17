@@ -1,0 +1,1 @@
+| `adr.template_prefix` | string | `K-` | a file-name prefix | check_Y | Changes the prefix a template ADR's file name carries; it is cited as `ADR-K-NNNN`. | this project's ADR numbering, which has no prefix | always |

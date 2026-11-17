@@ -1,0 +1,1 @@
+| `scripts/check_toolchain.py mode` | positional string | — | `node`, `versions` | `scripts/check_toolchain.py` | node: refuse a Node whose major is not toolchain.node_major; versions: print node=<major> and python=<version> for $GITHUB_OUTPUT. | the interpreter floor: `scripts/check_python_version.py` | always |

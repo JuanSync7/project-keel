@@ -1,0 +1,1 @@
+| `practices[].profile` | string or null | absent or `null` for a universal practice | a profile defined under `profiles` | `scripts/check_practices.py` | Ties a domain practice to a profile, so it fires only when `config/project.json` `practices.profiles` enables that profile. | enabling the profile: `config/project.json` `practices.profiles.<profile>` | always |

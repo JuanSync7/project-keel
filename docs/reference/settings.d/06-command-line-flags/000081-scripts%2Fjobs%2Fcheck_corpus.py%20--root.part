@@ -1,0 +1,1 @@
+| `scripts/jobs/check_corpus.py --root` | string | this checkout | any | `scripts/jobs/check_corpus.py` | Tree to index (default: repo root). | writing the corpus: `scripts/jobs/build_corpus.py` | always |

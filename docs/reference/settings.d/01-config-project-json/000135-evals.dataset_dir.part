@@ -1,0 +1,1 @@
+| `evals.dataset_dir` | string | `evals/datasets` | a repo-relative directory holding at least one `<suite>.jsonl` and nothing else | `evals/_dataset.py` (`load_suites`) | Moves where `make eval` and `make eval-live` read the suites; a missing directory, zero suites or any other entry in it is refused with exit 2. | run output: `evals.report_dir` | always |

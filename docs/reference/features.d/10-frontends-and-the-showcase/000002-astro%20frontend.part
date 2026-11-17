@@ -1,0 +1,1 @@
+| `astro frontend` | An Astro site under `src/frontend/astro/`, which can build to static files. | `make run-web` | [`frontend_stack`](settings.md#copier-questions) | One stack per project; switching stacks on update deletes the old app. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | when frontend_stack=astro |

@@ -1,0 +1,1 @@
+| `rulesets.mypy.overrides.<module>` | list of strings | entries for `aad`, `aad.*`, `agents.*`, `demo.*`, `models.*` and `runtimes.*` | a module pattern mapped to the mypy settings relaxed for it | check_M | Declares a per-module relaxation that `pyproject.toml` must mirror. | a whole code root left out: `rulesets.mypy.ratchet` | always |

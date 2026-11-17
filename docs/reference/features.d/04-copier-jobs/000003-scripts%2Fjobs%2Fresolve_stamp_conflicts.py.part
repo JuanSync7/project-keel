@@ -1,0 +1,1 @@
+| `scripts/jobs/resolve_stamp_conflicts.py` | Resolves a conflict in a document's `updated:` stamp, where both sides touched the file. | runs under `copier update` | — | Resolves the stamp line only; any other hunk stays for you. Escaping writes exit 2; mutations use the confined resolved path. | [generate-and-upgrade.md](../guides/generate-and-upgrade.md) | always |

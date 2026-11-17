@@ -1,0 +1,1 @@
+| `check_K` frozen config | Refuses a class carrying the frozen-config marker that is not provably immutable. | `make check` | [`tokens.config_marker`](settings.md#configpracticesjson) | Silent when no marker is declared. It reads the marker, never a `*Config` name. | [coding-practices.md](../guides/coding-practices.md) | always |

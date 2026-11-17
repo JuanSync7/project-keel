@@ -1,0 +1,1 @@
+| `domain profiles` | Turns on domain practices, such as the cuda naked-tensor check, per project. | set the flag | [`practices.profiles`](settings.md#configprojectjson), [`profiles`](settings.md#copier-questions) | Off by default, so the template stays domain-neutral. | [coding-practices.md](../guides/coding-practices.md) | always |

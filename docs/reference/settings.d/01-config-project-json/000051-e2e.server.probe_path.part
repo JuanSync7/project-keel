@@ -1,0 +1,1 @@
+| `e2e.server.probe_path` | string | `/health` | a path starting with `/` that answers 200 when the app is ready | `tests/live_server.py` | Changes the path polled before a scenario may use the server. | a scenario's own assertions | always |

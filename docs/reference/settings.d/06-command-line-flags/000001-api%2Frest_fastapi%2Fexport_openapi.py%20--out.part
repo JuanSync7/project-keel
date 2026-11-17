@@ -1,0 +1,1 @@
+| `api/rest_fastapi/export_openapi.py --out` | string | `api/rest_fastapi/openapi.json` | any | `api/rest_fastapi/export_openapi.py` | Output path (default: openapi.json next to app.py). | the AAD schema: `scripts/agent_surface/generate_aad_schema.py` | always |

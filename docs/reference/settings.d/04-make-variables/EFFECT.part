@@ -1,0 +1,1 @@
+| `EFFECT` | string | unset | an effect label word | `make help`, through `scripts/make_help.py --effect` | Keeps the targets whose label holds this word. | area filtering: `AREA` | always |

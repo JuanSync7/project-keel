@@ -1,0 +1,1 @@
+| `python style` | Readability and loud failure first, with a gated module header. | `make lint` | — | Ruff, mypy and check_O gate the floor; the rest is review. | [python-style.md](../guides/python-style.md) | always |

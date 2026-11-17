@@ -1,0 +1,1 @@
+| `scripts/refactor_practice.py --model` | string | `None` | any | `scripts/refactor_practice.py` | Model name from the models/ registry. | documents: `scripts/doc_review.py` | always |

@@ -1,0 +1,1 @@
+| `scripts/jobs/finish_update.py --template` | string | `None` | any | `scripts/jobs/finish_update.py` | A clone of the template (default: the answers' _src_path). | starting an update: `copier update` | always |

@@ -1,0 +1,1 @@
+| `scripts/cdmon_sync.py mode` | positional string | `'lint'` | `lint`, `heal`, `build` | `scripts/cdmon_sync.py` | The cdmon subcommand to run. | the doc gate: `make check-docs` | always |

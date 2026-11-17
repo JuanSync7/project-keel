@@ -1,0 +1,7 @@
+## config/project.json
+
+The project manifest: `scripts/check_structure.py` validates it (check_H and
+the checks named per row), and CONVENTIONS §15 says what it is for.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

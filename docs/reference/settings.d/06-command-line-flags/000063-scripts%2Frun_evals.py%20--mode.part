@@ -1,0 +1,1 @@
+| `scripts/run_evals.py --mode` | string | `'replay'` | `replay` or `live` | `scripts/run_evals.py` | `live` sends every case to `evals.live.model` under `evals.live.max_calls` and writes candidates; `replay` judges the recorded responses with no model call. | the threshold: `evals.threshold` | always |

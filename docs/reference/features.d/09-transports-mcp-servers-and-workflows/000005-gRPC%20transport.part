@@ -1,0 +1,1 @@
+| `gRPC transport` | A gRPC edge over the same `src/` logic. | see `api/grpc/` | [`transports`](settings.md#copier-questions) | Present only when the project chose it. | `api/grpc/` | when transports=grpc |

@@ -1,0 +1,1 @@
+| `scripts/doc_review.py --execute` | switch | — | `true` when given | `scripts/doc_review.py` | Propose + apply gated edits (default: dry-run). | code practices: `scripts/refactor_practice.py` | always |

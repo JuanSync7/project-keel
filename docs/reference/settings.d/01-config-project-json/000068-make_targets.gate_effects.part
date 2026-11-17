@@ -1,0 +1,1 @@
+| `make_targets.gate_effects` | list of strings | `["local", "read"]` | effect labels: `local`, `tree`, `read`, `cost`, `write` | check_W; `scripts/run_make_target.py` | Widens or narrows which targets the gate runner will run. | the labels themselves, which K-0011 fixes | always |

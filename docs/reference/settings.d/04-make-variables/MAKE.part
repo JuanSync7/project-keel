@@ -1,0 +1,1 @@
+| `MAKE` | path | the make program running this makefile | set by make | the `verify` recipe, which hands it to `scripts/gate_evidence.py` | Nothing to set: make provides it, so each goal runs under the same make. | the make flags each goal gets: `MAKEFLAGS` | always |

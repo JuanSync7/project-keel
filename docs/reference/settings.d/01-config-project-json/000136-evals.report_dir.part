@@ -1,0 +1,1 @@
+| `evals.report_dir` | string | `.evidence/evals` | a repo-relative directory, no `..`, that `.gitignore` ignores | `scripts/run_evals.py` | Moves where the report `<mode>.json` and the live candidates are written; a path git would list is refused with exit 2. | the dataset, which a run never writes: `evals.dataset_dir` | always |

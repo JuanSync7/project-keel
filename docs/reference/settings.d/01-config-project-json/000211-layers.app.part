@@ -1,0 +1,1 @@
+| `layers.app` | object or null | the block below | an object with `path` and `module`, or `null` for no composition root | check_H; `scripts/run_app.py`; `scripts/jobs/declare_no_app.py`, which writes `null` | `null` declares that the project has no composition root, and `make run` then exits 2 saying so. | the backend library: `layers.backend` | always |

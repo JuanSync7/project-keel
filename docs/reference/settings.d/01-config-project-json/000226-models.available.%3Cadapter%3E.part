@@ -1,0 +1,1 @@
+| `models.available.<adapter>` | string | `claude-code-headless`, `openai-compatible` and `fake`, all in `models` | an adapter name mapped to its directory | check_H; the showcase | Declares an adapter; a missing directory is an error. | registering it: `models/registry.py` | always |

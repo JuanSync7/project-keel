@@ -1,0 +1,1 @@
+| `template.twins.<path>` | string | one entry per `.jinja` file of keel | `parity`, `divergence`, `generated` | check_N; `scripts/jobs/restamp_docs.py` | Declares what a `.jinja` twin is for; a twin with no entry is a check_N error. | a generated project, which has no `.jinja` files and gets no `template` block | keel maintainers only |

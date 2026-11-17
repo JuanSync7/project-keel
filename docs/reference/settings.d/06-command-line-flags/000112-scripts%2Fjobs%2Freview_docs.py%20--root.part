@@ -1,0 +1,1 @@
+| `scripts/jobs/review_docs.py --root` | string | this checkout | any | `scripts/jobs/review_docs.py` | Repository root (default: this checkout). | rewriting stamps: `scripts/jobs/restamp_docs.py` | always |

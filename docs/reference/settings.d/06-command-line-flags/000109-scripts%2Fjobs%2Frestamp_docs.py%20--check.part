@@ -1,0 +1,1 @@
+| `scripts/jobs/restamp_docs.py --check` | switch | — | `true` when given | `scripts/jobs/restamp_docs.py` | List what would be restamped, write nothing, exit 1 if anything would be. | a conflicted stamp: `scripts/jobs/resolve_stamp_conflicts.py` | always |

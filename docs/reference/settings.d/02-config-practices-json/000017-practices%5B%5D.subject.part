@@ -1,0 +1,1 @@
+| `practices[].subject` | string | `code` or `docs` | `code`, `docs` | `scripts/check_practices.py`, which reads only `code` | Says what the practice is about. | the tier: `practices[].tier` | always |

@@ -1,0 +1,1 @@
+| `make lint-py` `[local]` | Lints Python with ruff. | `make lint-py` | — | Ruff's rules only; review holds the rest of the house style. | [python-style.md](../guides/python-style.md) | always |

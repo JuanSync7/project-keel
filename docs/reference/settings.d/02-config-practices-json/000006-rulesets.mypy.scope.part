@@ -1,0 +1,1 @@
+| `rulesets.mypy.scope` | list of strings | the code roots mypy checks | code roots | `tests/integration/test_gate_scope.py` | Changes which code roots are type-checked; with `rulesets.mypy.ratchet` it must partition the code roots. | a relaxed root: `rulesets.mypy.ratchet` | always |

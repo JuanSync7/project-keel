@@ -1,0 +1,1 @@
+| `ALLOW_DIRTY` | flag | unset | any non-empty value | `make new` | Lets `make new` generate from a checkout with uncommitted changes, for template authors iterating. | a checkout with no commit, which `make new` refuses regardless | always |

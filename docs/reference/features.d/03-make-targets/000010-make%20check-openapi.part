@@ -1,0 +1,1 @@
+| `make check-openapi` `[local]` | Fails when `openapi.json` differs from the live routes. | `make check-openapi` | — | Skips without FastAPI. | [deterministic-checks.md](../guides/deterministic-checks.md) | always |

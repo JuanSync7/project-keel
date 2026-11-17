@@ -1,0 +1,1 @@
+| `scripts/jobs/link_corpus.py --max-links` | integer | `8` | a whole number | `scripts/jobs/link_corpus.py` | Max edges per node. | building nodes: `scripts/jobs/build_corpus.py` | always |

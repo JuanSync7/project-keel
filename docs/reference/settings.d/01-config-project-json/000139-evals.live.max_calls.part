@@ -1,0 +1,1 @@
+| `evals.live.max_calls` | integer | `0` | a whole number, 0 or more | `evals/_run.py` (`run_live`) | The approved call cap for one live run: a run with more cases than this is refused with exit 2 before any backend is built, and `0` approves none. | the cost of one call, which depends on the model and is not known in advance | always |

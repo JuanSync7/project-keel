@@ -1,0 +1,1 @@
+| `scripts/check_structure.py --root` | string | this checkout | any | `scripts/check_structure.py` | The tree to judge (default: this checkout). | advisories: `scripts/check_practices.py` | always |

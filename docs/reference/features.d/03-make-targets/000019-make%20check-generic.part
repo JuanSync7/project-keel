@@ -1,0 +1,1 @@
+| `make check-generic` `[local]` | An alias for `make advise`. | `make check-generic` | — | The same advisory run; not a gate. | [generic-solution.md](../guides/generic-solution.md) | always |

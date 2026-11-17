@@ -1,0 +1,1 @@
+| `scripts/refactor_practice.py --gate` | string | `'verify'` | any | `scripts/refactor_practice.py` | Make target every edit is gated on (default: verify). | documents: `scripts/doc_review.py` | always |

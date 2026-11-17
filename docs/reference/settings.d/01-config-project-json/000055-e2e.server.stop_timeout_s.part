@@ -1,0 +1,1 @@
+| `e2e.server.stop_timeout_s` | number | `10` | a positive number of seconds | `tests/live_server.py`; `tests/stub_model_server.py` | Bounds the wait after SIGTERM before the server's process group gets SIGKILL. | the MCP servers, which get SIGKILL at once: `e2e.list_timeout_s` bounds them | always |

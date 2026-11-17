@@ -1,0 +1,1 @@
+| `PUBLIC_BASE_PATH` | path | `/` | a base path | `src/frontend/astro/astro.config.mjs`; `.github/workflows/pages.yml` | Serves the site under a sub-path, as a project Pages site needs. | link building at run time: `BASE_URL` | when `frontend_stack` is `astro` |

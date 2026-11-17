@@ -1,0 +1,27 @@
+---
+title: Settings reference
+kind: doc
+form: reference
+layer: n/a
+status: template
+owner: TBD
+summary: Every setting keel reads, with its type, default, valid values, reader, effect, what it is not for, and which projects receive it. The rows are derived-equal to the code by tests/integration/test_reference_drift.py.
+id: docs-reference-settings
+created: 2026-10-09
+updated: 2026-11-16
+visibility: internal
+canonical: true
+---
+
+# Settings reference
+
+This page lists every setting keel reads: each key of `config/project.json`
+and `config/practices.json`, each copier question, each make variable, each
+environment variable and each command-line flag. `config/project.json`
+`doc_drift.settings_reference` names this page, and
+`tests/integration/test_reference_drift.py` fails when a setting the code reads
+has no row, when a row names a setting the code no longer reads, or when a
+literal default here differs from the code's. Each section's table has the
+same eight columns; the `## Conventions` section at the end says how a key is
+spelled and what the Ships column means.
+

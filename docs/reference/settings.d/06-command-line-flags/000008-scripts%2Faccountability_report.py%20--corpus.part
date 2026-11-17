@@ -1,0 +1,1 @@
+| `scripts/accountability_report.py --corpus` | string | `wiki/corpus.json` | any | `scripts/accountability_report.py` | Corpus path (default: wiki/corpus.json). | building the corpus: `scripts/jobs/build_corpus.py` | always |

@@ -1,0 +1,1 @@
+| `practices[].title` | string | one per practice | prose | the showcase; `agents/practice_refactor/` | Changes the practice's display title. | its id: `practices[].id` | always |

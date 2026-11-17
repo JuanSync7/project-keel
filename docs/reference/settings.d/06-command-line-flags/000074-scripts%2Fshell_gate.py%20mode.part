@@ -1,0 +1,1 @@
+| `scripts/shell_gate.py mode` | string | — | `lint`, `format-check`, `format` or `test`; required | `scripts/shell_gate.py` | lint, check the formatting of, format in place, or run the tests of the shell scripts | choosing the tool: `shell.linter`, `shell.formatter`, `shell.test_runner` | always |

@@ -1,0 +1,1 @@
+| `make typecheck` `[local]` | Type-checks Python and the frontend. | `make typecheck` | — | The frontend half exits 0 without `node_modules`. | [python-style.md](../guides/python-style.md) | always |

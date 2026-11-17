@@ -1,0 +1,1 @@
+| `launcher.farm.wait_seconds` | integer | `900` | a whole number of seconds, 1 or more | `scripts/launch.py` (`load_launcher_config`); `decide` | Sets how long a submission may wait for the farm to start it; the decision line prints it. | a job's time limit: `launcher.long_scripts.<name>.minutes` | always |

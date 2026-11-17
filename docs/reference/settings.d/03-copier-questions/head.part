@@ -1,0 +1,8 @@
+
+## copier questions
+
+`copier.yml` asks these when a project is generated or updated. Every row
+ships always, because the answers file records every answer.
+
+| Key | Type | Default | Valid values | Read by | What changing it does | Not for | Ships |
+|-----|------|---------|--------------|---------|-----------------------|---------|-------|

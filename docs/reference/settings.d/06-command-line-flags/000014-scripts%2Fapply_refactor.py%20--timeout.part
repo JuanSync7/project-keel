@@ -1,0 +1,1 @@
+| `scripts/apply_refactor.py --timeout` | integer | — | a whole number from 1 to 604800, as `make_targets.gate_timeout_seconds` | `scripts/apply_refactor.py` | Gate timeout in seconds; unset, the gate runner uses `make_targets.gate_timeout_seconds`. | choosing the edit: `scripts/refactor_practice.py` | always |

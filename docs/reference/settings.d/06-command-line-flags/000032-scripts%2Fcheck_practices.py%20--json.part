@@ -1,0 +1,1 @@
+| `scripts/check_practices.py --json` | switch | — | `true` when given | `scripts/check_practices.py` | Emit active findings as JSON. | the gate tier: `scripts/check_structure.py` | always |

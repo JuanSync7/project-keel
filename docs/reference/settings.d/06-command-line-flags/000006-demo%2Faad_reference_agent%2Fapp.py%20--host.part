@@ -1,0 +1,1 @@
+| `demo/aad_reference_agent/app.py --host` | string | `'127.0.0.1'` | any | `demo/aad_reference_agent/app.py` | The address the reference agent binds. | the project's own API: `make run-api` | always |

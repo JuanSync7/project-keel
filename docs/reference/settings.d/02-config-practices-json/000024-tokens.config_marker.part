@@ -1,0 +1,1 @@
+| `tokens.config_marker` | string | `practice: frozen-config` | a comment marker | check_K | Changes the marker that opts a config class into the frozen-config check. | the owned-error marker: `tokens.owned_error_marker` | always |
