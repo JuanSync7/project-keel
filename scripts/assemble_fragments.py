@@ -36,6 +36,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 if __name__ == "__main__":
     sys.dont_write_bytecode = True
@@ -53,7 +54,7 @@ class FragmentError(ValueError):
 class Parser(argparse.ArgumentParser):
     """Route malformed CLI input through the house failure reporter."""
 
-    def error(self, message: str) -> None:
+    def error(self, message: str) -> NoReturn:
         raise FragmentError(message)
 
 
@@ -217,7 +218,7 @@ def main(argv: list[str] | None = None) -> ExitCode:
                 stream.write(text.encode("utf-8"))
     except config_loader.ConfigError as exc:
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             "fragment configuration refused",
             str(exc),
             "fix config/project.json reference_fragments",

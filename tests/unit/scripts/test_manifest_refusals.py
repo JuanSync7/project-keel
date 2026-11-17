@@ -65,6 +65,18 @@ _READERS = (
         ),
     ),
     (
+        # The --root default is built inside main, so the case names the root.
+        "scripts/assemble_fragments.py",
+        "fragments",
+        ("--check", "--root", "."),
+        (
+            14,
+            "",
+            "fragment configuration refused: config/project.json does not exist; fix "
+            "config/project.json reference_fragments\n",
+        ),
+    ),
+    (
         "scripts/audit_dependencies.py",
         "settings",
         (),
