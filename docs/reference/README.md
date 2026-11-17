@@ -28,7 +28,7 @@ Per-module reference. The only docs that may thinly mirror src/.
 
 ## Authoring entries
 
-`config/project.json` `reference_fragments` names both roots and their `.part`
+Keel's `config/project.json` `reference_fragments` names both roots and their `.part`
 suffix. Each root holds `head.part`, one numbered subfolder per table, and
 `tail.part` for fixed trailing text. A table's `head.part` holds its heading,
 prose and two header lines. Every other file holds exactly one complete row,
@@ -49,4 +49,7 @@ the assembled file; the document gates judge the assembled Markdown.
 An assembled-file merge conflict is resolved by taking either side and running
 `make assemble-fragments` over the union of entry files. The assembler retains
 the output's `updated:` line, so restamping and reassembly reach the same fixed
-point after an addition or deletion. All fragments ship with generated projects.
+point after an addition or deletion. The fragment folders are keel-only and
+excluded from generation. A generated project lists no fragment sets and edits
+`settings.md` and `features.md` by hand; the check still refuses stray fragment
+folders.

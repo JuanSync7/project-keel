@@ -14,7 +14,8 @@ section prose and the two table header lines, so each header appears once;
 tail.part holds fixed text after the final table. The non-.md suffix is configured:
 fragments have no frontmatter and are outside check_A and review_docs' Markdown
 walks. Their links are relative to the assembled reference, where check_Q reads
-them. These folders and this script ship to generated projects.
+them. Keel's fragment folders are excluded from generation. This script ships;
+generated projects list no fragment sets and edit their references by hand.
 
 An entry's first cell names its key (its first code span, or the whole cell).
 Sorted tables use percent-encoded keys as filenames. Historical unsorted tables

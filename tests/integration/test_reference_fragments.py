@@ -40,11 +40,17 @@ def _assemble(root, *args):
     )
 
 
-@pytest.mark.parametrize("case", ["merge-ours", "merge-theirs", "restamp"])
-def test_two_independent_entries_survive_assembly(case, toy):
-    """Either merge side recovers the union; deletion followed by restamp converges."""
-    assert (_ROOT / "scripts/assemble_fragments.py").is_file()
-    root, env, commit = toy
+def _tree(root):
+    return {
+        p.relative_to(root): (
+            p.read_bytes() if p.is_file() else None,
+            p.stat().st_mtime_ns,
+        )
+        for p in root.rglob("*")
+    }
+
+
+def _fragment_set(root):
     manifest_path = root / "config/project.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["reference_fragments"] = {
@@ -70,9 +76,17 @@ def test_two_independent_entries_survive_assembly(case, toy):
     (table / "head.part").write_text("## Entries\n\n| Key | Meaning |\n|---|---|\n")
     (table / "base.part").write_text("| `base` | baseline |\n")
     assert _assemble(root).returncode == 0
+    return folder, table, root / "docs/reference/example.md"
+
+
+@pytest.mark.parametrize("case", ["merge-ours", "merge-theirs", "restamp"])
+def test_two_independent_entries_survive_assembly(case, toy):
+    """Either merge side recovers the union; deletion followed by restamp converges."""
+    assert (_ROOT / "scripts/assemble_fragments.py").is_file()
+    root, env, commit = toy
+    folder, table, output = _fragment_set(root)
     toy_git(root, env, "add", "-A")
     baseline = commit("reference baseline")
-    output = root / "docs/reference/example.md"
     if case.startswith("merge"):
         for key in ("lane-one", "lane-two"):
             toy_git(root, env, "checkout", "-q", "-b", key, baseline)
@@ -143,6 +157,25 @@ def test_two_independent_entries_survive_assembly(case, toy):
     assert refused.returncode != 0 and "duplicate" in refused.stderr
 
 
+def test_check_catches_a_hand_added_row_and_assembly_overwrites_it(toy):
+    """Configured fragments own the body, including removal of unsourced rows."""
+    root, _env, _commit = toy
+    _folder, _table, output = _fragment_set(root)
+    assembled = output.read_text()
+    output.write_text(
+        assembled.replace(
+            "\nFixed footer.", "| `manual` | no fragment |\n\nFixed footer."
+        )
+    )
+    before = _tree(root)
+    stale = _assemble(root, "--check")
+    assert stale.returncode != 0 and "example.md" in stale.stderr
+    assert _tree(root) == before
+    assert _assemble(root).returncode == 0
+    assert output.read_text() == assembled
+    assert _assemble(root, "--check").returncode == 0
+
+
 def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):
     """Opting out permits hand edits only when no fragment folder remains."""
     root, _env, _commit = toy
@@ -157,16 +190,24 @@ def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):
     path.write_text(json.dumps(manifest))
     folder = root / "docs/reference/stray.d"
     folder.mkdir(parents=True)
-    refused = _assemble(root, "--check")
-    assert refused.returncode != 0 and "stray.d" in refused.stderr
+    before = _tree(root)
+    for args in (("--check",), ()):
+        refused = _assemble(root, *args)
+        assert refused.returncode != 0 and "stray.d" in refused.stderr
+        assert _tree(root) == before
     folder.rmdir()
     reference = folder.parent / "manual.md"
     reference.write_text("hand-edited reference\n")
-    assert _assemble(root, "--check").returncode == 0
-    assert _assemble(root).returncode == 0
-    assert reference.read_text() == "hand-edited reference\n"
+    before = _tree(root)
+    for args in (("--check",), ()):
+        assert _assemble(root, *args).returncode == 0
+        assert _tree(root) == before
 
 
+@pytest.mark.skipif(
+    not (_ROOT / "copier.yml").is_file(),
+    reason="not a copier template — this is a generated project",
+)
 @pytest.mark.parametrize(
     "answers",
     [
@@ -180,7 +221,7 @@ def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):
     ],
     ids=["defaults", "minimal", "astro-all-transports"],
 )
-def test_generated_references_keep_their_sources_after_restamp(
+def test_generated_references_ship_without_fragments_after_restamp(
     tmp_path, monkeypatch, answers
 ):
     """Render from the local directory without cloning; copier's tasks restamp it."""
@@ -191,12 +232,29 @@ def test_generated_references_keep_their_sources_after_restamp(
     # mode renders the working tree directly, including uncommitted entry files.
     monkeypatch.setattr(template_module, "get_repo", lambda _url: None)
     dest = tmp_path / "generated"
+    # Folder mode must honor local ignores before traversing the destination.
+    ignored = toy_git(
+        _ROOT,
+        build_child_env(),
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--directory",
+        "-z",
+    )
     try:
         copier.run_copy(
-            str(_ROOT), str(dest), data=answers, defaults=True, unsafe=True, quiet=True
+            str(_ROOT),
+            str(dest),
+            data=answers,
+            defaults=True,
+            unsafe=True,
+            quiet=True,
+            exclude=[path for path in ignored.split("\0") if path],
         )
         for name in ("settings", "features"):
-            assert (dest / f"docs/reference/{name}.d/head.part").is_file()
+            assert not (dest / f"docs/reference/{name}.d").exists()
             before = (dest / f"docs/reference/{name}.md").read_text()
             original = (_ROOT / f"docs/reference/{name}.md").read_text()
             # The task owns only the date; no answer removes reference rows.
@@ -204,9 +262,14 @@ def test_generated_references_keep_their_sources_after_restamp(
                 r"(?m)^updated: .*", "updated:", original
             )
         assert (dest / "scripts/assemble_fragments.py").is_file()
-        assert not (dest / "tests/integration/test_reference_fragments.py").exists()
-        assert not (dest / "docs/internals").exists()
-        assert not (dest / "tests/fixtures/campaign-plans.json").exists()
+        assert (dest / "tests/integration/test_reference_fragments.py").is_file()
+        manifest = json.loads((dest / "config/project.json").read_text())
+        assert manifest["reference_fragments"]["sets"] == []
+        roster = (dest / "docs/reference/README.md").read_text()
+        members = set(re.findall(r"^\| `([^`]+)` \|", roster, re.MULTILINE))
+        assert {"settings.md", "features.md"} <= members
+        assert members <= {"README.md", "settings.md", "features.md"}
+        assert "## Authoring entries" not in roster
         for script, args in (
             ("scripts/assemble_fragments.py", ["--check"]),
             ("scripts/jobs/restamp_docs.py", ["--today", "2030-02-03"]),
@@ -221,6 +284,12 @@ def test_generated_references_keep_their_sources_after_restamp(
                 timeout=60,
             )
             assert run.returncode == 0, run.stdout + run.stderr
+        for name in ("settings", "features"):
+            after = (dest / f"docs/reference/{name}.md").read_text()
+            original = (_ROOT / f"docs/reference/{name}.md").read_text()
+            assert re.sub(r"(?m)^updated: .*", "updated:", after) == re.sub(
+                r"(?m)^updated: .*", "updated:", original
+            )
     finally:
         if dest.exists():
             shutil.rmtree(dest)

@@ -13,6 +13,9 @@
       "/tests/ship_set": {
         "reason": "Keel renders projects with Copier; generated projects are not templates and have no renderer ship set (60aeb900)."
       },
+      "/reference_fragments/sets": {
+        "reason": "Keel assembles its two references from template-only fragments; generated projects edit the assembled Markdown by hand and list no fragment sets."
+      },
       "/shell/no_scripts": {
         "reason": "Keel's reason names its Python gates; a generated project's reason names its slug and has no project-specific implementation claim (e80f291f)."
       },
@@ -168,6 +171,7 @@
       "config/project.json": "divergence",
       "README.md": "parity",
       "docs/README.md": "divergence",
+      "docs/reference/README.md": "divergence",
     "docs/guides/README.md": "parity",
     "scripts/jobs/README.md": "parity",
     "scripts/README.md": "parity",
@@ -712,6 +716,7 @@
       "tests/integration/test_copier_project_checks.py",
       "tests/integration/test_copier_toolchain_answer.py",
       "tests/integration/test_copier_update.py",
+      "tests/integration/test_reference_fragments.py",
       "tests/unit/scripts/test_audit_project.py"
     ],
     "full_gate_options": {

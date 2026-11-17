@@ -54,7 +54,6 @@ _tasks:
 # own defaults, re-listed below, need only the row.
 # tests/integration/test_copier_shipping.py holds all of it.
 _exclude:
-  - "tests/integration/test_reference_fragments.py"
   # A custom _exclude REPLACES copier's built-in defaults, so re-list them here.
   - "copier.yml"
   - "copier.yaml"
@@ -88,6 +87,10 @@ _exclude:
   # Keel's own plans and run records name this repo's campaigns and measurements.
   # Exclude their whole cabinet, keeping the public design README for projects.
   - "docs/internals"
+  # Keel's settings sources are template-only; projects edit settings.md by hand.
+  - "docs/reference/settings.d"
+  # Keel's feature sources are template-only; projects edit features.md by hand.
+  - "docs/reference/features.d"
   - "wiki/corpus.json"
   - "wiki/llms.txt"
   - "wiki/llms-full.txt"
