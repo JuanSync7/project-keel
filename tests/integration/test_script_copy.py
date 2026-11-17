@@ -317,6 +317,11 @@ _COPY_EXEMPTIONS = {
         "str(_ROOT / 'scripts')",
     ): "Frontend installation exercises make recipes with the entire scripts tree.",
     (
+        "integration/test_changelog_fragments.py",
+        "test_independent_entries_render_without_leaking_template_history",
+        "_MIGRATION / 'changelog.d'",
+    ): "Copies the frozen changelog entries of tests/fixtures/changelog-migration, .part text files that import nothing, into a scratch project; the migration test judges that whole folder, so no roster lists its files.",
+    (
         "integration/test_gate_scope.py",
         "test_needy_targets_fail_with_the_floor_message_on_an_old_python3",
         "str(_ROOT / 'scripts')",
@@ -1368,7 +1373,11 @@ def _assert_exemptions(sites, exemptions, root):
         if not (root / "tests" / key[0]).is_file():
             # copier.yml excludes these template tools from generated projects.
             template_module = Path(key[0]).match("integration/test_copier_*.py") or (
-                key[0] == "unit/scripts/test_audit_project.py"
+                key[0]
+                in {
+                    "unit/scripts/test_audit_project.py",
+                    "integration/test_changelog_fragments.py",
+                }
             )
             if template_module and not (root / "copier.yml").is_file():
                 continue
@@ -2142,6 +2151,15 @@ def test_an_exemption_does_not_cover_the_same_expression_in_another_function(tmp
 def test_a_deleted_module_leaves_a_stale_exemption(tmp_path):
     key = ("test_removed.py", "fixture", "source")
     with pytest.raises(AssertionError, match="test_removed.py.*fixture.*source"):
+        _assert_exemptions([], {key: "source data"}, tmp_path)
+
+
+def test_a_template_only_module_is_excused_only_where_copier_left_it_out(tmp_path):
+    """A generated project lacks keel's changelog tests; keel itself must still have them."""
+    key = ("integration/test_changelog_fragments.py", "fixture", "source")
+    _assert_exemptions([], {key: "source data"}, tmp_path)
+    (tmp_path / "copier.yml").write_text("{}\n")
+    with pytest.raises(AssertionError, match="test_changelog_fragments.py.*names 0"):
         _assert_exemptions([], {key: "source data"}, tmp_path)
 
 
