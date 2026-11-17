@@ -1,0 +1,5 @@
+- **Every shipped document has a reachable index link (KEEL-CABINET-1).** The documentation
+  index links guides, decisions, specifications and repository labels from the
+  root README. Its template twin omits maintainer records and answer-pruned
+  documents; a reachability gate rejects orphans and empty graphs.
+

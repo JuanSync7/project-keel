@@ -1,0 +1,12 @@
+- **Each install source can point at a company mirror.** config/project.json
+  `install_sources` has `python_index` (pip's `--index-url` in every workflow's
+  `pip install` and in the command `make check-venv` prints), `npm_registry`
+  (`--registry` for `make fe-install` and the Pages workflow's `npm ci`) and
+  `browser_download_host` (`PLAYWRIGHT_DOWNLOAD_HOST` for `make fe-browsers`),
+  printed by `scripts/install_sources.py`. Each is null by default, so no flag
+  is passed and the tool's own `pip.conf`, `.npmrc` or default host holds. A
+  URL must be https with a host, a valid port if any, and no `@`, `?`, `#`,
+  backslash, whitespace or control character; a refused value is exit 14 and
+  is never shown when it holds an `@`. The command `make check-venv` prints
+  quotes the index as one shell word. The scanner's mirror
+  stays `secrets.scanner.release_url`. A generated project carries the block.

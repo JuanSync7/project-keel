@@ -1,0 +1,38 @@
+- **Shell scripts have lint, format and test gates.** `make lint-sh`,
+  `make fmt-check-sh` (both ride `make lint`), `make fmt-sh` and `make test-sh`
+  (a `make verify` goal of its own) run the tools config/project.json `shell`
+  names through one adapter, `scripts/shell_gate.py`: shellcheck, shfmt and
+  bats today, behind the roles `shell.linter`, `shell.formatter` and
+  `shell.test_runner`. A file is a shell script by its suffix or its shebang.
+  A missing tool is exit 11 naming it, never a skip, and keel installs none
+  yet. Shell scripts with no test file, or test files with zero tests, are
+  exit 13, and so is a project with no shell file unless
+  `shell.no_scripts` states why it has none; that reason left in place once
+  a shell file exists is exit 14. `shell.excluded_paths` keeps a
+  vendored script, or a directory of them, out of every shell gate with its
+  reason; an entry that covers no file is exit 14. The new copier question `shell` (default yes) sets
+  `shell.enabled`, and no makes every shell target say so and run no tool.
+  A shell file is held to the Python rules too: `check_O` requires the
+  `# title:` and `# summary:` lines in the comment block that opens it, and
+  `check_V` reads `effect:`, `rerun:` and `rerun_proof:` there; a shell
+  script outside `tests/` states its `effect:` every time, because no
+  detector reads shell. A shell script reads the exit codes from
+  `scripts/exit_codes.sh`, which `make exit-codes` (with the table) and
+  `make exit-codes-sh` (alone) generate from `scripts/exit_codes.py` and
+  `make check-exit-codes` fails when stale: an
+  `EXIT_<NAME>` variable per member, `exit_fail` for the three-part failure
+  line and `exit_passthrough` for a wrapped tool's status. It ships whatever
+  the answer `shell`, and no shell tool judges it, with no `shell.excluded_paths`
+  entry.
+  `tests/integration/test_exit_gate.py` fails a shell script that does not
+  source it or ends with a bare `exit 3`, `exit $?` or `exit`, a script
+  that renames a status (`exit_passthrough` or `return` of anything but
+  `"$?"`, a member or a name only ever assigned `$?`), an `exit` disguised as
+  `"exit"`, `\exit`, `command exit` or `builtin exit`, and an ending before
+  the line that sources the helper, at its file and line, and a project with no shell script unless `shell.no_scripts`
+  states why or `shell.enabled` is false, which switches the shell tools
+  only: every other finding holds whatever it says. A use of a held status
+  other than `name=$?` and a plain read warns and never fails, in the
+  template and in every project, as the check `exit-held-status`
+  (`scripts/expiring_tier_data.py` `WARN_ONLY`), because the rule still
+  flags ordinary scripts such as `rc=0; cmd || rc=$?`.

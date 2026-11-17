@@ -1,0 +1,7 @@
+- **Four settings print their default when unset.** An absent
+  `child_env.login_name_schemes` (`[]`), `evidence.run_date` (`null`, the
+  channel off) or `practices.profiles` (`{}`), and an unset `KEEL_MCP_MODEL`
+  (`null`, the registry default), each write one `[using default]` line to
+  stderr. An explicit `evidence.run_date: null` now switches the channel off
+  rather than being refused, and a whitespace-only path or model name is
+  refused.

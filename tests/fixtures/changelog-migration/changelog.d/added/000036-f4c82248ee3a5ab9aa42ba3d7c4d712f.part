@@ -1,0 +1,9 @@
+- **A tool card's flags are its script's flags, and the edit policy's docs
+  are held to the doer.** `tests/integration/test_tool_card_drift.py` fails a
+  `*.tool.md` whose `## Args` table lacks a flag its script declares, names
+  one it does not, or states another literal default;
+  `tests/integration/test_edit_policy_docs.py` fails the apply_refactor card or
+  `docs/guides/coding-practices.md` when either drops an `agents` key, and
+  `docs/guides/limits-and-troubleshooting.md` when its symptom table stops
+  quoting a refusal `plan_edits` raises.
+

@@ -1,0 +1,49 @@
+
+- **The config loader's refusals never echo a URL's user part.** When
+  `scripts/config_loader.py` refuses a string that holds an `@` anywhere
+  (`https://user:token@host`, `https:/user:token@host`, a scheme-less
+  `user:token@host`), its line shows `<hidden: it holds an @>` in place of the
+  value, whatever the key, because the part before the `@` may be a
+  credential. A URL urllib cannot split, such as `https://[::1`, is a refusal
+  with exit 14, not a traceback. A list member or object entry name the line
+  names is hidden the same way when it holds an `@`, and a member that is a
+  list or an object is hidden when any string inside it, a key name included,
+  holds one at any depth. A key written twice and an adapter name a refusal
+  names are hidden the same way, and so is such text in the refusals
+  `scripts/child_env.py` raises at a child's start and in the `make_targets`
+  policy refusal `scripts/run_make_target.py` passes on, through the loader's
+  one rule, `shown`. So does every finding checks A to Z of
+  `scripts/check_structure.py` build from configured text, error or warning,
+  for a value, a member, a key name or a path segment, while a harmless member
+  beside it still shows, and so does the tree's own text: an ADR's file name
+  and directory show beside a hidden number space or prefix, and a campaign
+  or slice number beside a hidden id template. An `adr.project_dir` or
+  `adr.template_dir` spelled with a `.` segment, such as `./docs/adr`, is
+  refused as one with `..` is: check_Y matched a space by its spelling, so it
+  judged every ADR there out of place and printed the directory raw. So does every refusal
+  `scripts/launch.py` builds from the `launcher` block, a list member by member
+  through the loader's `quoted` and `listed`, and every refusal the evals
+  config, the live run and `scripts/run_evals.py` build from the `evals` block,
+  a line of paths item by item through `joined`, and every line
+  `scripts/exit_code_table.py` writes naming the `doc_drift` guide or gate
+  target, and every refusal and red-record line `scripts/gate_evidence.py`
+  builds from `evidence.dir` or `evidence.schema`, and every message
+  `scripts/shell_gate.py`, `scripts/scan_secrets.py` and
+  `scripts/install_scanner.py` build from the `shell` and `secrets.scanner`
+  blocks, a run-date value `scripts/run_date.py` refuses, and the credential
+  variable names `models/openai_compatible.py` refuses an `api_key_env` over,
+  a scratch root `tests/isolation_guard.py` refuses or passes over, and an
+  extra `scripts/check_venv.py` finds undeclared, and a protected-path rule key
+  or reason `scripts/apply_refactor.py` refuses an edit over, an answer-set
+  name, answer key or scratch root `scripts/canary.py` refuses, the baseline
+  path `scripts/expiring_tier.py` refuses, and a variable name a
+  `child_env.prefixes` entry admits from the environment in
+  `scripts/child_env.py`'s credential refusal. The loader names a file it
+  cannot read the same way, and none of these refusals chains an error whose
+  message holds the text it hides, so a traceback of one that escapes, as from
+  a gate test, hides it too. A configured name, prefix,
+  label, scheme, host or answer-set name that ends in a newline is refused:
+  its pattern's `$` matched before the newline, so it passed and printed as
+  written.
+  Before, a `secrets.scanner.release_url` given a token was refused with the
+  token in the message.

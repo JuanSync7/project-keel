@@ -1,0 +1,20 @@
+- **An owner outside the grammar is a finding in every document.** check_F
+  refused a quoted or commented owner only on `kind: tool` and `kind: agent`
+  documents, so a `README.md` or guide whose frontmatter said `owner: "alice"`
+  went into the corpus as no owner and no gate said why. Any governed document
+  or `README.md` whose owner is outside CONVENTIONS §12's grammar is now an
+  error naming it and the grammar. A wiki node whose corpus row names no
+  `owner_source` now reads as unknown, `null` in the API, "source unknown" on
+  the owner chip and `None` in a wiki navigator citation, rather than `none`,
+  which claimed nothing owns it, and `scripts/accountability_report.py` counts
+  and lists such nodes on their own line instead of counting them as owned;
+  a row that lacks a field the report shows is listed with that field
+  missing, and the report still exits 0. A corpus that is not JSON or has no
+  `nodes` list, a `{"nodes": null}` included, is refused with exit 2 and one
+  line naming the file, rather than a traceback or a count over nothing, and
+  `unowned`, `unknown` and `defaulted` raise ValueError on such a corpus when
+  another module calls them, rather than return an empty list.
+  A package `README.md` that cannot be read stops a module's owner walk, so
+  the module and its symbols have an unknown owner (`owner` and
+  `owner_source` null) rather than the owner above it or the default: the
+  unreadable `README.md` may name the real one.

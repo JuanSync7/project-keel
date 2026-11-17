@@ -1,0 +1,5 @@
+- **Shipped source paths respect unconditional docs/ exclusions (KEEL-CABINET-1).**
+  The document-drift gate reads all shipped text sources with Copier's matcher,
+  including history, tables and fences, and counts NUL-containing binaries.
+  Only test modules with the copier-absent module skip guard are exempt.
+  Keel-only records now sit in `docs/internals/`, which one Copier exclusion leaves out.

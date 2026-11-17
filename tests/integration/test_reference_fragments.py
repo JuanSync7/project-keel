@@ -230,7 +230,9 @@ def test_empty_sets_refuse_unregistered_folders_and_allow_hand_edits(toy):
     before = _tree(root)
     for args in (("--check",), ()):
         refused = _assemble(root, *args)
-        assert refused.returncode != 0 and "stray.d" in refused.stderr
+        assert refused.returncode != 0 and "docs/reference/stray.d" in refused.stderr
+        # The refusal names the project-relative path, never a Path repr.
+        assert "PosixPath(" not in refused.stderr
         assert _tree(root) == before
     folder.rmdir()
     reference = folder.parent / "manual.md"

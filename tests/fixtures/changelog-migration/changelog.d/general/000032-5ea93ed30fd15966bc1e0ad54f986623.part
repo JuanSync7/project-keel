@@ -1,0 +1,4 @@
+- **Child-env and launcher conversions refuse safely (KEEL-CFGCRASH-1, CMP-15.S4).**
+  Recursive and overflowing credential patterns produce a refusal naming the
+  key and label without pattern or compiler text. Launcher load thresholds
+  are range-checked before float conversion, so oversized integers end as CONFIG.

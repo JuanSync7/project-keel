@@ -1,0 +1,6 @@
+- **CI runs on `ubuntu-24.04`, not `ubuntu-latest`.** Every workflow pins
+  the runner image, so a move of the `ubuntu-latest` label cannot change the
+  machine the gate runs on; a new image is an entry in config/project.json
+  `toolchain.runner_images` and a workflow edit, and
+  `tests/integration/test_toolchain_gate.py` fails a `runs-on` the list does
+  not name.

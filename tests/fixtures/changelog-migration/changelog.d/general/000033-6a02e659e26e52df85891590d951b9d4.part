@@ -1,0 +1,2 @@
+- **ADR-K-0021 is accepted.** Imports flow up the layer order in
+  config/project.json `import_layers.order`, as 0.3.0 enforces.

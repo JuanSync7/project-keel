@@ -1,0 +1,6 @@
+- **Wiki retrieval refuses unreadable reports before synthesis (KEEL-ERR-2).**
+  The shared `ToolReportUnreadable` names the query tool, status, root, stderr
+  and remedy before backend construction in both modes; MCP returns
+  `isError=true` without a model call. Empty lists, served citations and plain
+  `RuntimeError` for a nonzero query remain covered by controls.
+

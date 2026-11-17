@@ -8,11 +8,9 @@ summary: Changelog sources preserve hand-written history, merge independently, r
 import json
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
-from scripts.child_env import build_child_env
 from test_copier_generation import clean_template as clean_template
 from test_copier_generation import generate as generate
 from test_copier_generation import renders as renders
@@ -25,6 +23,9 @@ optional_deps.importorskip("copier", extra="template")
 pytest_plugins = ("test_work_trailers",)
 pytestmark = pytest.mark.integration
 _ROOT = Path(__file__).resolve().parents[2]
+# CHANGELOG.md as written by hand before CMP-11.S3, cut after its 0.3.0
+# section, and the entry files its first assembly was converted into.
+_MIGRATION = _ROOT / "tests/fixtures/changelog-migration"
 
 
 def _entry(folder, order, identity, text):
@@ -63,16 +64,11 @@ def _changelog(root):
 def test_independent_entries_render_without_leaking_template_history(toy, side):
     """The initial hand-written Unreleased section survives assembly line for line."""
     assert (_ROOT / "changelog.d").is_dir()
-    original = subprocess.run(
-        ["git", "show", "066d8691:CHANGELOG.md"],
-        cwd=_ROOT,
-        env=build_child_env(),
-        capture_output=True,
-        check=True,
-        timeout=60,
-    ).stdout
+    # The migration is judged on a frozen copy of both sides, so a later entry
+    # or a release that empties changelog.d/ cannot turn this test red.
+    original = (_MIGRATION / "CHANGELOG-before.txt").read_bytes()
     root, env, commit = toy
-    shutil.copytree(_ROOT / "changelog.d", root / "changelog.d")
+    shutil.copytree(_MIGRATION / "changelog.d", root / "changelog.d")
     manifest_path = root / "config/project.json"
     manifest = json.loads(manifest_path.read_text())
     manifest["reference_fragments"] = {

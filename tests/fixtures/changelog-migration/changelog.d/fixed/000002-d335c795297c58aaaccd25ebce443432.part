@@ -1,0 +1,5 @@
+- **Foreign-waiter tests release make from the first poll sleep.** This
+  class fix holds make's exit on a bounded `go` wait in every case that needs
+  the runner's first sleep to reap it elsewhere, so a loaded host cannot
+  bypass the waiter and fail a generated project's own suite
+  (KEEL-REAPRACE-1).

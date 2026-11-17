@@ -1,0 +1,5 @@
+- **A copier job that imports `scripts/child_env.py` also refuses over a
+  conflicted config/practices.json.** `child_env.py` now reads through
+  `scripts/config_loader.py`, which declares both config files in
+  `PROJECT_READS`, so `scripts/jobs/conflict_guard.py` counts both among the
+  job's reads.

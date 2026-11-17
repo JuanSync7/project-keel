@@ -1,0 +1,9 @@
+- **`make verify` is red until `make secrets-install` has run once.** A fresh
+  clone has no scanner record, so `make secret-scan` exits 11 naming the
+  install. The README Quickstart now commits the generated project, installs
+  the pre-commit hooks and runs `make secrets-install` before the first
+  `make verify`. CI adds `secrets` to `KEEL_REQUIRED_EXTRAS`, so a scanner
+  test that cannot run there fails instead of skipping. `make canary` runs
+  `make secrets-install` in each project before its `make verify`.
+  Upgrading: run `make secrets-install` once after `copier update`;
+  docs/guides/generate-and-upgrade.md says why no hook reinstall is needed.

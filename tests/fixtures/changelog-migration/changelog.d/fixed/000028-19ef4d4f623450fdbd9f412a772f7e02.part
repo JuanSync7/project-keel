@@ -1,0 +1,5 @@
+- **`tests/unit/scripts/test_audit_project.py` no longer flakes on a network
+  scratch root.** Its no-write snapshot compared a directory's modification
+  time, which moved between two snapshots with no write on a network mount; it
+  now compares a file's time and the sorted listing.
+

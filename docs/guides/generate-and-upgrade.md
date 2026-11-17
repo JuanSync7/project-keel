@@ -123,6 +123,7 @@ exactly the files this judgment says arrive.
 | `tests/render_cache.py` | never | serves only a test of the template itself |
 | `tests/unit/test_render_cache.py` | never | its test |
 | `tests/fixtures/campaign-plans.json` | never | the template's campaign ids and queue rows, read only by a test of the template itself |
+| `tests/fixtures/changelog-migration` | never | keel's changelog before and after its conversion to entry files, read only by a test of the template itself |
 | `tests/integration/test_changelog_fragments.py` | never | renders the template and requires its unreleased entry sources |
 | `tests/integration/test_reference_fragments.py` | never | renders the template and reads its fragment folders; `make check-fragments` still runs the assembler in a project |
 | `scripts/audit_project.py` | never | runs from a template checkout only |

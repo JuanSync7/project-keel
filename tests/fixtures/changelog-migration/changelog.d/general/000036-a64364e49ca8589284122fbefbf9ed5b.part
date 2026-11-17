@@ -1,0 +1,3 @@
+- **ADR-K-0027 is proposed.** A generated project's own gate finding warns
+  until a hard date, from a record that only shrinks.
+

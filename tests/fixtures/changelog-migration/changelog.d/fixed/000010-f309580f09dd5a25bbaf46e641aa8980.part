@@ -1,0 +1,3 @@
+- **`scripts/jobs/review_docs.py` skips a roster file with no roster heading
+  by testing for it.** It caught the `ValueError` of a failed lookup and
+  dropped it.

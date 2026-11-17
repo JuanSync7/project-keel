@@ -1,0 +1,7 @@
+- **A value under a secret name is red in any file a commit could carry.**
+  `tests/integration/test_committed_secrets_gate.py`, with no outside tool,
+  takes the secret names from the `scripts/config_loader.py` `KEYS` rows
+  marked `secret=True` and fails a JSON or dotenv file (config/project.json
+  `secrets.json_files`, `secrets.dotenv_files`) that gives one a value other
+  than the empty value, naming the file, line and key and never the value. A
+  `models.credential_env` name with no secret row is red too.

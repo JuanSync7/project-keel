@@ -1,0 +1,6 @@
+- **Every structure check names an id and a failing twin (KEEL-CHECKID-1, CMP-19.S1).**
+  A closed data registry covers all 26 checks. The integration gate rejects
+  missing or stale rows, unresolved twin files or functions, empty twins and
+  zero rows judged. Seven short temporary-tree twins complete the existing
+  fault-injection coverage without changing check behavior.
+  CMP-19.S2 requires each twin to fail when its check is silent.

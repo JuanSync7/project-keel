@@ -1,0 +1,4 @@
+- **A config fault in `gate_evidence.py`, `exit_code_table.py`,
+  `check_practices.py` or `run_evals.py` exits 14, not 2.** A script or a
+  wrapper that tested for 2 on a bad `evidence`, `doc_drift`, `practices` or
+  `evals` value must test for 14 as well.

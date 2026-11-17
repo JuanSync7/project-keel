@@ -1,0 +1,5 @@
+- **Four refactor tests no longer write into the checkout.** The execute-mode
+  tests of `tests/integration/test_practice_refactor.py` wrote their
+  checkpoints under the checkout's `wiki/.runtime`, where a later run could
+  resume a crashed one's snapshot; each now checkpoints under its own
+  `tmp_path`.

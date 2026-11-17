@@ -1,0 +1,5 @@
+- **Generated-suite checks use the shipped workers (KEEL-VERIFYTIME-1, L1).**
+  The nested test gate runs the generated project's own `make test` with its
+  caller's interpreter, keeping the worker policy in the shipped recipe, and
+  drops an outer make's flags, level and junit path first, so an outer
+  `make -i` cannot turn a red generated suite into exit 0.

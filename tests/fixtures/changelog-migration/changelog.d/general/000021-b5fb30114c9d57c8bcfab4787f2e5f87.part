@@ -1,0 +1,4 @@
+- **Memory size settings name their binary units (KEEL-SIZE-UNIT-1).**
+  Document memory caps and scratch floors in mebibytes (MiB), and launcher
+  memory requests in gibibytes (GiB), matching the existing readers.
+  A reference drift gate rejects decimal or missing unit labels on size keys.

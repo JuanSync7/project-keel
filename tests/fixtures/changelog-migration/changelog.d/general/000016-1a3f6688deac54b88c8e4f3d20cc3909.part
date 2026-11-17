@@ -1,0 +1,4 @@
+- **The generated README quotes the project title (KEEL-ANSWERS-2).**
+  A title with a colon or a double quote round-trips through the README
+  frontmatter, and one table of version clauses holds the backend and toolchain
+  answer grammars to the same verdict.

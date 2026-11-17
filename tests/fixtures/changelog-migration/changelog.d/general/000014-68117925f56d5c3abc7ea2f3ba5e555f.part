@@ -1,0 +1,10 @@
+- **Writer destinations stay inside their authorized root (KEEL-PATH-CONTAIN-1).**
+  Scanner installation, scanner records, static export, docs migrations and
+  corpus/index jobs, baseline recording, snapshots, audit copies, canary runs
+  and AAD schema generation refuse resolved escapes and symlink loops before mutation.
+  Batch stamp jobs preflight every destination; retirement guards restoration
+  and deletion. Writers use the checked destination. Internal links remain usable;
+  an explicit absolute export directory remains allowed. Checks apply at call
+  time and do not catch a link swapped before the write.
+  The structure gate refuses a frontend root outside the project, including an absolute root (`test_frontend_escape`).
+

@@ -1,0 +1,9 @@
+- **The exit-code docs say what make leaves of a code.** GNU make exits 2 for
+  every failing recipe, so codes 10 to 14 reach a caller by number only when it
+  runs the script itself. `scripts/exit_codes.py`,
+  `docs/guides/limits-and-troubleshooting.md` and
+  `docs/guides/generate-and-upgrade.md` now say so and name make's error line
+  for the failed recipe, `Error <N>`, as the one place the number survives:
+  under `make verify` that is the goal's own make line, before the outer
+  make's `Error 2`. `tests/integration/test_exit_codes_through_make.py` runs
+  every member through real make and through keel's real verify driver.

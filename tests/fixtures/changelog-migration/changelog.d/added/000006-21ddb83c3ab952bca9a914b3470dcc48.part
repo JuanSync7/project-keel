@@ -1,0 +1,8 @@
+- **A narrow `except` that only returns or assigns a fixed value needs a
+  reason.** `dropped-error-narrow` in
+  `tests/integration/test_swallowed_error_gate.py` fails a handler of a
+  narrower type whose body only returns or assigns a fixed value, `None`
+  included, in place of the error, because the caller reads that value as a
+  result. A function whose documented result for that input is the value
+  gives it with `# noqa: DROP001 -- <reason>`; the 96 such handlers in keel
+  carry one.

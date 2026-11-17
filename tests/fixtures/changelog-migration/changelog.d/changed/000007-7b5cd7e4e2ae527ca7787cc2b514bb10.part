@@ -1,0 +1,11 @@
+- **The transports' and runtime's limits are configured, not typed in.**
+  config/project.json `runtimes.max_steps` caps one in-process run (10000),
+  `transports.grpc.port` and `transports.grpc.workers` set the gRPC server's
+  port (50051) and threads (8), and `models.timeout_seconds` gives each model
+  adapter that calls out its time limit (`openai-compatible` 60 seconds), each
+  read through scripts/config_loader.py with a bound it refuses past. An
+  adapter missing from `models.timeout_seconds` is a config error naming it,
+  never left unbounded; an empty map is refused, and a refusal names each
+  adapter it refuses. Every seconds key, these and
+  `tests.child_timeout_seconds` and `transports.serve.shutdown_grace_seconds`,
+  stops at `threading.TIMEOUT_MAX`, past which a thread wait overflows.

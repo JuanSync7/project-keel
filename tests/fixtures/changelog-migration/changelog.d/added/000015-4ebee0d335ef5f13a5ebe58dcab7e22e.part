@@ -1,0 +1,8 @@
+- **`make test` runs the suite on parallel workers.** Its recipe passes
+  pytest-xdist `-n auto`, and `tests/conftest.py` answers the count with
+  config/project.json `tests.workers` (`4`; 0 is one process), so `make
+  verify` does too. The isolation guard's unused-exemption check is judged by
+  the controller over every worker's record, and a worker that ends without
+  its record fails the run. `pytest-xdist` joins the `dev` extra; a tier
+  target and a direct `pytest` stay in one process, and
+  `--expiring-tier-record` refuses `-n`.

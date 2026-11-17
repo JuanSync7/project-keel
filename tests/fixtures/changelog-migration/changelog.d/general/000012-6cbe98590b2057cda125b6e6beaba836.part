@@ -1,0 +1,5 @@
+- **Blank-line HTML blocks cannot open or hide code fences (KEEL-FENCE-HTML-1).**
+  Both Markdown scanners recognize CommonMark HTML block types 6 and 7, end
+  them before a blank line, and preserve their paragraph interruption rules.
+  One data module holds the fixed type-6 tag names; grammar copies stay pinned.
+

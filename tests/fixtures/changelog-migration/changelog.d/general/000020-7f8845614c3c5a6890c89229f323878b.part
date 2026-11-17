@@ -1,0 +1,5 @@
+- **Whole-value checks reject trailing newlines (KEEL-GATEVAL-NL-1).**
+  Gate arguments, environment values and configured names use fullmatch;
+  a refused gate argument is no longer echoed.
+  A source-scanning gate rejects dollar-anchored match calls outside
+  explicit multiline scans, with synthetic cases proving detection.

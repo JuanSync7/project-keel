@@ -1,0 +1,1 @@
+- **Commented-out code fails the lint.** pyproject.toml selects ruff `ERA001`.

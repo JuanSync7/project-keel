@@ -1,0 +1,11 @@
+- **An e2e test drives the dependency it claims, not a mock of it
+  (KEEL-TESTQ-1).** `tests/integration/test_realness_gate.py` tiers every
+  test function under config/project.json `test_quality.realness.roots`
+  (`tests/e2e`) through `tests/realness.py`: `mock`, `fake`, `in_process`,
+  `real`, or `unknown` when nothing is replaced. It reads the names a test
+  uses, the fixtures it requests and their own requests, and every autouse
+  fixture of its module and `conftest.py` chain, and fails a `mock` test
+  with the signal that put it there (`fixture:client->fixture:mocker`).
+  The libraries and fixtures it tiers live in `tests/realness_data.py`.
+  `test_quality.realness.exempt` excuses a test with a reason; a stale
+  excuse and a run over zero test functions are red.

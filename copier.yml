@@ -119,6 +119,10 @@ _exclude:
   # test_copier_generation.py, pruned above, reads it, and a project has no
   # keel campaigns. Never shipped, so no `_migrations` removal.
   - "tests/fixtures/campaign-plans.json"
+  # Keel's changelog before and after its CMP-11.S3 conversion to entry files.
+  # Only test_changelog_fragments.py, pruned below, reads it, and a project has
+  # no such history. Never shipped, so no `_migrations` removal.
+  - "tests/fixtures/changelog-migration"
   # The fragment test renders this template (config/project.json tests.ship_set
   # names it) and reads the fragment folders kept out above; a project carries
   # neither, and `make check-fragments` still runs the assembler there. Never

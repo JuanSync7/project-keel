@@ -1,0 +1,16 @@
+- **A test reaches only what its tier allows.** `tests/isolation_guard.py`,
+  a Python audit hook `tests/conftest.py` installs, fails a test that connects
+  or sends past its tier's network rule, writes or changes a file's mode,
+  owner or times outside its scratch, or opens a sqlite
+  database outside it or a store config/project.json `tests.isolation.stores`
+  lists, naming the test, the phase, the event, the target and the fix, even
+  when the test caught the error. A tier's rule is a row of
+  `tests.isolation.tiers`; `unit` allows no network, `integration` and `e2e`
+  allow loopback. A reach a test needs is a reasoned entry in
+  `tests.isolation.exempt`, and one whose test reached nothing fails the run.
+  The `store_copy` fixture hands a test its own copy of a listed store.
+  `tests/integration/test_isolation_gate.py` runs the guard over planted cases
+  in a scratch project;
+  [ADR-K-0024](docs/adr/keel/K-0024-what-a-test-may-reach.md), proposed,
+  records the decision. Defence-in-depth, not a sandbox: a child process is
+  not audited.
