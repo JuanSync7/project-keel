@@ -912,6 +912,31 @@ _ACCEPTED_RISKS = (
 # owns (child_env, evidence) is one `object` row, and the validator stays the
 # typed view over the value resolved here; an open-keyed map is one row, never
 # a row per name.
+def _commit_types(value: Any) -> bool:
+    allowed = {
+        "feat",
+        "fix",
+        "docs",
+        "test",
+        "refactor",
+        "ci",
+        "chore",
+        "style",
+        "perf",
+        "release",
+    }
+    return (
+        bool(value)
+        and len(value) == len(set(value))
+        and all(v in allowed for v in value)
+    )
+
+
+def _scope_chars(value: Any) -> bool:
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-"
+    return len(value) == len(set(value)) and all(v in allowed for v in value)
+
+
 KEYS = tuple(
     sorted(
         (
@@ -936,6 +961,29 @@ KEYS = tuple(
                 "nonempty_str",
                 NONE,
                 "full dated release heading text pattern; one capture names the version",
+            ),
+            _row(
+                ("commit_subject", "types"),
+                "list_of_str",
+                NONE,
+                "closed commit subject type vocabulary",
+                accepts=(
+                    _commit_types,
+                    "a non-empty unique list drawn from feat, fix, docs, test, refactor, ci, chore, style, perf, release",
+                ),
+            ),
+            _row(
+                ("commit_subject", "scope_chars"),
+                "nonempty_str",
+                NONE,
+                "literal characters allowed in a non-empty optional commit scope",
+                accepts=(_scope_chars, "unique letters, digits or _./,-"),
+            ),
+            _row(
+                ("commit_subject", "adoption_boundary"),
+                "nonempty_str_or_null",
+                NONE,
+                "commits reachable from this boundary are not judged; null judges every commit",
             ),
             _row(
                 ("changelog_fragments", "folder"),

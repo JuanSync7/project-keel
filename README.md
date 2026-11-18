@@ -8,7 +8,7 @@ tags: [template, scaffold, project_keel]
 summary: A generic, polyglot-aware, agent-friendly project skeleton that stays honest.
 id: readme
 created: 2026-06-17
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -69,7 +69,7 @@ copier copy --trust gh:JuanSync7/project-keel my-project
 cd my-project
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # the gate's tools and the REST transport's packages; make check-venv judges them
-git init && git add -A && git commit -q -m "generated"   # the hook and the history scan need a commit
+git init && git add -A && git commit -q -m "chore: generate project"   # the hook and the history scan need a commit
 .venv/bin/pre-commit install          # the commit hooks, the staged secret scan among them
 make check                            # the structure gate
 make fe-install                       # the frontend app's packages

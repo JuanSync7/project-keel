@@ -881,6 +881,7 @@ version rather than a bare commit:
   disk or process; they now point at `tests.isolation.tiers.unit` and the
   guard that fails a reach past it.
 
+- Commit subjects follow one configured matcher in the history gate and the message-file CLI. Generated projects begin with `chore: generate project`.
 ### Fixed
 - **Copier refuses free-text answers that would break generated files
   (KEEL-ANSWERS-1).** `project_name` allows ASCII letters, digits, spaces,

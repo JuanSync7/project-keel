@@ -2,7 +2,7 @@
 title: Integration — every Slice: trailer names a slice the plan declares
 kind: tests
 layer: n/a
-summary: The git half of the work-naming rule (CONVENTIONS §20) as a gate. A commit's trailer block carries at most one `Slice:` trailer, and its value is one of this repository's own slice ids that a plan doc in the tree declares, never a prefixed cross-repository id; an optional `Backlog:` trailer matches config/project.json `work_naming.backlog_id`; the keys are spelled as configured; and a `Slice:` or `Backlog:` line outside the trailer block is a finding, because git does not read it as a trailer. Commits reachable from `work_naming.adoption_boundary` are not judged, and a boundary that does not resolve to an ancestor of HEAD fails closed. Not a check_* letter on purpose (ADR-K-0009): check_structure.py does not shell to git. Absent is not broken: no git, no repository, no commit, or no trailer in the judged range is a stated skip that names the count.
+summary: The git half of the work-naming rule (CONVENTIONS §20) as a gate. A commit's trailer block carries at most one `Slice:` trailer, and its value is one of this repository's own slice ids that a plan doc in the tree declares, never a prefixed cross-repository id; an optional `Backlog:` trailer matches config/project.json `work_naming.backlog_id`; the keys are spelled as configured; and a `Slice:` or `Backlog:` line outside the trailer block is a finding, because git does not read it as a trailer. Commits reachable from `work_naming.adoption_boundary` are not judged, and a boundary that does not resolve to an ancestor of HEAD fails closed. Not a check_* letter on purpose (ADR-K-0009): check_structure.py does not shell to git. Absent is not broken for the trailer gate: no git, no repository, no commit, or no trailer in the judged range is a stated skip that names the count. The independent subject gate imports scripts/commit_subject.py, judges every non-merge subject after commit_subject.adoption_boundary even without trailers, counts merges separately, and refuses a zero-commit range.
 """
 
 import json
@@ -22,6 +22,8 @@ sys.path.insert(0, str(_ROOT / "scripts" / "jobs"))
 
 import check_structure as cs  # noqa: E402
 import child_env  # noqa: E402
+import commit_subject  # noqa: E402
+import config_loader  # noqa: E402
 import review_docs  # noqa: E402
 from scripts.bounded_match import match_values  # noqa: E402
 
@@ -221,6 +223,85 @@ def trailer_findings(root, env=None):
             out["commits"],
         )
     return out
+
+
+def subject_findings(root, env=None):
+    """Judge non-merge subjects, counting merges separately and refusing zero."""
+    env = child_env.build_child_env() if env is None else env
+    out = {"skip": None, "refusal": None, "commits": 0, "merges": 0, "findings": []}
+    if shutil.which("git") is None:
+        out["skip"] = "no git on PATH -- subjects cannot be read"
+        return out
+    try:
+        policy = commit_subject.load_policy(str(root))
+    except config_loader.ConfigError as exc:
+        raise TrailerGateError(str(exc)) from exc
+    rc, inside, _e = _git(root, env, "rev-parse", "--is-inside-work-tree")
+    if rc != 0 or inside.strip() != "true":
+        out["skip"] = "not a git work tree -- subjects cannot be read"
+        return out
+    rc, _o, _e = _git(root, env, "rev-parse", "--verify", "-q", "HEAD")
+    if rc != 0:
+        out["refusal"] = "no commit yet -- 0 commit(s) judged"
+        return out
+    span = "HEAD"
+    boundary = policy["adoption_boundary"]
+    if boundary is not None:
+        rc, resolved, _e = _git(
+            root, env, "rev-parse", "--verify", "-q", boundary + "^{commit}"
+        )
+        if rc != 0:
+            raise TrailerGateError(
+                "commit_subject.adoption_boundary %r does not resolve to a commit"
+                % boundary
+            )
+        resolved = resolved.strip()
+        rc, _o, _e = _git(root, env, "merge-base", "--is-ancestor", resolved, "HEAD")
+        if rc != 0:
+            raise TrailerGateError(
+                "commit_subject.adoption_boundary %r is not an ancestor of HEAD: "
+                "the range it opens would judge nothing it means to" % boundary
+            )
+        span = resolved + "..HEAD"
+    rc, log, err = _git(root, env, "log", "--format=%H%x00%P%x00%s%x1e", span)
+    if rc != 0:
+        raise TrailerGateError("git log %s failed: %s" % (span, err.strip()))
+    for record in log.split(_RECORD):
+        record = record.lstrip("\n")
+        if not record:
+            continue
+        sha, parents, subject = record.split(_FIELD, 2)
+        if len(parents.split()) > 1:
+            out["merges"] += 1
+            continue
+        out["commits"] += 1
+        out["findings"].extend(
+            sha[:12] + ": " + finding
+            for finding in commit_subject.subject_findings(subject, policy)
+        )
+    if out["commits"] == 0:
+        out["refusal"] = (
+            "no commit after commit_subject.adoption_boundary %s; 0 commit(s) judged"
+            % boundary
+        )
+    return out
+
+
+def test_every_commit_subject_matches_policy():
+    """The real history uses the same matcher as the message-file CLI."""
+    result = subject_findings(_ROOT)
+    if result["skip"]:
+        pytest.skip(result["skip"])
+    assert result["refusal"] is None, result
+    assert not result["findings"], (
+        "%d finding(s) in %d commit(s), %d merge(s) not judged:\n%s"
+        % (
+            len(result["findings"]),
+            result["commits"],
+            result["merges"],
+            "\n".join(result["findings"]),
+        )
+    )
 
 
 def test_every_work_trailer_names_a_declared_slice():
@@ -463,3 +544,257 @@ def test_backtracking_backlog_pattern_is_refused(toy: Any, *, in_block: bool) ->
     assert "tests.child_timeout_seconds" in message
     assert "timeout" in message and "repair" in message
     assert pattern not in message and value not in message
+
+
+# Subject checks have their own boundary: trailer adoption does not waive them.
+def _subject_boundary(root, boundary):
+    path = root / "config" / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["commit_subject"] = {
+        "types": [
+            "feat",
+            "fix",
+            "docs",
+            "test",
+            "refactor",
+            "ci",
+            "chore",
+            "style",
+            "perf",
+            "release",
+        ],
+        "scope_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-",
+        "adoption_boundary": boundary,
+    }
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+
+@pytest.mark.parametrize("subject", ["wip", "Update file"])
+def test_subject_unstructured_after_valid_commit(toy, subject):
+    root, env, commit = toy
+    boundary = commit("old bad subject")
+    commit("feat: valid")
+    sha = commit(subject)
+    _subject_boundary(root, boundary)
+    result = subject_findings(root, env)
+    assert result["commits"] == 2 and result["skip"] is None
+    assert len(result["findings"]) == 1
+    assert sha[:12] in result["findings"][0]
+    assert subject in result["findings"][0]
+
+
+def test_subject_bad_with_valid_slice(toy):
+    root, env, commit = toy
+    boundary = _run(root, env, "rev-parse", "HEAD")
+    sha = commit("stuff\n\nSlice: CMP-1.S1")
+    _subject_boundary(root, boundary)
+    result = subject_findings(root, env)
+    assert len(result["findings"]) == 1
+    assert sha[:12] in result["findings"][0] and "stuff" in result["findings"][0]
+    assert not trailer_findings(root, env)["findings"]
+
+
+def test_subject_trailer_free_range_is_judged(toy):
+    root, env, commit = toy
+    boundary = _run(root, env, "rev-parse", "HEAD")
+    commit("docs: valid without trailers")
+    _subject_boundary(root, boundary)
+    result = subject_findings(root, env)
+    assert result["skip"] is None and result["commits"] == 1
+    assert not result["findings"]
+
+
+def test_subject_zero_range_is_refused(toy):
+    root, env, _commit = toy
+    _subject_boundary(root, "HEAD")
+    result = subject_findings(root, env)
+    assert result["commits"] == 0
+    assert (
+        result["refusal"]
+        == "no commit after commit_subject.adoption_boundary HEAD; 0 commit(s) judged"
+    )
+
+
+def test_subject_boundary_fails_closed(toy):
+    root, env, _commit = toy
+    _subject_boundary(root, "no-such-ref")
+    with pytest.raises(
+        TrailerGateError, match="commit_subject.adoption_boundary.*does not resolve"
+    ):
+        subject_findings(root, env)
+    orphan = _run(root, env, "commit-tree", "HEAD^{tree}", "-m", "orphan")
+    _subject_boundary(root, orphan)
+    with pytest.raises(
+        TrailerGateError, match="commit_subject.adoption_boundary.*not an ancestor"
+    ):
+        subject_findings(root, env)
+
+
+def test_subject_null_boundary_judges_initial_commit(toy):
+    root, env, _commit = toy
+    _subject_boundary(root, None)
+    result = subject_findings(root, env)
+    assert result["commits"] == 1 and "init" in result["findings"][0]
+
+
+def test_subject_merge_is_counted_without_judging(toy):
+    root, env, commit = toy
+    boundary = _run(root, env, "rev-parse", "HEAD")
+    other = commit("feat: side")
+    _run(root, env, "checkout", "--detach", boundary)
+    commit("fix: main")
+    _run(root, env, "merge", "--no-ff", other, "-m", "tool merge subject")
+    _subject_boundary(root, boundary)
+    result = subject_findings(root, env)
+    assert result["commits"] == 2 and result["merges"] == 1
+    assert not result["findings"] and result["refusal"] is None
+
+
+@pytest.mark.parametrize("interpreter", [sys.executable, "/usr/bin/python3"])
+@pytest.mark.parametrize(
+    "message, expected",
+    [
+        ("\n# comment\n\nfeat(Core/a,b)!: valid\n\nbody", 0),
+        ("wip\n\nSlice: CMP-1.S1", 1),
+        (None, 2),
+    ],
+)
+def test_subject_cli(toy, interpreter, message, expected):
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    path = root / "message"
+    if message is not None:
+        path.write_text(message, encoding="utf-8")
+    proc = subprocess.run(
+        [
+            interpreter,
+            "-B",
+            str(_ROOT / "scripts" / "commit_subject.py"),
+            "--message-file",
+            str(path),
+        ],
+        cwd=root,
+        env=child_env.build_child_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == expected, proc.stderr
+    if expected == 1:
+        assert "commit_subject" in proc.stderr and "wip" in proc.stderr
+    if expected == 2:
+        assert "cannot read message" in proc.stderr
+
+
+@pytest.mark.parametrize("interpreter", [sys.executable, "/usr/bin/python3"])
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("types", []),
+        ("types", ["feat", "feat"]),
+        ("types", ["unknown"]),
+        ("types", "feat"),
+        ("scope_chars", ""),
+        ("adoption_boundary", 7),
+    ],
+)
+def test_subject_cli_malformed_policy(toy, interpreter, key, value):
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    path = root / "config" / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["commit_subject"][key] = value
+    path.write_text(json.dumps(data), encoding="utf-8")
+    message = root / "message"
+    message.write_text("feat: valid", encoding="utf-8")
+    proc = subprocess.run(
+        [
+            interpreter,
+            "-B",
+            str(_ROOT / "scripts" / "commit_subject.py"),
+            "--message-file",
+            str(message),
+        ],
+        cwd=root,
+        env=child_env.build_child_env(),
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 14, proc.stderr
+    assert "commit_subject." + key in proc.stderr
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "feat: x",
+        "fix(core): x",
+        "docs!: x",
+        "refactor(Core/a_b.c,d-e)!: x",
+        "test: x",
+        "ci: x",
+        "chore: x",
+        "style: x",
+        "perf: x",
+        "release: x",
+    ],
+)
+def test_subject_matcher_accepts_declared_shapes(toy, subject):
+    import commit_subject
+
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    assert (
+        commit_subject.subject_findings(subject, commit_subject.load_policy(str(root)))
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        "",
+        "wip",
+        "feature: x",
+        "feat(): x",
+        "feat(bad scope): x",
+        "feat: ",
+        "feat:  x",
+        "feat: x ",
+        "feat:x",
+        "feat(core)!!: x",
+        "feat: x\ny",
+        " feat: x",
+    ],
+)
+def test_subject_matcher_refuses_invalid_shapes(toy, subject):
+    import commit_subject
+
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    assert commit_subject.subject_findings(
+        subject, commit_subject.load_policy(str(root))
+    )
+
+
+@pytest.mark.parametrize("block", [None, {}, {"types": ["feat"]}])
+def test_subject_missing_policy_fails_closed(toy, block):
+    root, env, _commit = toy
+    path = root / "config" / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["commit_subject"] = block
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(TrailerGateError, match="commit_subject"):
+        subject_findings(root, env)
+
+
+def test_subject_matcher_obeys_loaded_vocabulary_and_scope(toy):
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    policy = commit_subject.load_policy(str(root))
+    policy["types"] = ["feat"]
+    policy["scope_chars"] = "abc"
+    before = json.dumps(policy)
+    assert commit_subject.subject_findings("feat(abc): valid", policy) == []
+    assert commit_subject.subject_findings("feat(Z): invalid", policy)
+    assert commit_subject.subject_findings("fix: invalid", policy)
+    assert json.dumps(policy) == before

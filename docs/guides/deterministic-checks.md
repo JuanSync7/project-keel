@@ -726,7 +726,24 @@ and for the same reason (ADR-K-0009): a check that shells to git does not belong
 in the 3.6 pre-commit hook. The work-naming rule has the same git half:
 `tests/integration/test_work_trailers.py` judges each commit's `Slice:` and
 `Backlog:` trailers after `work_naming.adoption_boundary`, and check_Z judges
-the plan docs. The shipped-doc rule has a pytest half too:
+the plan docs.
+The same test module judges every non-merge commit subject after
+`commit_subject.adoption_boundary` with `scripts/commit_subject.py`.
+The subject shape is `<type>(<scope>)!: <description>`.
+The scope and `!` are optional.
+`commit_subject.types` supplies the closed type vocabulary.
+`commit_subject.scope_chars` supplies the literal scope characters.
+The description is non-empty and neither starts nor ends with a space.
+The history gate counts merge commits separately without judging their subjects.
+A valid trailer does not excuse a bad subject.
+A range with no trailers still receives subject checks.
+Commits reachable from the boundary are excluded; `null` judges every commit.
+A boundary that cannot resolve or is not an ancestor of HEAD fails closed.
+A range with zero judged commits is a refusal that names the count.
+The message-file CLI reads policy from the current project directory.
+It skips leading blank and `#` comment lines before judging the first remaining line.
+The CLI installs no hook.
+The shipped-doc rule has a pytest half too:
 `tests/integration/test_doc_drift.py` refuses, in a shipped document's prose,
 a concrete campaign or slice id, a `doc_drift.forbidden_phrases` pattern, a
 loopback port no non-Markdown file declares, while its excluded-path rule scans every shipped text source for paths under unconditional `docs/` exclusions only, including history, tables and fences (other exclusions, including Copier defaults, generated views and template-only tools, and conditional entries are outside this rule), and exempts only a test module with the module-level copier-absent `pytest.mark.skipif` guard using `_TEMPLATE_ONLY` (CONVENTIONS §15, `doc_drift`). It also refuses a cited

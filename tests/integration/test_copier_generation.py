@@ -1553,7 +1553,11 @@ def test_a_generated_project_replays_its_evals(tmp_path, answers, generate):
     assert {c["scorer"]["name"] for c in cases} == set(SCORERS)
 
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -1624,7 +1628,11 @@ def test_a_generated_project_traces_its_requirements(tmp_path, answers, generate
     assert (dest / block["matrix_schema"]).is_file()
 
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -2189,7 +2197,11 @@ def test_a_generated_project_judges_committed_secrets(tmp_path, generate):
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj")
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -2253,7 +2265,11 @@ def test_a_default_project_launches_here_limited_and_records_the_run(
     assert state_dir in _gitignore_lines(dest / ".gitignore"), state_dir
 
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -2940,7 +2956,11 @@ def test_a_generated_project_has_no_stale_docs_after_its_first_commit(
         )
     env = _hermetic_git_env(tmp_path)
     env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = "@%d +0000" % epoch
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         r = subprocess.run(
             ["git"] + argv, cwd=str(project), env=env, capture_output=True, text=True
         )
@@ -2979,7 +2999,7 @@ def test_generating_into_a_repository_with_history_is_fresh_after_its_commit(
     (project / "NOTES.txt").write_text("history before keel\n", encoding="utf-8")
     git("init", "-q")
     git("add", "-A")
-    git("commit", "-qm", "history")
+    git("commit", "-qm", "chore: create history")
     with plumbum.local.env(SOURCE_DATE_EPOCH=str(epoch)):
         copier.run_copy(
             str(clean_template),
@@ -2991,7 +3011,7 @@ def test_generating_into_a_repository_with_history_is_fresh_after_its_commit(
             quiet=True,
         )
     git("add", "-A")
-    git("commit", "-qm", "generated")
+    git("commit", "-qm", "chore: generate project")
     records = review_docs.collect(str(project))
     assert records, "no governed documents were collected -- this proves nothing"
     assert review_docs.stale_findings(records, day.isoformat()) == []
@@ -3053,7 +3073,11 @@ def test_a_generated_project_gates_only_on_targets_that_leave_its_tree_alone(
     assert r.returncode == 0, r.stdout + r.stderr
 
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -3281,7 +3305,11 @@ def test_a_generated_project_ships_the_gate_evidence_writer(tmp_path, generate):
     assert "scripts/gate_evidence.py --gate $@ -- $(MAKE)" in makefile
 
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -3448,7 +3476,11 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", frontend_stack="none")
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
+    for argv in (
+        ["init", "-q", "-b", "main"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
         assert r.returncode == 0, r.stderr
 
@@ -3458,7 +3490,11 @@ def test_a_generated_projects_children_never_follow_the_hooks_repository(
         "---\ntitle: x\nupdated: 2020-01-01\n---\n\n# x\n", encoding="utf-8"
     )
     dated = dict(env, GIT_COMMITTER_DATE="@1790000000", GIT_AUTHOR_DATE="@1790000000")
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "o"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: create other project"],
+    ):
         r = subprocess.run(
             ["git"] + argv, cwd=str(other), env=dated, capture_output=True
         )
@@ -3549,7 +3585,11 @@ def test_a_generated_projects_children_never_receive_a_credentialed_proxy(
     dest = tmp_path / "proj"
     generate(dest, project_name="demo_proj", frontend_stack="none")
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "g"]):
+    for argv in (
+        ["init", "-q", "-b", "main"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         r = subprocess.run(["git"] + argv, cwd=str(dest), env=env, capture_output=True)
         assert r.returncode == 0, r.stderr
 
@@ -3559,7 +3599,11 @@ def test_a_generated_projects_children_never_receive_a_credentialed_proxy(
         "---\ntitle: x\nupdated: 2020-01-01\n---\n\n# x\n", encoding="utf-8"
     )
     dated = dict(env, GIT_COMMITTER_DATE="@1790000000", GIT_AUTHOR_DATE="@1790000000")
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "o"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: create other project"],
+    ):
         r = subprocess.run(
             ["git"] + argv, cwd=str(other), env=dated, capture_output=True
         )
@@ -4061,7 +4105,11 @@ def test_a_generated_project_reads_config_only_through_the_loader(
     # The writer asks git whether a missing baseline was deleted, and with no
     # repository it refuses, so the project is committed as copier update needs.
     env = _hermetic_git_env(tmp_path)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         g = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -4173,7 +4221,11 @@ def test_a_committed_generated_project_passes_its_toolchain_gates(
     home = tmp_path / "git-home"
     home.mkdir()
     env = _hermetic_git_env(home)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         r = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )
@@ -4304,7 +4356,11 @@ def test_a_generated_project_refuses_an_agent_edit_to_its_judge_on_arrival(
     env = _hermetic_git_env(home)
     for key, value in hermetic_git.git_env_vars(home).items():
         monkeypatch.setenv(key, value)
-    for argv in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "generated"]):
+    for argv in (
+        ["init", "-q"],
+        ["add", "-A"],
+        ["commit", "-qm", "chore: generate project"],
+    ):
         r = subprocess.run(
             ["git"] + argv, cwd=str(dest), env=env, capture_output=True, text=True
         )

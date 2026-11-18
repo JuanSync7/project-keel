@@ -7,6 +7,9 @@
   },
   "template": {
     "manifest_differences": {
+      "/commit_subject/adoption_boundary": {
+        "reason": "Keel excludes its history before subject adoption; generated projects judge every commit from their first commit."
+      },
       "/template": {
         "reason": "Template metadata declares keel's own Jinja twins and promises; generated projects have no keel twins (the twin's deliberately unrendered template block)."
       },
@@ -358,6 +361,22 @@
     "gate_target": "verify",
     "settings_reference": "docs/reference/settings.md",
     "features_reference": "docs/reference/features.md"
+  },
+  "commit_subject": {
+    "types": [
+      "feat",
+      "fix",
+      "docs",
+      "test",
+      "refactor",
+      "ci",
+      "chore",
+      "style",
+      "perf",
+      "release"
+    ],
+    "scope_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-",
+    "adoption_boundary": "dc1952589caab7fbd493ffdf24266c0fdce3b389"
   },
   "work_naming": {
     "_comment": "How a campaign and a slice are named (CONVENTIONS section 20). campaign_id and slice_id are the id templates: <n> is the campaign number and <m> the slice number, each a positive integer with no leading zero, and slice_id is campaign_id plus a literal separator. A plan doc is a Markdown document whose frontmatter kind is in plan_kinds and that holds a table whose first header cell is slice_column. A cross-repository reference prefixes an id with the other project's `name` and a colon. A delivering commit carries one slice_trailer trailer with a bare slice id and may carry a backlog_trailer trailer whose value matches the backlog_id pattern. adoption_boundary is a commit before which trailers are not judged (null: every commit). scripts/check_structure.py check_Z holds the plan docs' Slice cells, campaign headings, slice order and prose mentions to this block; tests/integration/test_work_trailers.py holds commit trailers to it; a missing block is an error once the tree has a plan doc, and a malformed one always is.",

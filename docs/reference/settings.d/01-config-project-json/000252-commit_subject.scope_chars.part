@@ -1,0 +1,1 @@
+| `commit_subject.scope_chars` | string | `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-`; required in the loader | unique letters, digits and `_./,-` | `scripts/commit_subject.py`; `tests/integration/test_work_trailers.py` | Literal characters allowed in an optional non-empty scope. | commit bodies and trailers | always |

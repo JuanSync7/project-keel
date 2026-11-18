@@ -1,0 +1,1 @@
+| `scripts/commit_subject.py --message-file` | path | — | readable UTF-8 message file | `scripts/commit_subject.py` | Judges the first line after leading blank and `#` comment lines. | history ranges; the history gate reads those | always |
