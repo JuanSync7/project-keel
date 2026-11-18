@@ -23,7 +23,7 @@ Will not do in CMP-27: change `tests.workers`, drop or merge a nested-suite vari
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-27.S1 | `make test` runs the suite on `tests.workers` workers under pytest-xdist's default `load` scheduling, which hands each worker a run of consecutive tests and never takes queued tests back, so one worker runs every heavy copier module while the other three sit idle; the recipe schedules with `--dist worksteal`, and the tests and docs that state the recipe say so. | implemented — the `make test` recipe passes `--dist worksteal`, the Makefile judge and both manifests' `tests.full_gate_options` accept only that value, the pytest-xdist floor is 3.2 in both pyproject files, and the recipe test fails without the flag; the Sonnet review approved with notes, and its two doc findings are fixed; the done-condition waits on the landing verify |
+| CMP-27.S1 | `make test` runs the suite on `tests.workers` workers under pytest-xdist's default `load` scheduling, which hands each worker a run of consecutive tests and never takes queued tests back, so one worker runs every heavy copier module while the other three sit idle; the recipe schedules with `--dist worksteal`, and the tests and docs that state the recipe say so. | implemented — the `make test` recipe passes `--dist worksteal`, the Makefile judge and both manifests' `tests.full_gate_options` accept only that value, the pytest-xdist floor is 3.2 in both pyproject files, and the recipe test fails without the flag; the Sonnet review approved with notes, and its two doc findings are fixed; done — landing verify at 3caf9d76: `make verify` 3398 s against 11103 s, junit `<testsuite time>` 3306 s against 10992 s and the model's 66 min, summed test time 11444 s against 13752 s over 12933 cases, workers 87% busy against 31%. The summed drop is all in the ship set (175.9 to 137.5 min; the rest stays at 53.3 and 53.2 min), mostly the four nested-suite cases (about 20 to about 9.6 min each); inferred cause: a generated project's shipped `make test` now steals work too. The baseline ran beside another project's full verify; this run had the heavy slot alone, with a 1-minute load median of 12.1. The same chain's `make test-ship`, still one process, took 7888 s against 10614 s |
 | CMP-27.S2 | `make test-ship` runs the ship set in one process although the ship set is the heaviest part of the suite; the recipe runs it on `tests.workers` workers with `--dist worksteal`, as `make test` does after S1, and `tests.workers` set to 0 still runs it in one process. | planned |
 
 ### Baseline
@@ -37,7 +37,7 @@ It is kept outside the repository, in the run's plan inputs, as `verifytime-base
 | pytest wall time (`<testsuite time>`) | 10992 s |
 | Summed test time | 13752 s (229.2 min) over 12927 cases |
 | Worker utilisation, summed time over wall time times four workers | 31% |
-| `make test-ship` wall time, one process | 10614 s; its 399 cases sum to 176.0 min |
+| `make test-ship` wall time, one process | 10614 s; its 392 cases sum to 175.9 min |
 
 The four slowest cases take about 20 minutes each and sit next to each other in collection order: the declined-showcase prune case and the three `test_a_generated_project_passes_its_own_suite` variants.
 
