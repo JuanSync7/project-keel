@@ -633,3 +633,20 @@ def test_assembler_reads_configured_release_pattern_for_replay(tmp_path):
         assemble_fragments.FragmentError, match="already released in version 42"
     ):
         assemble_fragments.changelog_plan(tmp_path, None, None)
+
+
+def test_the_guide_quotes_the_configured_changelog_headings():
+    """deterministic-checks.md names the categories and unreleased text config declares."""
+    import io
+
+    import config_loader
+
+    categories, unreleased, _release = config_loader.changelog_headings(
+        config_loader.read(str(_ROOT)), stream=io.StringIO()
+    )
+    guide = (_ROOT / "docs/guides/deterministic-checks.md").read_text("utf-8")
+    prose = " ".join(guide.split())
+    quoted = ", ".join("`%s`" % name for name in categories[:-1])
+    quoted += " and `%s`" % categories[-1]
+    assert "`changelog.headings.categories`: %s." % quoted in prose
+    assert "The shipped release texts are `%s` and" % unreleased in prose

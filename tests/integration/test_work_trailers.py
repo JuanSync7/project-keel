@@ -550,22 +550,9 @@ def test_backtracking_backlog_pattern_is_refused(toy: Any, *, in_block: bool) ->
 def _subject_boundary(root, boundary):
     path = root / "config" / "project.json"
     data = json.loads(path.read_text(encoding="utf-8"))
-    data["commit_subject"] = {
-        "types": [
-            "feat",
-            "fix",
-            "docs",
-            "test",
-            "refactor",
-            "ci",
-            "chore",
-            "style",
-            "perf",
-            "release",
-        ],
-        "scope_chars": "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-",
-        "adoption_boundary": boundary,
-    }
+    # One vocabulary: the toy takes keel's own policy and moves only the boundary.
+    shipped = json.loads((_ROOT / "config" / "project.json").read_text("utf-8"))
+    data["commit_subject"] = dict(shipped["commit_subject"], adoption_boundary=boundary)
     path.write_text(json.dumps(data), encoding="utf-8")
 
 

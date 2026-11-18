@@ -69,7 +69,7 @@ copier copy --trust gh:JuanSync7/project-keel my-project
 cd my-project
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # the gate's tools and the REST transport's packages; make check-venv judges them
-git init && git add -A && git commit -q -m "chore: generate project"   # the hook and the history scan need a commit
+git init && git add -A && git commit -q -m "chore: generate project"   # the hooks, the history scan and the subject gate need a commit
 .venv/bin/pre-commit install          # pre-commit checks (including secrets) and commit-msg subject policy
 make check                            # the structure gate
 make fe-install                       # the frontend app's packages

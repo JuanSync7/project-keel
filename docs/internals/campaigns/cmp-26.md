@@ -24,7 +24,7 @@ Will not do in CMP-26: rewrite git history, judge a commit body beyond what the 
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-26.S1 | `scripts/check_structure.py` check_Q refuses, with file and line, a `CHANGELOG.md` heading outside the declared grammar: one depth-one title, depth-two `[Unreleased]` or `[x.y.z] — YYYY-MM-DD` releases, depth-three categories from one closed list, and nothing deeper; a missing changelog or one with no heading is refused, not passed. | planned |
-| CMP-26.S2 | One commit-subject matcher, `scripts/commit_subject.py`, judges a subject against a closed type list and a declared shape; `tests/integration/test_work_trailers.py` judges every subject after `commit_subject.adoption_boundary` with it, and the script judges one message file for a hook. | planned |
+| CMP-26.S2 | One commit-subject matcher, `scripts/commit_subject.py`, judges a subject against a closed type list and a declared shape; `tests/integration/test_work_trailers.py` judges every non-merge subject after `commit_subject.adoption_boundary` with it, and the script judges one message file for a hook. | planned |
 | CMP-26.S3 | `.pre-commit-config.yaml` runs the S2 matcher at the `commit-msg` stage and `pre-commit install` installs that hook type; a repository given the shipped hook refuses a bad subject through the installed hook, and a generated project refuses one through its own matcher and its history gate. | planned |
 
 CMP-26.S1 owns the heading grammar.
@@ -57,3 +57,4 @@ A checkout that installed its hooks before this re-runs `pre-commit install` onc
 - The hook passes a subject that starts `fixup! `, `squash! ` or `amend! `, so `git commit --fixup` keeps working; the history gate still judges such a commit if it lands unsquashed.
 - A `Revert "…"` subject is judged like any other; the developer edits it to a declared type.
 - check_Q owes the heading rule only where `config/project.json` declares a `changelog` block or `CHANGELOG.md` exists, as check_Z owes work naming only where a plan doc exists: both manifests declare the block, so a project that loses its changelog is still refused, and a test's toy tree with neither is not judged. A refused manifest adds no changelog error beside its own.
+- The subject history gate refuses a repository with no commit yet, where the trailer gate skips: a pass over zero commits judges nothing, as the secret scan refuses an empty range, and the Quickstart commits the project before any gate runs.
