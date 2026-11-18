@@ -9,7 +9,7 @@ tags: [tdd, bounded-convergence, ralph-loop, testing, e2e, workflow, agents, gui
 summary: The default working loops any human or LLM follows in this repo — test-first, bounded convergence, and end-to-end coverage — all gated by `make verify`.
 id: docs-guides-dev-loops
 created: 2026-06-22
-updated: 2026-11-10
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -39,10 +39,13 @@ make test     # pytest over the whole suite on tests.workers parallel workers (t
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
 
-`make test` passes pytest-xdist `-n auto`, and `tests/conftest.py` answers
-the count with config/project.json `tests.workers` (0 is one process); a tier
-target such as `make unit` and a direct `pytest` stay in one process, so pass
-`-n auto` yourself to run a narrowed selection on workers.
+`make test` passes pytest-xdist `-n auto --dist worksteal`.
+`tests/conftest.py` answers the count with config/project.json `tests.workers`.
+A count of 0 runs the suite in one process.
+Work stealing lets idle workers take queued tests from a busy worker.
+Only `make test` asks for workers.
+A tier target such as `make unit` and a direct `pytest` stay in one process.
+Pass `-n auto --dist worksteal` yourself to run a narrowed selection on workers.
 
 For the inner loop, `make test-changed` uses pytest's `--lf`: it reruns only
 recorded failures, keeping feedback smaller than `--ff`, which runs every test

@@ -151,6 +151,23 @@ def test_full_gate_accepts_harmless_addopts(addopts, monkeypatch):
     assert caught.value.code == 0
 
 
+@pytest.mark.parametrize("tokens", [["--dist", "worksteal"], ["--dist=worksteal"]])
+@pytest.mark.parametrize("source", ["command line", "PYTEST_ADDOPTS"])
+def test_full_gate_accepts_worksteal(tokens, source):
+    args = tokens if source == "command line" else []
+    addopts = shlex.join(tokens) if source == "PYTEST_ADDOPTS" else ""
+    assert sg.check_full_gate(args, addopts) == 0
+
+
+@pytest.mark.parametrize("source", ["command line", "PYTEST_ADDOPTS"])
+def test_full_gate_refuses_load_scheduler(source, capsys):
+    args = ["--dist", "load"] if source == "command line" else []
+    addopts = "--dist load" if source == "PYTEST_ADDOPTS" else ""
+    assert sg.check_full_gate(args, addopts) == 2
+    message = capsys.readouterr().err
+    assert source in message and "--dist value 'load'" in message
+
+
 def test_full_gate_refuses_unparseable_addopts(monkeypatch, capsys):
     monkeypatch.setenv("PYTEST_ADDOPTS", "-k 'unterminated")
     monkeypatch.setattr(sys, "argv", [sg.__file__])

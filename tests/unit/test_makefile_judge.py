@@ -922,8 +922,8 @@ def test_short_pytest_options_refuse_equals(option: str) -> None:
 @pytest.mark.parametrize(
     "args",
     [
-        "--durations=10 --junitxml=report.xml -n 3 -p no:cacheprovider",
-        "--durations 7 --junitxml report.xml -n auto --keel-full-gate",
+        "--durations=10 --junitxml=report.xml -n 3 -p no:cacheprovider --dist=worksteal",
+        "--durations 7 --junitxml report.xml -n auto --keel-full-gate --dist worksteal",
     ],
 )
 def test_long_value_options_accept_equals_and_separate_values(args: str) -> None:

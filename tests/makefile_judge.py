@@ -88,6 +88,7 @@ _PYTEST_ARGUMENTS = {
     "--keel-full-gate": None,
     "-p": r"no:cacheprovider",
     "-n": r"auto|[0-9]+",
+    "--dist": r"worksteal",
     "--durations": r"[1-9][0-9]*|\$durations|\$\{durations\}",
     "--junitxml": r"[A-Za-z0-9_./-]+",
 }

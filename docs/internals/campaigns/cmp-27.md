@@ -23,7 +23,7 @@ Will not do in CMP-27: change `tests.workers`, drop or merge a nested-suite vari
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-27.S1 | `make test` runs the suite on `tests.workers` workers under pytest-xdist's default `load` scheduling, which hands each worker a run of consecutive tests and never takes queued tests back, so one worker runs every heavy copier module while the other three sit idle; the recipe schedules with `--dist worksteal`, and the tests and docs that state the recipe say so. | planned |
+| CMP-27.S1 | `make test` runs the suite on `tests.workers` workers under pytest-xdist's default `load` scheduling, which hands each worker a run of consecutive tests and never takes queued tests back, so one worker runs every heavy copier module while the other three sit idle; the recipe schedules with `--dist worksteal`, and the tests and docs that state the recipe say so. | implemented — the `make test` recipe passes `--dist worksteal`, the Makefile judge and both manifests' `tests.full_gate_options` accept only that value, the pytest-xdist floor is 3.2 in both pyproject files, and the recipe test fails without the flag; the Sonnet review approved with notes, and its two doc findings are fixed; the done-condition waits on the landing verify |
 | CMP-27.S2 | `make test-ship` runs the ship set in one process although the ship set is the heaviest part of the suite; the recipe runs it on `tests.workers` workers with `--dist worksteal`, as `make test` does after S1, and `tests.workers` set to 0 still runs it in one process. | planned |
 
 ### Baseline

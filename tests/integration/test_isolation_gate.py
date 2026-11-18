@@ -212,9 +212,9 @@ def test_an_exemption_whose_test_did_not_run_is_not_judged(tmp_path):
     assert code == 0, out[-3000:]
 
 
-# `-n auto` is how `make test` asks for workers: the count is tests.workers,
-# which the shipped conftest hands pytest-xdist.
-_WORKERS = ("-n", "auto")
+# Match the shipped scheduler so the worker-count and record hand-over proofs
+# exercise the scheduling that make test uses.
+_WORKERS = ("-n", "auto", "--dist", "worksteal")
 
 
 def _created(out):
@@ -295,7 +295,13 @@ def test_the_expiring_tier_record_is_refused_under_workers(tmp_path, count):
     root = _recording_project(tmp_path, workers=2)
     record = tmp_path / "record.json"
     code, out, outcomes = _run(
-        tmp_path, root, "-n", count, "--expiring-tier-record=%s" % record
+        tmp_path,
+        root,
+        "-n",
+        count,
+        "--dist",
+        "worksteal",
+        "--expiring-tier-record=%s" % record,
     )
     assert code == 4 and not outcomes, out[-3000:]
     assert "run it without -n" in out, out[-3000:]

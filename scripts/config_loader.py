@@ -1980,7 +1980,8 @@ KEYS = tuple(
                 ("tests", "workers"),
                 "int",
                 0,
-                "how many pytest-xdist workers `make test` starts (`-n auto`); "
+                "how many pytest-xdist workers `make test` starts "
+                "(`-n auto --dist worksteal`); "
                 "0 runs the suite in one process",
                 accepts=(_not_negative, "a value >= 0"),
             ),

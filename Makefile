@@ -193,7 +193,9 @@ verify: ## [local] Check local installs first, then run all gates (all checks + 
 # writes its own junit report, the only source of the evidence record's test
 # counts (never the terminal). A make variable, not PYTEST_ADDOPTS: pytest never
 # reads it, so the nested pytest runs under tests/ write no report of their own.
-# `-n auto` runs the suite on pytest-xdist workers, as many as
+# `-n auto --dist worksteal` lets idle pytest-xdist workers take queued tests
+# from a busy worker, so consecutive heavy modules do not leave workers idle.
+# The suite runs on as many workers as
 # config/project.json tests.workers says (tests/conftest.py answers xdist's
 # count with it; 0 keeps one process). Only this target asks for workers: a
 # tier target and a direct pytest invocation stay in one process.
@@ -202,7 +204,7 @@ verify: ## [local] Check local installs first, then run all gates (all checks + 
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
 	$(PY) tests/selection_guard.py
 	@durations="$$($(PY) scripts/config_get.py tests.durations)" && \
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider --keel-full-gate -n auto --durations "$$durations" $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider --keel-full-gate -n auto --dist worksteal --durations "$$durations" $(if $(JUNIT_XML),--junitxml=$(JUNIT_XML))
 
 # Paths come only from the loader. An empty downstream declaration refuses
 # instead of letting pytest's default selection run the whole suite.

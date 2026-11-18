@@ -9,7 +9,7 @@ tags: []
 summary: Unit tests mirror src/. Integration, e2e and smoke tests go by scenario. Nested sessions inherit a scratch directory for each test-running process.
 id: tests-readme
 created: 2026-06-17
-updated: 2026-11-10
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -86,9 +86,9 @@ named after the test, and removes a passed one's.
 
 ## `make test` runs on parallel workers
 
-`make test`, and so `make verify`, passes pytest-xdist `-n auto`, and
+`make test`, and so `make verify`, passes pytest-xdist `-n auto --dist worksteal`, and
 `conftest.py` answers xdist's count with `tests.workers` (read by
-`isolation_guard.py` `worker_count`); 0 runs the suite in one process. A tier target passes no `-n`, so it stays in one process. A direct
+`isolation_guard.py` `worker_count`); 0 runs the suite in one process. Work stealing lets idle workers take queued tests from a busy worker. A tier target passes no `-n`, so it stays in one process. A direct
 `pytest` call or a nested session uses the caller's `-n` choice. Each worker judges its own tests' reaches. The unused-exemption
 check needs every test that ran, so a worker hands its record (`usage`) to the
 controller when it ends, the controller adds the records up (`merge_usage`)

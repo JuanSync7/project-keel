@@ -883,6 +883,9 @@ version rather than a bare commit:
   guard that fails a reach past it.
 
 - Commit subjects follow one configured matcher in the history gate and the message-file CLI. Generated projects begin with `chore: generate project`.
+- `make test` schedules its configured workers with `--dist worksteal`, so idle
+  workers take queued tests from busy workers. The full gate allows only this
+  scheduler, and the dev dependency requires pytest-xdist 3.2 or later.
 ### Fixed
 - **Copier refuses free-text answers that would break generated files
   (KEEL-ANSWERS-1).** `project_name` allows ASCII letters, digits, spaces,
