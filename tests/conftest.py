@@ -344,8 +344,8 @@ def _say(config, message):
         sys.stderr.write(message + "\n")
 
 
-# Parallel workers (pytest-xdist). `make test` asks for `-n auto`, and the
-# count is config/project.json tests.workers, so it is set in one place; 0
+# Parallel workers (pytest-xdist). `make test` and `make test-ship` ask for
+# `-n auto`, and config/project.json tests.workers sets the count in one place; 0
 # runs the session in this process. Each worker judges its own tests, so the
 # unused-exemption check moves to the controller: a worker hands over what it
 # saw, and a worker that ended without handing it over leaves the check

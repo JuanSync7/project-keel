@@ -197,8 +197,10 @@ verify: ## [local] Check local installs first, then run all gates (all checks + 
 # from a busy worker, so consecutive heavy modules do not leave workers idle.
 # The suite runs on as many workers as
 # config/project.json tests.workers says (tests/conftest.py answers xdist's
-# count with it; 0 keeps one process). Only this target asks for workers: a
-# tier target and a direct pytest invocation stay in one process.
+# count with it; 0 keeps one process). `make test` and `make test-ship` ask
+# for workers. The ship set is the heaviest part of the suite, so test-ship
+# uses workers too. A tier target and a direct pytest invocation stay in one
+# process.
 # The preflight refuses malformed PYTEST_ADDOPTS before pytest parses it;
 # the CLI flag also checks the actual invocation, without leaking to children.
 test: check-python ## [local] Run the whole test suite on config/project.json tests.workers parallel workers
@@ -212,7 +214,7 @@ test-ship: check-python ## [local] Run exactly config/project.json tests.ship_se
 	@ship_set="$$($(PY) scripts/config_get.py tests.ship_set)" && \
 	ship_paths="$$(printf '%s\n' "$$ship_set" | $(PY) -c 'import json, sys; print(" ".join(json.load(sys.stdin)))')" && \
 	{ test -n "$$ship_paths" || { echo "test-ship: tests.ship_set is empty; configure renderer test modules" >&2; exit 2; }; } && \
-	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider $$ship_paths
+	PYTHONPATH=$(PYTHONPATH) $(PY) -m pytest -p no:cacheprovider -n auto --dist worksteal $$ship_paths
 
 test-changed: check-python ## [local] Rerun only recorded failures (--lf keeps the loop small; cold cache runs all); never the gate
 	PYTHONPATH=$(PYTHONPATH) $(PY) scripts/changed_tests.py

@@ -1,0 +1,3 @@
+- `make test-ship` runs its configured renderer modules on `tests.workers`
+  pytest-xdist workers with `-n auto --dist worksteal` because the ship set
+  is the heaviest part of the suite. A count of 0 runs the set in one process.

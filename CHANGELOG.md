@@ -886,6 +886,9 @@ version rather than a bare commit:
 - `make test` schedules its configured workers with `--dist worksteal`, so idle
   workers take queued tests from busy workers. The full gate allows only this
   scheduler, and the dev dependency requires pytest-xdist 3.2 or later.
+- `make test-ship` runs its configured renderer modules on `tests.workers`
+  pytest-xdist workers with `-n auto --dist worksteal` because the ship set
+  is the heaviest part of the suite. A count of 0 runs the set in one process.
 ### Fixed
 - **Copier refuses free-text answers that would break generated files
   (KEEL-ANSWERS-1).** `project_name` allows ASCII letters, digits, spaces,

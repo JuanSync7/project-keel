@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from test_scratch_root_gate import child_timeout
 
+import makefile_judge
 import script_copy
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -699,30 +700,41 @@ def test_unresolved_render_bindings_fail_with_the_source_location(tmp_path, sour
         renderer_modules(tmp_path)
 
 
+@pytest.mark.parametrize("option", ["-n auto", "--dist worksteal"])
+def test_target_requests_workers_and_work_stealing(option):
+    command = makefile_judge.dry_run("test-ship")
+    assert option in command, command
+    assert "--expiring-tier-record" not in command, command
+
+
+@pytest.mark.parametrize("workers", [0, 2])
 @pytest.mark.parametrize("selection", [["tests/test_one.py", "tests/test_two.py"], []])
-def test_target_runs_exactly_the_configured_selection(tmp_path, selection):
+def test_target_runs_exactly_the_configured_selection(tmp_path, selection, workers):
     script_copy.copy_with_imports(
         tmp_path,
         _ROOT,
         [
             "Makefile",
             "pyproject.toml",
+            "config/project.json",
+            "tests/conftest.py",
             "scripts/config_get.py",
             "scripts/check_python_version.py",
         ],
     )
-    config = tmp_path / "config"
-    config.mkdir()
-    (config / "project.json").write_text(
-        json.dumps({"tests": {"ship_set": selection}}), encoding="utf-8"
-    )
+    config = tmp_path / "config" / "project.json"
+    manifest = json.loads(config.read_text(encoding="utf-8"))
+    manifest["tests"]["ship_set"] = selection
+    manifest["tests"]["workers"] = workers
+    config.write_text(json.dumps(manifest), encoding="utf-8")
     tests = tmp_path / "tests"
-    tests.mkdir()
+    expected_workers = {"gw0", "gw1"} if workers else {"main"}
     for name in ("one", "two"):
         (tests / ("test_" + name + ".py")).write_text(
-            "from pathlib import Path\n\n"
+            "import os\n\n"
             "def test_selected():\n"
-            f"    assert Path('{name}.ran').write_text('selected') == 8\n",
+            "    worker = os.environ.get('PYTEST_XDIST_WORKER', 'main')\n"
+            f"    assert worker in {expected_workers!r}\n",
             encoding="utf-8",
         )
     (tests / "test_unselected.py").write_text(
@@ -740,16 +752,14 @@ def test_target_runs_exactly_the_configured_selection(tmp_path, selection):
     if selection:
         assert ran.returncode == 0, ran.stdout + ran.stderr
         assert "2 passed" in ran.stdout, ran.stdout
-        assert [
-            (tmp_path / (name + ".ran")).read_text() for name in ("one", "two")
-        ] == [
-            "selected",
-            "selected",
-        ]
+        if workers:
+            assert "2 workers" in ran.stdout, ran.stdout
     else:
-        assert ran.returncode != 0, ran.stdout + ran.stderr
-        assert "tests.ship_set is empty" in ran.stderr, ran.stderr
-        assert not list(tmp_path.glob("*.ran"))
+        assert ran.returncode == 2, ran.stdout + ran.stderr
+        assert (
+            "test-ship: tests.ship_set is empty; configure renderer test modules"
+            in ran.stderr
+        ), ran.stderr
 
 
 @pytest.mark.parametrize(

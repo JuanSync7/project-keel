@@ -84,11 +84,13 @@ the checkout stays outside it. A test that starts a child process gives it the
 seconds `tests.child_timeout_seconds` names. `pyproject.toml` keeps a failed test's directory,
 named after the test, and removes a passed one's.
 
-## `make test` runs on parallel workers
+## `make test` and `make test-ship` run on parallel workers
 
-`make test`, and so `make verify`, passes pytest-xdist `-n auto --dist worksteal`, and
+`make test` and `make test-ship` pass pytest-xdist `-n auto --dist worksteal`.
+`make verify` reaches workers through `make test`.
+The ship set is the heaviest part of the suite, so `make test-ship` uses workers.
 `conftest.py` answers xdist's count with `tests.workers` (read by
-`isolation_guard.py` `worker_count`); 0 runs the suite in one process. Work stealing lets idle workers take queued tests from a busy worker. A tier target passes no `-n`, so it stays in one process. A direct
+`isolation_guard.py` `worker_count`). A count of 0 runs the selection in one process. Work stealing lets idle workers take queued tests from a busy worker. A tier target passes no `-n`, so it stays in one process. A direct
 `pytest` call or a nested session uses the caller's `-n` choice. Each worker judges its own tests' reaches. The unused-exemption
 check needs every test that ran, so a worker hands its record (`usage`) to the
 controller when it ends, the controller adds the records up (`merge_usage`)

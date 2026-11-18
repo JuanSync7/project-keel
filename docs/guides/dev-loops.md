@@ -39,11 +39,12 @@ make test     # pytest over the whole suite on tests.workers parallel workers (t
 make check    # fast, 3.6-safe structural gate (runs in pre-commit)
 ```
 
-`make test` passes pytest-xdist `-n auto --dist worksteal`.
+`make test` and `make test-ship` pass pytest-xdist `-n auto --dist worksteal`.
 `tests/conftest.py` answers the count with config/project.json `tests.workers`.
 A count of 0 runs the suite in one process.
 Work stealing lets idle workers take queued tests from a busy worker.
-Only `make test` asks for workers.
+`make test` and `make test-ship` ask for workers.
+The ship set is the heaviest part of the suite, so `make test-ship` uses workers.
 A tier target such as `make unit` and a direct `pytest` stay in one process.
 Pass `-n auto --dist worksteal` yourself to run a narrowed selection on workers.
 
