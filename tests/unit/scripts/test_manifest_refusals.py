@@ -77,6 +77,18 @@ _READERS = (
         ),
     ),
     (
+        # The policy is read before the message file, so no file is needed.
+        "scripts/commit_subject.py",
+        "subject",
+        ("--message-file", "COMMIT_EDITMSG"),
+        (
+            14,
+            "",
+            "config/project.json does not exist: commit_subject policy; repair "
+            "the named key in config/project.json\n",
+        ),
+    ),
+    (
         "scripts/audit_dependencies.py",
         "settings",
         (),

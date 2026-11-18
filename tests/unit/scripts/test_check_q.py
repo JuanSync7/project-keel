@@ -485,6 +485,23 @@ def test_changelog_requires_file_and_one_title(tmp_path, monkeypatch, text):
     assert errors and all("CHANGELOG.md:" in error for error in errors), errors
 
 
+def _drop_changelog_block(manifest):
+    del manifest["changelog"]
+
+
+def test_changelog_rule_is_owed_only_where_declared_or_kept(tmp_path, monkeypatch):
+    # A tree with neither the block nor the file (a test's toy tree) owes
+    # nothing, as check_Z owes work naming only where a plan doc exists.
+    assert _changelog_check(tmp_path, monkeypatch, None, _drop_changelog_block) == []
+
+
+def test_a_kept_changelog_with_no_declared_grammar_is_refused(tmp_path, monkeypatch):
+    errors = _changelog_check(
+        tmp_path, monkeypatch, "# History\n", _drop_changelog_block
+    )
+    assert errors and all("changelog.headings" in e for e in errors), errors
+
+
 @pytest.mark.parametrize(
     "text",
     [

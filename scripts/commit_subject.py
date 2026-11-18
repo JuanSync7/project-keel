@@ -73,8 +73,10 @@ def main(argv=None):
     try:
         policy = load_policy(os.getcwd())
     except config_loader.ConfigError as exc:
+        # A merge-conflict hunk is the user's to resolve (USAGE), as every
+        # other entry point that reads the manifest ends it.
         return report(
-            ExitCode.CONFIG,
+            ExitCode.USAGE if config_loader.is_conflict(exc) else ExitCode.CONFIG,
             str(exc),
             "commit_subject policy",
             "repair the named key in config/project.json",

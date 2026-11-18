@@ -294,7 +294,10 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   leaving the knowledge graph pointing at the wrong sections at exit 0. It is
   an error, not the ADR-K-0008 release-long WARN: keel's tree carries no dead
   reference, so there is nothing to give anyone time for.
-  check_Q requires `CHANGELOG.md` and exactly one depth-one title.
+  check_Q requires `CHANGELOG.md` and exactly one depth-one title wherever
+  `config/project.json` declares a `changelog` block or the file exists;
+  a tree with neither owes no changelog rule, as check_Z owes work naming
+  only where a plan doc exists.
   Depth-two headings match `changelog.headings.unreleased` or the full
   `changelog.headings.release_pattern` from `config/project.json`.
   The shipped release texts are `[Unreleased]` and `[x.y.z] — YYYY-MM-DD`.

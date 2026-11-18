@@ -4622,21 +4622,24 @@ def _crossref_findings(files, tree, scan=None):
 
 def _changelog_heading_findings(files, manifest):
     """Refuse absent history and headings outside the configured depth grammar."""
-    findings = []
-    if "CHANGELOG.md" not in files:
-        findings.append(
-            "CHANGELOG.md:1: missing changelog -- restore its title and history"
-        )
+    # The rule is owed where the project declares a heading grammar or keeps a
+    # changelog, as check_Z owes work naming only where a plan doc exists: a
+    # refused manifest is already an error, and a tree with neither the block
+    # nor the file (a test's toy tree) has no changelog to judge.
     if manifest is _REFUSED:
-        return findings
+        return []
+    declared = isinstance(manifest, dict) and "changelog" in manifest
+    if not declared and "CHANGELOG.md" not in files:
+        return []
     try:
         categories, unreleased, release = config_loader.changelog_headings(
             manifest, stream=io.StringIO()
         )
     except config_loader.ConfigError as exc:
-        return findings + list(exc.lines)
+        return list(exc.lines)
     if "CHANGELOG.md" not in files:
-        return findings
+        return ["CHANGELOG.md:1: missing changelog -- restore its title and history"]
+    findings = []
     headings = list(_markdown_headings(_unfenced_lines(files["CHANGELOG.md"])))
     titles = 0
     for line, depth, heading in headings:
