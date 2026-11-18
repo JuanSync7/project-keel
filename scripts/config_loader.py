@@ -913,28 +913,20 @@ _ACCEPTED_RISKS = (
 # typed view over the value resolved here; an open-keyed map is one row, never
 # a row per name.
 def _commit_types(value: Any) -> bool:
-    allowed = {
-        "feat",
-        "fix",
-        "docs",
-        "test",
-        "refactor",
-        "ci",
-        "chore",
-        "style",
-        "perf",
-        "release",
-    }
+    # Shape only: the vocabulary itself is the config value, so a project
+    # can add a type without editing this module.
     return (
         bool(value)
         and len(value) == len(set(value))
-        and all(v in allowed for v in value)
+        and all(re.fullmatch(r"[a-z][a-z0-9]*", v) is not None for v in value)
     )
 
 
 def _scope_chars(value: Any) -> bool:
-    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./,-"
-    return len(value) == len(set(value)) and all(v in allowed for v in value)
+    # The subject grammar spends these on its own syntax, so a scope cannot.
+    return len(value) == len(set(value)) and all(
+        v.isprintable() and not v.isspace() and v not in "()!:" for v in value
+    )
 
 
 KEYS = tuple(
@@ -969,7 +961,7 @@ KEYS = tuple(
                 "closed commit subject type vocabulary",
                 accepts=(
                     _commit_types,
-                    "a non-empty unique list drawn from feat, fix, docs, test, refactor, ci, chore, style, perf, release",
+                    "a non-empty unique list of lowercase words (a letter, then letters or digits)",
                 ),
             ),
             _row(
@@ -977,7 +969,10 @@ KEYS = tuple(
                 "nonempty_str",
                 NONE,
                 "literal characters allowed in a non-empty optional commit scope",
-                accepts=(_scope_chars, "unique letters, digits or _./,-"),
+                accepts=(
+                    _scope_chars,
+                    "unique printable characters other than whitespace and ()!:",
+                ),
             ),
             _row(
                 ("commit_subject", "adoption_boundary"),

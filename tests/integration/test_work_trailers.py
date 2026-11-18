@@ -691,9 +691,12 @@ def test_subject_cli(toy, interpreter, message, expected):
     [
         ("types", []),
         ("types", ["feat", "feat"]),
-        ("types", ["unknown"]),
+        ("types", ["Feat"]),
+        ("types", ["2fix"]),
         ("types", "feat"),
         ("scope_chars", ""),
+        ("scope_chars", "a(b"),
+        ("scope_chars", "a b"),
         ("adoption_boundary", 7),
     ],
 )
@@ -798,3 +801,20 @@ def test_subject_matcher_obeys_loaded_vocabulary_and_scope(toy):
     assert commit_subject.subject_findings("feat(Z): invalid", policy)
     assert commit_subject.subject_findings("fix: invalid", policy)
     assert json.dumps(policy) == before
+
+
+def test_subject_types_come_from_config_alone(toy):
+    """A project's own type list is the whole vocabulary: an added type
+    passes, and a type the list leaves out is refused."""
+    root, env, commit = toy
+    boundary = _run(root, env, "rev-parse", "HEAD")
+    commit("build(deps): pin the toolchain")
+    sha = commit("feat: not in this project's list")
+    _subject_boundary(root, boundary)
+    path = root / "config" / "project.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["commit_subject"]["types"] = ["build", "fix"]
+    path.write_text(json.dumps(data), encoding="utf-8")
+    result = subject_findings(root, env)
+    assert result["commits"] == 2
+    assert len(result["findings"]) == 1 and sha[:12] in result["findings"][0]
