@@ -1,0 +1,1 @@
+- Changelog assembly refuses entries already published in the newest dated section and names the files to delete after an interrupted release.

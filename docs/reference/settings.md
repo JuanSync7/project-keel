@@ -8,7 +8,7 @@ owner: TBD
 summary: Every setting keel reads, with its type, default, valid values, reader, effect, what it is not for, and which projects receive it. The rows are derived-equal to the code by tests/integration/test_reference_drift.py.
 id: docs-reference-settings
 created: 2026-10-09
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -534,9 +534,9 @@ source of a literal default; `—` means the flag has no default.
 | `scripts/hooks/on_stop_triage.py --model` | string | `None` | any | `scripts/hooks/on_stop_triage.py` | Model name from models/ registry. | the doc review hook: `scripts/hooks/on_stop_doc_review.py` | always |
 | `scripts/agent_surface/generate_aad_schema.py --out` | string | `config/agent_surface/aad-v1.0.schema.json` | any | `scripts/agent_surface/generate_aad_schema.py` | Output path (default: the schema file under config/agent_surface/). Relative paths stay inside the project; an explicit absolute path authorizes its parent directory. Escapes exit 2. | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
 | `scripts/agent_surface/generate_aad_schema.py --check` | switch | — | `true` when given | `scripts/agent_surface/generate_aad_schema.py` | Exit 1 if the committed schema is stale (CI / pre-commit). | the REST contract: `api/rest_fastapi/export_openapi.py` | always |
-| `scripts/assemble_fragments.py --check` | flag | — | present or absent | `scripts/assemble_fragments.py` | Compares references and Unreleased without writing and names stale files. | repairing a reference: run without this flag | always |
+| `scripts/assemble_fragments.py --check` | flag | — | present or absent | `scripts/assemble_fragments.py` | Compares references and Unreleased without writing. Names stale files. Refuses complete entry line runs already in the newest dated section, naming the files and version. Delete those already released entries before assembling again. | repairing a reference: run without this flag | always |
 | `scripts/assemble_fragments.py --root` | path | this script's checkout root | project directory | `scripts/assemble_fragments.py` | Loads the target project's fragment configuration. | choosing an individual table: edit that table's entry file | always |
-| `scripts/assemble_fragments.py --release` | version | — | explicit release input | `scripts/assemble_fragments.py` | Rotates entry text to a dated X.Y.Z heading, opens empty Unreleased and deletes sources; never tags. | ordinary assembly: omit both release flags | always |
+| `scripts/assemble_fragments.py --release` | version | — | explicit release input | `scripts/assemble_fragments.py` | Rotates entry text to a dated X.Y.Z heading. Opens empty Unreleased. Deletes consumed sources. Never tags. Refuses complete entry line runs already in the newest dated section, naming the files and version. Delete those already released entries before assembling again. | ordinary assembly: omit both release flags | always |
 | `scripts/assemble_fragments.py --date` | date | — | explicit release input | `scripts/assemble_fragments.py` | Explicit YYYY-MM-DD release date; required with --release, refused with --check. | ordinary assembly: omit both release flags | always |
 
 ## Illustrative examples

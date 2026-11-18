@@ -9,7 +9,7 @@ tags: [checks, ci, linter, determinism, pre-commit, hooks, guide]
 summary: Catalogue of every deterministic check that keeps a project-template repo honest — purpose, when to run, and how to wire as a hook.
 id: docs-guides-deterministic-checks
 created: 2026-06-19
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -64,7 +64,7 @@ everything and therefore expect the project interpreter.
 
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
-| Reference and changelog fragments | `scripts/assemble_fragments.py --check` | error | project | Unreleased equals its configured category entries without changing dated history; every configured reference equals its head, sorted per-table entry files and fixed tail, retaining the output's `updated:` stamp; malformed, misnamed or duplicate entries and unregistered folders fail; keel configures both sets, generated projects list none and edit references by hand |
+| Reference and changelog fragments | `scripts/assemble_fragments.py --check` | error | project | Unreleased equals its configured category entries. Dated history stays byte-identical. Every configured reference equals its head, sorted per-table entry files and fixed tail. Assembly retains the output's `updated:` stamp. Malformed, misnamed or duplicate entries and unregistered folders fail. Every mode refuses complete entry line runs already in the newest dated section, naming the files and version. Delete those already released entries before assembling again. Keel configures both sets. Generated projects list none and edit references by hand. |
 | Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z), then the project's own checks (`structure.project_checks`) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs first in every target whose recipe needs the project interpreter, as a prerequisite or, in `audit-project`, as the recipe line after its usage checks; `tests/integration/test_gate_scope.py` derives which targets need it from the recipes and fails one that does not reach it. `PY` defaults to `.venv/bin/python` when it exists, else `python3` |
 | Venv holds the declared packages | `scripts/check_venv.py` | error | >=3.8 | every requirement of `pyproject.toml`'s core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is installed at a version its specifier allows, judged from installed metadata with no network — the first prerequisite of `make check-all`, which is `make verify`'s first goal, so a venv older than `pyproject.toml` fails with the pip command before a gate fails late or a test skips; `tests/unit/scripts/test_check_venv.py` |

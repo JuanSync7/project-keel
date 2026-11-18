@@ -1164,6 +1164,7 @@ version rather than a bare commit:
   time, which moved between two snapshots with no write on a network mount; it
   now compares a file's time and the sorted listing.
 
+- Changelog assembly refuses entries already published in the newest dated section and names the files to delete after an interrupted release.
 ### Security
 
 - **The config loader's refusals never echo a URL's user part.** When

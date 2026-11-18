@@ -9,7 +9,7 @@ tags: [limits, waivers, exit-codes, troubleshooting, guide]
 summary: What adopting keel costs, the risks its rails leave open, the checks that pass by skipping, what no gate can see, every waiver a project may use, every exit code the gate's scripts return, and the symptom-to-fix list for the failures a newcomer meets first.
 id: docs-guides-limits-and-troubleshooting
 created: 2026-10-09
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -999,6 +999,7 @@ for the evidence about the browser runner's settings.
 | `test_toolchain_gate` names a `runs-on` label, or a `node-version` or `python-version` that is not a `toolchain` step output | a workflow job uses a label `toolchain.runner_images` does not list, or spells a version instead of reading the `toolchain` step | name a listed image, or add the `toolchain` step before the setup step and read `${{ steps.toolchain.outputs.node }}` or `${{ steps.toolchain.outputs.python }}` |
 | `test_toolchain_gate` says `toolchain.python <release> does not satisfy` a floor | `layers.backend.python` or `requires-python` was raised above the release CI installs | set `toolchain.python` to a release that satisfies both; in a generated project, record it as the copier answer too (`copier update --data toolchain_python=<release>`) |
 | In the keel template, `make canary` ends with exit 1 and `<n> of <m> canary projects failed`, each `<set> <path> at <step>` | a project rendered from that answer set and path failed at that step; the line for it names its log, and stderr names the project it kept under the scratch root | read the log beside the kept project and the step's row in [generate-and-upgrade.md](generate-and-upgrade.md); fix keel, then rerun that project alone with `make canary CANARY_FLAGS="--set <set> --path <path>"` |
+| `scripts/assemble_fragments.py` exits 2 with `text already released in version` | an entry's complete line run appears in the newest dated section, as after an interrupted release | Delete the listed entry files because their text is already released. Then rerun assembly. The refusal writes nothing. |
 | `make canary` ends with exit 2 and `no previous release to update from` | no dated `## [X.Y.Z]` heading of `CHANGELOG.md` has a tag that is a strict ancestor of `HEAD`, as in a shallow clone with no tags | fetch the tags (`git fetch --tags`, or a checkout with full history), tag the last release, or run the fresh path alone with `CANARY_FLAGS="--path fresh"` |
 | `make canary` ends with exit 2 and `no such answer set` | a `--set` name in `CANARY_FLAGS` is not a key of config/project.json `canary.answer_sets` | name a set the message lists, or add the set to `canary.answer_sets` |
 | `make canary` ends with exit 13 and `there is no answer set to render` | config/project.json `canary.answer_sets` is empty | add a set to `canary.answer_sets`, then run the target again |

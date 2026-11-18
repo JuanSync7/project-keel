@@ -142,6 +142,58 @@ def test_rotation_converges_and_next_entry_is_only_unreleased(toy):
 
 
 @pytest.mark.parametrize(
+    "args", [(), ("--check",), ("--release", "0.3.0", "--date", "2030-03-04")]
+)
+def test_interrupted_release_refuses_restored_entries_without_writing(toy, args):
+    """Every mode names all already published sources and preserves the tree."""
+    root, _env, _commit = toy
+    folder, _output = _changelog(root)
+    consumed = [
+        _entry(folder / "general", 1, 1, "- released general [link](target)\n\n"),
+        _entry(folder / "fixed", 1, 2, "- released fix\n  with details\n\n"),
+        _entry(folder / "added", 1, 3, "- fully consumed\n"),
+    ]
+    restored = {path: path.read_bytes() for path in consumed[:2]}
+    released = _assemble(root, "--release", "0.2.0", "--date", "2030-02-03")
+    assert released.returncode == 0, released.stderr
+    assert all(not path.exists() for path in consumed)
+    for path, content in restored.items():
+        path.write_bytes(content)
+    _entry(folder / "added", 2, 4, "- unpublished addition\n")
+    before = _tree(root)
+    refused = _assemble(root, *args)
+    assert refused.returncode == 2, refused.stderr
+    assert "0.2.0" in refused.stderr
+    assert "already released" in refused.stderr and "delete" in refused.stderr
+    for path in restored:
+        assert str(path.relative_to(root)) in refused.stderr
+    assert _tree(root) == before
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        "## [0.2.0] — 2030-02-03\n\n- prefix extended\n- enclosing - inside tail\n",
+        "",
+        "## [0.2.0] — 2030-02-03\n\n- newest\n\n"
+        "## [0.1.0] — 2020-01-01\n\n- prefix\n- inside\n",
+    ],
+    ids=["partial-lines", "no-dated-section", "older-section"],
+)
+def test_only_whole_line_runs_in_newest_dated_section_refuse(toy, history):
+    """Partial lines, absent history and older releases allow ordinary assembly."""
+    root, _env, _commit = toy
+    folder, output = _changelog(root)
+    output.write_text("# Changelog\n\n## [Unreleased]\n\n" + history)
+    _entry(folder / "fixed", 1, 1, "- prefix\n\n")
+    _entry(folder / "fixed", 2, 2, "- inside\n")
+    assembled = _assemble(root)
+    assert assembled.returncode == 0, assembled.stderr
+    assert output.read_text().endswith(history)
+    assert _assemble(root, "--check").returncode == 0
+
+
+@pytest.mark.parametrize(
     "args, message",
     [
         (("--release", "0.1.0", "--date", "2030-02-03"), "already"),

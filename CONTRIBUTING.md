@@ -8,7 +8,7 @@ owner: TBD
 summary: How to add code/tests/docs without breaking the structure.
 id: contributing
 created: 2026-06-17
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -70,8 +70,11 @@ version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:
    A generated project edits its own changelog by hand. Update every version
    checkout line and commit the changelog and entry deletions together.
    ADR-K-0016 lists those lines for the keel template itself. The assembler
-   never tags. Each file publication is atomic; an interrupted deletion needs
-   recovery of the remaining sources before another assembly.
+   never tags. Each file publication is atomic.
+   Every mode refuses an entry whose complete line run appears in the newest
+   dated section, naming every matching file and the released version.
+   If that refusal appears after an interrupted release, delete the listed
+   entry files: their text is already released. Then rerun the assembly.
 2. Tag that commit locally: `git tag -a v<version> -m "v<version>"`.
 3. Run `make verify`.
 4. In the keel template, run `make canary` too, through

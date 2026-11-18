@@ -39,8 +39,10 @@ different UUIDs; merging cannot rename or reorder existing entries. Each file
 holds one bullet, its continuation lines and intentional blank separators.
 Release is a consuming operation: it refuses repetition, validates everything
 before writing, atomically publishes the changelog, then deletes its entries.
-It never tags. An interrupted deletion needs recovery before another assembly;
-atomic publication protects individual outputs, not the multi-file operation.
+It never tags. Every mode refuses entries whose text already appears as a whole
+line run in the newest dated section, naming their files and the version.
+Delete those already released entries before assembling again.
+Atomic publication protects individual outputs, not the multi-file operation.
 """
 
 from __future__ import annotations
@@ -361,6 +363,29 @@ def changelog_plan(
         raise FragmentError(
             "CHANGELOG.md: expected exactly one ## [Unreleased] heading"
         )
+    for i, match in enumerate(headings):
+        dated = re.fullmatch(
+            r"## \[([0-9]+\.[0-9]+\.[0-9]+)\] — [0-9]{4}-[0-9]{2}-[0-9]{2}\n",
+            match.group(),
+        )
+        if dated is None:
+            continue
+        end = headings[i + 1].start() if i + 1 < len(headings) else len(current)
+        published = current[match.end() : end]
+        duplicates = [
+            str(path.relative_to(root))
+            for path in sources
+            if re.search(
+                r"(?m)^" + re.escape(_text(path).rstrip("\n")) + r"$", published
+            )
+        ]
+        if duplicates:
+            raise FragmentError(
+                f"text already released in version {dated.group(1)}: "
+                + ", ".join(duplicates)
+                + "; delete the listed entry files before assembling again"
+            )
+        break
     index = unreleased[0]
     heading = headings[index]
     end = headings[index + 1].start() if index + 1 < len(headings) else len(current)

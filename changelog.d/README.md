@@ -8,7 +8,7 @@ owner: TBD
 summary: Keel-only bullet sources for Unreleased, with enforced independent names and explicit release rotation; dated history stays in the assembled changelog.
 id: changelog-d-readme
 created: 2026-11-17
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -44,6 +44,8 @@ dated section byte for byte. Edit entries here; read history in `CHANGELOG.md`.
 For release, follow `CONTRIBUTING.md`: the assembler's `--release` and `--date`
 flags rotate entries into a dated section and delete the consumed sources.
 It does not tag. Commit the output and deletions together, tag locally, verify,
-then push on green. Publication is atomic per file; interruption during source
-deletion requires recovery before another assembly. Generated projects edit
+then push on green. Publication is atomic per file.
+Every mode refuses entries whose complete line runs appear in the newest dated
+section, naming each file and the version. Delete the listed files because their
+text is already released. Then rerun the assembly. Generated projects edit
 their own changelogs by hand and disable fragment assembly in their manifest.
