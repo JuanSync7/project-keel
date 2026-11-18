@@ -4623,8 +4623,8 @@ def _crossref_findings(files, tree, scan=None):
 def _changelog_heading_findings(files, manifest):
     """Refuse absent history and headings outside the configured depth grammar."""
     # The rule is owed where the project declares a heading grammar or keeps a
-    # changelog, as check_Z owes work naming only where a plan doc exists: a
-    # refused manifest is already an error, and a tree with neither the block
+    # changelog, as check_Z is silent with neither a work_naming block nor a
+    # plan doc: a refused manifest is already an error, and a tree with neither the block
     # nor the file (a test's toy tree) has no changelog to judge.
     if manifest is _REFUSED:
         return []

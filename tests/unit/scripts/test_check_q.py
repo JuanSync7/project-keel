@@ -491,7 +491,8 @@ def _drop_changelog_block(manifest):
 
 def test_changelog_rule_is_owed_only_where_declared_or_kept(tmp_path, monkeypatch):
     # A tree with neither the block nor the file (a test's toy tree) owes
-    # nothing, as check_Z owes work naming only where a plan doc exists.
+    # nothing, as check_Z is silent with neither a work_naming block nor a
+    # plan doc.
     assert _changelog_check(tmp_path, monkeypatch, None, _drop_changelog_block) == []
 
 
