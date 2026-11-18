@@ -38,7 +38,7 @@ make verify       # preflight + check-all + secret-scan + lint + typecheck + tes
 Wire them once and forget:
 
 ```bash
-pip install -e ".[dev]" && pre-commit install   # run the fast checks on every commit
+pip install -e ".[dev]" && pre-commit install   # install pre-commit checks and the commit-msg subject hook
 make secrets-install                           # build the pinned secret scanner, once per machine
 # CI already runs `make check-all` and `make secret-scan` (.github/workflows/ci.yml)
 ```
@@ -1671,10 +1671,13 @@ reports through `--report NAME=FILE` and never runs npm.
 ### Pre-commit (event trigger)
 
 `.pre-commit-config.yaml` runs the fast, dependency-light checks on every
-commit (each hook is a thin trigger that calls a `scripts/` doer):
+commit at the `pre-commit` stage.
+The `commit-subject` hook judges the message at the `commit-msg` stage.
+Each local hook is a thin trigger that calls a `scripts/` doer:
 
 | Hook id | Calls |
 |---------|-------|
+| `commit-subject` | `python3 scripts/commit_subject.py --message-file`, with the message path appended by pre-commit at `commit-msg` |
 | `structure` | `python3 scripts/check_structure.py` |
 | `openapi` | `python3 api/rest_fastapi/export_openapi.py --check` (skips if FastAPI absent) |
 | `aad-schema` | `python3 scripts/agent_surface/generate_aad_schema.py --check` (skips if pydantic absent) |
@@ -1683,7 +1686,13 @@ commit (each hook is a thin trigger that calls a `scripts/` doer):
 | `eslint` / `ruff` / `ruff-format` | frontend lint + Python lint + Python formatting |
 | `secret-scan` | `python3 scripts/scan_secrets.py --staged-or-history`, running the recorded scanner over the index the commit would carry, or over every commit when `pre-commit run --all-files` stages nothing; pre-commit skips it when a commit adds or changes no file (section 15), and it is exit 11 until `make secrets-install` has run |
 
-Enable once: `pip install -e ".[dev]" && pre-commit install`, then `make secrets-install`.
+Enable once: `pip install -e ".[dev]" && pre-commit install` installs both hook types, then `make secrets-install` records the scanner.
+A checkout with hooks installed before the subject hook re-runs `pre-commit install` once.
+`default_stages: [pre-commit]` keeps the other hooks off the message stage.
+The subject hook exempts a merge when `MERGE_HEAD` is beside the message file.
+It also exempts subjects starting `fixup! `, `squash! ` or `amend! ` so autosquash commits can reach rebase.
+The history gate still judges any autosquash commit that lands unsquashed.
+A `Revert "…"` subject needs a declared type like any other subject.
 
 ### CI (event trigger)
 

@@ -70,7 +70,7 @@ cd my-project
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"     # the gate's tools and the REST transport's packages; make check-venv judges them
 git init && git add -A && git commit -q -m "chore: generate project"   # the hook and the history scan need a commit
-.venv/bin/pre-commit install          # the commit hooks, the staged secret scan among them
+.venv/bin/pre-commit install          # pre-commit checks (including secrets) and commit-msg subject policy
 make check                            # the structure gate
 make fe-install                       # the frontend app's packages
 make fe-browsers                      # the browser its journey drives, into your user cache
@@ -125,7 +125,7 @@ per-machine state the Quickstart built, so redo these steps there before
 ```bash
 python3 -m venv --clear .venv         # the interpreter at requires-python; a venv names it by absolute path
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pre-commit install          # the commit hook names the venv's interpreter too
+.venv/bin/pre-commit install          # both hook types name the venv's interpreter too
 make fe-install                       # node_modules is git-ignored, so a clone has none
 make fe-browsers                      # the browser is in your user cache, which did not move
 make secrets-install                  # the scanner is in your user cache; its git-ignored record names it

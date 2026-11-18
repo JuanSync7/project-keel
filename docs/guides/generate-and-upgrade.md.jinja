@@ -9,7 +9,7 @@ tags: [copier, generate, update, migrations, adoption, guide]
 summary: How a project is generated from keel, what arrives and what never does, what `make new` refuses, how to adopt keel into an existing repository, and how `copier update` pulls template changes — with checklist rows for public tasks and migrations an update runs, how to finish an update a migration stopped, and how keel's release canary proves a fresh project and an updated one pass their own `make verify`.
 id: docs-guides-generate-and-upgrade
 created: 2026-10-09
-updated: 2026-11-17
+updated: 2026-11-18
 visibility: internal
 canonical: true
 ---
@@ -334,9 +334,9 @@ hook to `.pre-commit-config.yaml`. An existing project's `make verify` is red,
 its `secret-scan` goal exiting 11 (`BACKEND_ABSENT`), until
 `make secrets-install` has installed the scanner config pins and recorded it.
 Run it once in each checkout after the update, before the next commit: the
-commit hook runs only the recorded program, so it exits 11 until then too. The hook needs no reinstall: the
-script `pre-commit install` wrote reads `.pre-commit-config.yaml` on every
-commit. A finding in history is not fixed by an
+commit hook runs only the recorded program, so it exits 11 until then too. The pre-commit hook reads `.pre-commit-config.yaml` on every commit.
+Run `pre-commit install` once to install both the pre-commit checks and the
+commit-msg subject hook in a checkout that predates the subject hook. A finding in history is not fixed by an
 exclusion: `docs/guides/limits-and-troubleshooting.md`, "A credential was
 committed", is the procedure. The update adds `secret-scan` to
 config/project.json `make_targets.effect_proof_skip`, because the effect

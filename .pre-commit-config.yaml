@@ -1,11 +1,19 @@
 # Install once:  pip install -e ".[dev]" (it carries pre-commit) && pre-commit install
+# Installs pre-commit checks and the commit-msg subject hook.
 # The secret scanner once per checkout:  make secrets-install (fetches the
 # pinned release once per machine; the commit hook below refuses until then)
 # Each hook below is a thin TRIGGER (an adapter) that fires a doer;
 # the doer's logic lives in scripts/ or the tool, never inline here.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
 repos:
   - repo: local
     hooks:
+      - id: commit-subject
+        name: commit subject policy
+        entry: python3 scripts/commit_subject.py --message-file
+        language: system
+        stages: [commit-msg]
       - id: structure
         name: structure & frontmatter conventions
         entry: python3 scripts/check_structure.py

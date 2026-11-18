@@ -3,7 +3,7 @@
 title: Commit subjects — one policy matcher for history and message files
 kind: script
 layer: n/a
-summary: Judges a subject against commit_subject policy through one pure matcher. The message-file CLI reads config through config_loader from the current project directory, skips leading blank and comment lines, and refuses findings with FAILURE, unreadable input with USAGE and malformed policy with CONFIG. Stdlib-only and 3.6-safe for the host hook interpreter; it starts no process and writes no file.
+summary: Judges a subject against commit_subject policy through one pure matcher. The message-file CLI reads config through config_loader from the current project directory, skips leading blank and comment lines, exempts git merges and autosquash subjects only in message-file mode, and refuses findings with FAILURE, unreadable input with USAGE and malformed policy with CONFIG. Stdlib-only and 3.6-safe for the host hook interpreter; it starts no process and writes no file.
 effect: read-only
 """
 
@@ -17,6 +17,8 @@ from exit_codes import ExitCode, finish, report
 __all__ = ["load_policy", "subject_findings"]
 
 _FIELDS = ("types", "scope_chars", "adoption_boundary")
+# Autosquash commits need to reach rebase; history still judges any left unsquashed.
+_AUTOSQUASH_PREFIXES = ("fixup! ", "squash! ", "amend! ")
 
 
 def load_policy(root):
@@ -70,6 +72,9 @@ def main(argv=None):
             "commit_subject command line",
             "pass --message-file PATH",
         )
+    # Git keeps this marker beside its message even in a linked worktree.
+    if os.path.isfile(os.path.join(os.path.dirname(args.message_file), "MERGE_HEAD")):
+        return ExitCode.SUCCESS
     try:
         policy = load_policy(os.getcwd())
     except config_loader.ConfigError as exc:
@@ -98,6 +103,8 @@ def main(argv=None):
             args.message_file,
             "provide a readable UTF-8 message file",
         )
+    if subject.startswith(_AUTOSQUASH_PREFIXES):
+        return ExitCode.SUCCESS
     findings = subject_findings(subject, policy)
     if findings:
         return report(

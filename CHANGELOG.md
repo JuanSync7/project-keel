@@ -615,6 +615,7 @@ version rather than a bare commit:
   `docs/guides/limits-and-troubleshooting.md` when its symptom table stops
   quoting a refusal `plan_edits` raises.
 
+- The manual `pre-commit install` step installs the commit-msg subject hook alongside the pre-commit checks. The hook refuses subjects outside the declared grammar, exempts git merges and autosquash messages, and leaves Revert subjects subject to the policy.
 ### Changed
 - **Fenced examples in lists and blockquotes follow CommonMark containers
   (KEEL-FENCE-CONTAINERS-1).** Document checks resume prose at a container's

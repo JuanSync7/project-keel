@@ -1,0 +1,1 @@
+- The manual `pre-commit install` step installs the commit-msg subject hook alongside the pre-commit checks. The hook refuses subjects outside the declared grammar, exempts git merges and autosquash messages, and leaves Revert subjects subject to the policy.

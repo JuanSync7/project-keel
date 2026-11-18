@@ -2,7 +2,7 @@
 title: Integration — every Slice: trailer names a slice the plan declares
 kind: tests
 layer: n/a
-summary: The git half of the work-naming rule (CONVENTIONS §20) as a gate. A commit's trailer block carries at most one `Slice:` trailer, and its value is one of this repository's own slice ids that a plan doc in the tree declares, never a prefixed cross-repository id; an optional `Backlog:` trailer matches config/project.json `work_naming.backlog_id`; the keys are spelled as configured; and a `Slice:` or `Backlog:` line outside the trailer block is a finding, because git does not read it as a trailer. Commits reachable from `work_naming.adoption_boundary` are not judged, and a boundary that does not resolve to an ancestor of HEAD fails closed. Not a check_* letter on purpose (ADR-K-0009): check_structure.py does not shell to git. Absent is not broken for the trailer gate: no git, no repository, no commit, or no trailer in the judged range is a stated skip that names the count. The independent subject gate imports scripts/commit_subject.py, judges every non-merge subject after commit_subject.adoption_boundary even without trailers, counts merges separately, and refuses a zero-commit range.
+summary: The git half of the work-naming rule (CONVENTIONS §20) as a gate. A commit's trailer block carries at most one `Slice:` trailer, and its value is one of this repository's own slice ids that a plan doc in the tree declares, never a prefixed cross-repository id; an optional `Backlog:` trailer matches config/project.json `work_naming.backlog_id`; the keys are spelled as configured; and a `Slice:` or `Backlog:` line outside the trailer block is a finding, because git does not read it as a trailer. Commits reachable from `work_naming.adoption_boundary` are not judged, and a boundary that does not resolve to an ancestor of HEAD fails closed. Not a check_* letter on purpose (ADR-K-0009): check_structure.py does not shell to git. Absent is not broken for the trailer gate: no git, no repository, no commit, or no trailer in the judged range is a stated skip that names the count. The independent subject gate imports scripts/commit_subject.py, judges every non-merge subject after commit_subject.adoption_boundary even without trailers, counts merges separately, and refuses a zero-commit range. The installed shipped commit-msg hook refuses bad subjects, accepts git merge and autosquash messages, and keeps history strict.
 """
 
 import json
@@ -818,3 +818,173 @@ def test_subject_types_come_from_config_alone(toy):
     result = subject_findings(root, env)
     assert result["commits"] == 2
     assert len(result["findings"]) == 1 and sha[:12] in result["findings"][0]
+
+
+@pytest.mark.parametrize("prefix", ["fixup! ", "squash! ", "amend! "])
+def test_subject_hook_autosquash_is_still_judged_in_history(toy, prefix):
+    from test_scratch_root_gate import child_timeout
+
+    root, env, commit = toy
+    boundary = _run(root, env, "rev-parse", "HEAD")
+    _subject_boundary(root, boundary)
+    message = prefix + "feat: original"
+    commit(message)
+    path = root / "message"
+    path.write_text(message, encoding="utf-8")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(_ROOT / "scripts/commit_subject.py"),
+            "--message-file",
+            str(path),
+        ],
+        cwd=root,
+        env=child_env.build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=child_timeout(),
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert message in subject_findings(root, env)["findings"][0]
+
+
+@pytest.mark.parametrize("merging, expected", [(True, 0), (False, 1)])
+def test_subject_hook_merge_marker_is_beside_message(toy, merging, expected):
+    from test_scratch_root_gate import child_timeout
+
+    root, _env, _commit = toy
+    _subject_boundary(root, None)
+    gitdir = root / ".git"
+    # A different git directory models a linked worktree without consulting git.
+    message_dir = root / "worktree-gitdir"
+    message_dir.mkdir()
+    (gitdir / "MERGE_HEAD").write_text("unrelated", encoding="utf-8")
+    if merging:
+        (message_dir / "MERGE_HEAD").write_text("side", encoding="utf-8")
+    message = message_dir / "COMMIT_EDITMSG"
+    message.write_text('Revert "feat: original"', encoding="utf-8")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(_ROOT / "scripts/commit_subject.py"),
+            "--message-file",
+            str(message),
+        ],
+        cwd=root,
+        env=child_env.build_child_env(),
+        capture_output=True,
+        text=True,
+        timeout=child_timeout(),
+    )
+    assert proc.returncode == expected, proc.stderr
+    if expected:
+        assert "commit_subject" in proc.stderr and "Revert" in proc.stderr
+
+
+@pytest.mark.parametrize("linked", [False, True], ids=["repository", "worktree"])
+def test_subject_installed_hook_refuses_bad_and_allows_git_messages(tmp_path, linked):
+    from test_scratch_root_gate import child_timeout
+
+    import optional_deps
+    import script_copy
+    from hermetic_git import git_env_vars
+
+    optional_deps.importorskip("pre_commit", extra="dev")
+    yaml = optional_deps.importorskip("yaml", extra="dev")
+    pre_commit = Path(sys.executable).with_name("pre-commit")
+    optional_deps.require_or_skip(
+        pre_commit.is_file(),
+        "dev",
+        "pre-commit executable from the dev extra is absent",
+    )
+    shipped = yaml.safe_load((_ROOT / ".pre-commit-config.yaml").read_text("utf-8"))
+    hooks = [
+        hook
+        for repo in shipped["repos"]
+        for hook in repo["hooks"]
+        if hook["id"] == "commit-subject"
+    ]
+    assert len(hooks) == 1, "shipped config must carry the commit-subject hook"
+    assert shipped["default_install_hook_types"] == ["pre-commit", "commit-msg"]
+    assert shipped["default_stages"] == ["pre-commit"]
+    root = tmp_path / "repo"
+    (root / "scripts").mkdir(parents=True)
+    (root / "config").mkdir()
+    # Follow transitive imports so the host hook can start in its isolated copy.
+    script_copy.copy_with_imports(
+        root, _ROOT, ("scripts/commit_subject.py", "config/project.json")
+    )
+    config = {
+        key: shipped[key] for key in ("default_install_hook_types", "default_stages")
+    }
+    config["repos"] = [{"repo": "local", "hooks": hooks}]
+    (root / ".pre-commit-config.yaml").write_text(
+        yaml.safe_dump(config), encoding="utf-8"
+    )
+    env = child_env.build_child_env(
+        extra={
+            **git_env_vars(tmp_path),
+            "PRE_COMMIT_HOME": str(tmp_path / "pre-commit"),
+            "PATH": str(pre_commit.parent) + os.pathsep + os.defpath,
+            "GIT_MERGE_AUTOEDIT": "no",
+        }
+    )
+
+    def run(*argv):
+        return subprocess.run(
+            argv,
+            cwd=root,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=child_timeout(),
+        )
+
+    def git(*argv):
+        proc = run("git", *argv)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        return proc.stdout.strip()
+
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "chore: initial")
+    if linked:
+        worktree = tmp_path / "linked"
+        git("worktree", "add", "-qb", "linked", str(worktree))
+        root = worktree
+    base_branch = git("symbolic-ref", "--short", "HEAD")
+    before = git("rev-parse", "HEAD")
+    installed = run(str(pre_commit), "install")
+    assert installed.returncode == 0, installed.stdout + installed.stderr
+    hooks_dir = root / git("rev-parse", "--git-common-dir") / "hooks"
+    assert (hooks_dir / "pre-commit").is_file()
+    assert (hooks_dir / "commit-msg").is_file()
+    (root / "main").write_text("main", encoding="utf-8")
+    git("add", "main")
+    refused = run("git", "commit", "-m", "wip")
+    assert refused.returncode != 0, refused.stdout + refused.stderr
+    assert "does not match <type>" in refused.stdout + refused.stderr
+    assert git("rev-parse", "HEAD") == before
+    git("commit", "-m", "feat: ok")
+    assert git("rev-parse", "HEAD") != before
+    (root / "main").write_text("fixup", encoding="utf-8")
+    git("add", "main")
+    git("commit", "--fixup", "HEAD")
+    assert git("log", "-1", "--format=%s") == "fixup! feat: ok"
+    git("checkout", "-qb", "side")
+    (root / "side").write_text("side", encoding="utf-8")
+    git("add", "side")
+    git("commit", "-qm", "feat: side")
+    git("checkout", base_branch)
+    # --no-commit exposes git's own marker and default message before the hook runs.
+    git("merge", "--no-ff", "--no-commit", "side")
+    gitdir = root / git("rev-parse", "--git-dir")
+    assert (gitdir / "MERGE_HEAD").is_file()
+    assert (gitdir / "MERGE_MSG").read_text("utf-8").startswith("Merge ")
+    assert (gitdir / "COMMIT_EDITMSG").is_file()
+    git("merge", "--abort")
+    git("merge", "--no-ff", "side")
+    assert git("log", "-1", "--format=%s").startswith("Merge ")
+    assert len(git("rev-list", "--parents", "-1", "HEAD").split()) == 3
