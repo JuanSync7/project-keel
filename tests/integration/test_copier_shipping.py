@@ -27,10 +27,16 @@ from test_doc_drift import (  # noqa: E402
     _EXCLUSION_TABLE,
     _JINJA_TAG,
     DocDriftConfigError,
+    copier_inventory,
     entry_policy,
     load_manifest,
 )
 from test_reference_drift import _jinja, answer_sets, copier_questions  # noqa: E402
+from test_script_copy import (  # noqa: E402
+    _COPY_EXEMPTIONS,
+    _TEMPLATE_ONLY_COPY_PATTERNS,
+    _assert_template_only_copy_allowance,
+)
 
 # A meta-test of copier.yml: copier.yml's own `tests/integration/test_copier_*.py`
 # prune keeps it out of a generated project, and the skip covers a project that
@@ -329,6 +335,65 @@ def _replace_row(text, path, new_row):
 
 
 # --- the gate -------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def copy_allowance_inputs():
+    inventory = copier_inventory(_ROOT)
+    assert inventory is not None, "copier.yml is required for the allowance check"
+    # Conditional exclusions cannot excuse a module absent for every generated
+    # project: their presence depends on answers, so both directions ignore them.
+    excludes = [
+        path
+        for path, condition in inventory["exclude_conditions"].items()
+        if not condition
+    ]
+    files = sorted(
+        path.relative_to(_ROOT).as_posix()
+        for path in (_ROOT / "tests").rglob("*")
+        if path.is_file()
+    )
+    modules = {"tests/" + key[0] for key in _COPY_EXEMPTIONS}
+    return files, excludes, modules
+
+
+def test_template_only_copy_allowance_matches_unconditional_excludes(
+    copy_allowance_inputs,
+):
+    _assert_template_only_copy_allowance(
+        _TEMPLATE_ONLY_COPY_PATTERNS, *copy_allowance_inputs
+    )
+
+
+def test_copy_allowance_rejects_a_module_that_ships(copy_allowance_inputs):
+    offender = "tests/integration/test_script_copy.py"
+    planted = (*_TEMPLATE_ONLY_COPY_PATTERNS, offender)
+    with pytest.raises(AssertionError, match=offender + ".*not pruned"):
+        _assert_template_only_copy_allowance(planted, *copy_allowance_inputs)
+
+
+def test_copy_allowance_rejects_an_uncovered_pruned_exemption(copy_allowance_inputs):
+    files, excludes, modules = copy_allowance_inputs
+    offender = "tests/integration/test_preflight.py"
+    assert offender in modules, "the planted module must have a copy exemption"
+    with pytest.raises(AssertionError, match=offender + ".*not covered"):
+        _assert_template_only_copy_allowance(
+            _TEMPLATE_ONLY_COPY_PATTERNS, files, [*excludes, offender], modules
+        )
+
+
+@pytest.mark.parametrize(
+    ("patterns", "files", "excludes", "modules", "message"),
+    [
+        (("tests/missing.py",), [], [], [], "tests/missing.py.*no files"),
+        (("tests/a.py",), ["tests/a.py"], ["tests/*.py"], [], "no exempted modules"),
+    ],
+)
+def test_copy_allowance_rejects_vacuous_inputs(
+    patterns, files, excludes, modules, message
+):
+    with pytest.raises(AssertionError, match=message):
+        _assert_template_only_copy_allowance(patterns, files, excludes, modules)
 
 
 def test_every_left_out_file_has_a_reason_and_every_reason_leaves_one_out(

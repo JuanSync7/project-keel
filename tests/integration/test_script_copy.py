@@ -7,6 +7,7 @@ summary: Copied recipe text supplies literal Python and shell script paths and t
 
 import ast
 import copy
+import fnmatch
 import importlib
 import subprocess
 import sys
@@ -1295,10 +1296,52 @@ def _repository_scan():
     return _copy_sites(_ROOT, modules), modules
 
 
+# Generated projects have no copier.yml, so this allowance must ship as literals.
+# test_copier_shipping holds both directions to unconditional Copier exclusions.
+_TEMPLATE_ONLY_COPY_PATTERNS = (
+    "tests/integration/test_copier_*.py",
+    "tests/unit/scripts/test_audit_project.py",
+    "tests/integration/test_changelog_fragments.py",
+)
+
+
+def _assert_template_only_copy_allowance(patterns, files, excludes, exempted_modules):
+    """Assert both directions of the allowance over repository-relative paths.
+
+    Each pattern must cover real test files, all unconditionally excluded;
+    every excluded exempted module must be covered, with at least one such module.
+    """
+    covered = set()
+    for pattern in patterns:
+        matches = {
+            path
+            for path in files
+            if path.startswith("tests/") and Path(path).match(pattern)
+        }
+        assert matches, "template-only copy pattern %s matches no files" % pattern
+        for path in sorted(matches):
+            assert any(fnmatch.fnmatchcase(path, entry) for entry in excludes), (
+                "template-only copy allowance %s is not pruned by unconditional _exclude"
+                % path
+            )
+        covered.update(matches)
+    pruned = {
+        path
+        for path in exempted_modules
+        if any(fnmatch.fnmatchcase(path, entry) for entry in excludes)
+    }
+    assert pruned, "unconditional _exclude prunes no exempted modules"
+    for path in sorted(pruned):
+        assert path in covered, (
+            "pruned copy exemption %s is not covered by the template-only allowance"
+            % path
+        )
+
+
 def _copy_cases():
     sites, _ = _repository_scan()
     template_only = not (_ROOT / "copier.yml").is_file()
-    reason = "template-only: copier.yml prunes tests/integration/test_copier_*.py"
+    reason = "template-only: copier.yml prunes modules in _TEMPLATE_ONLY_COPY_PATTERNS"
     cases = [
         pytest.param(
             site,
@@ -1371,13 +1414,11 @@ def _assert_exemptions(sites, exemptions, root):
     keys = [site[4] for site in sites]
     for key in exemptions:
         if not (root / "tests" / key[0]).is_file():
-            # copier.yml excludes these template tools from generated projects.
-            template_module = Path(key[0]).match("integration/test_copier_*.py") or (
-                key[0]
-                in {
-                    "unit/scripts/test_audit_project.py",
-                    "integration/test_changelog_fragments.py",
-                }
+            # The literal allowance survives where copier.yml is absent;
+            # test_copier_shipping holds it to the template's exclusions.
+            template_module = any(
+                (Path("tests") / key[0]).match(pattern)
+                for pattern in _TEMPLATE_ONLY_COPY_PATTERNS
             )
             if template_module and not (root / "copier.yml").is_file():
                 continue
