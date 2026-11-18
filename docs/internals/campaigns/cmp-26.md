@@ -25,7 +25,7 @@ Will not do in CMP-26: rewrite git history, judge a commit body beyond what the 
 |-------|-----|--------|
 | CMP-26.S1 | `scripts/check_structure.py` check_Q refuses, with file and line, a `CHANGELOG.md` heading outside the declared grammar: one depth-one title, depth-two `[Unreleased]` or `[x.y.z] — YYYY-MM-DD` releases, depth-three categories from one closed list, and nothing deeper; a missing changelog or one with no heading is refused, not passed. | planned |
 | CMP-26.S2 | One commit-subject matcher, `scripts/commit_subject.py`, judges a subject against a closed type list and a declared shape; `tests/integration/test_work_trailers.py` judges every subject after `commit_subject.adoption_boundary` with it, and the script judges one message file for a hook. | planned |
-| CMP-26.S3 | `.pre-commit-config.yaml` runs the S2 matcher at the `commit-msg` stage, both READMEs install that hook type, and a generated project refuses a bad subject through the installed hook and through its history gate. | planned |
+| CMP-26.S3 | `.pre-commit-config.yaml` runs the S2 matcher at the `commit-msg` stage and `pre-commit install` installs that hook type; a repository given the shipped hook refuses a bad subject through the installed hook, and a generated project refuses one through its own matcher and its history gate. | planned |
 
 CMP-26.S1 owns the heading grammar.
 check_Q already reads `CHANGELOG.md` for its links, so the heading rule extends check_Q instead of taking a new check letter.
@@ -44,8 +44,15 @@ Keel pins its boundary at dc195258, which is newer than its two nonconforming su
 
 CMP-26.S3 owns the hook.
 Installing the hook stays a manual step for the developer; no make target and no copier task installs a hook.
+`default_install_hook_types` in `.pre-commit-config.yaml` names both hook types, so the existing `pre-commit install` line installs the subject hook and no install line changes.
+A checkout that installed its hooks before this re-runs `pre-commit install` once.
+`default_stages` keeps the existing hooks at the pre-commit stage, so they do not run a second time on the message.
 
 ### Decisions
 
 - Row 48 (KEEL-ROADMAP-1) is not opened with CMP-26. Its status column changes every `features.d/` entry, and the layout of those entries waits on the open owner page "Reference fragment layout"; row 49 builds on row 48.
 - The subject types are a closed list in config, not `[a-z]+`, because a closed vocabulary refuses a misspelt type that a pattern accepts.
+- The type and scope validators in `scripts/config_loader.py` check shape only, so a project adds a type in config alone; a validator that restated the ten types would make the config list narrow-only.
+- The hook does not judge a merge: a `MERGE_HEAD` file beside the message file marks one, which matches the history gate counting merges without judging them.
+- The hook passes a subject that starts `fixup! `, `squash! ` or `amend! `, so `git commit --fixup` keeps working; the history gate still judges such a commit if it lands unsquashed.
+- A `Revert "…"` subject is judged like any other; the developer edits it to a declared type.
