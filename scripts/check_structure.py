@@ -3819,7 +3819,12 @@ _MD_LINK = re.compile(
     r"!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
 )
 _URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
-_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$")
+_ATX_HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
+# CommonMark's full ATX form: up to three spaces of indent and an empty
+# heading. Only _markdown_headings reads it; check_Z and traceability.py
+# count depth from column 0 through _ATX_HEADING, so widening that one
+# would give an indented heading depth 0 there.
+_ATX_HEADING_ANY = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$")
 _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
@@ -4415,7 +4420,7 @@ def _markdown_headings(lines):
     start = _frontmatter_end(lines)
     body = lines[start:]
     for i, line in enumerate(body):
-        m = _ATX_HEADING.fullmatch(line)
+        m = _ATX_HEADING_ANY.fullmatch(line)
         if m:
             heading = re.sub(r"(?:^|[ \t]+)#+[ \t]*$", "", m.group(1) or "")
             marker = line.lstrip(" ")
