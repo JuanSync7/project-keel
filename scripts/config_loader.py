@@ -65,6 +65,7 @@ __all__ = [
     "NotSet",
     "WrongValue",
     "chain_level",
+    "changelog_headings",
     "checkout_name",
     "compile_pattern",
     "cut_hidden",
@@ -363,6 +364,20 @@ def _in_unit_interval(value: Any) -> bool:
 
 def _not_negative(value: Any) -> bool:
     return bool(value >= 0)
+
+
+def _heading_categories(value: Any) -> bool:
+    return (
+        bool(value)
+        and all(
+            name.strip() == name
+            and bool(name)
+            and "\n" not in name
+            and "\r" not in name
+            for name in value
+        )
+        and len({name.casefold() for name in value}) == len(value)
+    )
 
 
 def _at_least_one(value: Any) -> bool:
@@ -900,6 +915,28 @@ _ACCEPTED_RISKS = (
 KEYS = tuple(
     sorted(
         (
+            _row(
+                ("changelog", "headings", "categories"),
+                "list_of_str",
+                NONE,
+                "closed depth-three changelog heading vocabulary",
+                accepts=(
+                    _heading_categories,
+                    "a non-empty list of distinct, non-blank single-line category names",
+                ),
+            ),
+            _row(
+                ("changelog", "headings", "unreleased"),
+                "nonempty_str",
+                NONE,
+                "depth-two unreleased changelog heading text",
+            ),
+            _row(
+                ("changelog", "headings", "release_pattern"),
+                "nonempty_str",
+                NONE,
+                "full dated release heading text pattern; one capture names the version",
+            ),
             _row(
                 ("changelog_fragments", "folder"),
                 "repo_path_or_null",
@@ -2523,6 +2560,43 @@ def _names_at(
     if head not in node:
         return []
     return _names_at(node[head], rest, shape, where, trail + (head,))
+
+
+def changelog_headings(
+    data: Mapping[str, Any], stream: Optional[IO[str]] = None
+) -> Tuple[List[str], str, Pattern[str]]:
+    """Resolve the shipped changelog vocabulary and compile its release grammar.
+
+    The one capture identifies the version for fragment replay refusals.
+    Missing keys and malformed grammar raise ConfigError naming the key.
+    """
+    prefix = ("changelog", "headings")
+    categories, unreleased, release = (
+        prefix + (name,) for name in ("categories", "unreleased", "release_pattern")
+    )
+    values = resolve(
+        data, rows(categories, unreleased, release), CONFIG_FILE, stream=stream
+    )
+    pattern = compile_pattern(values[release], ".".join(release), CONFIG_FILE)
+    if pattern.groups != 1:
+        raise WrongValue(
+            CONFIG_FILE,
+            [
+                "config/project.json: changelog.headings.release_pattern requires exactly one version capture"
+            ],
+        )
+    if (
+        "\n" in values[unreleased]
+        or "\r" in values[unreleased]
+        or not values[unreleased].strip()
+    ):
+        raise WrongValue(
+            CONFIG_FILE,
+            [
+                "config/project.json: changelog.headings.unreleased requires non-blank single-line text"
+            ],
+        )
+    return values[categories], values[unreleased], pattern
 
 
 def checkout_name(root: str, relpath: str = "") -> str:

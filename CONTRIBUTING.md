@@ -67,7 +67,9 @@ version heading in `CHANGELOG.md` has no matching tag, so the tag comes first:
    to rotate the entry files into `## [<version>] — <YYYY-MM-DD>`, open an empty
    `[Unreleased]`, and delete the consumed entries. It refuses an existing
    version, malformed version or date, and an empty release before writing.
-   A generated project edits its own changelog by hand. Update every version
+   A generated project edits its own changelog by hand.
+   check_Q holds its headings to the [configured grammar](docs/guides/deterministic-checks.md#the-checks).
+   Update every version
    checkout line and commit the changelog and entry deletions together.
    ADR-K-0016 lists those lines for the keel template itself. The assembler
    never tags. Each file publication is atomic.

@@ -1,10 +1,12 @@
 """
-title: Unit — check_structure check_Q (cross-references resolve)
+title: Unit — check_structure check_Q (references and changelog grammar)
 kind: tests
 layer: n/a
-summary: check_Q errors when a document's outbound reference names nothing — a relative Markdown link (file, directory, or `#anchor`) whose target does not exist, or a `§N` section citation that no numbered heading answers. The tree resolves today (58 links, 120 citations, none dead), so this is a regression barrier for the one edit that silently rots a knowledge graph — renumbering CONVENTIONS.md or moving a doc — and for a generated project, whose pruned tree must not inherit a link to a file it was never given. Links inside fenced or inline code are syntax illustrations, not references, and are not checked.
+summary: check_Q errors when a document's outbound reference names nothing — a relative Markdown link (file, directory, or `#anchor`) whose target does not exist, or a `§N` section citation that no numbered heading answers. The configured changelog grammar requires one title, release headings and category headings; missing history and deeper headings fail. Rendered template text and generated-project settings pass. Links inside fenced or inline code are syntax illustrations, not references, and are not checked.
 """
 
+import copy
+import json
 import sys
 from pathlib import Path
 
@@ -437,3 +439,180 @@ def test_a_link_inside_a_wrapped_code_span_is_not_a_reference():
 def test_a_link_after_a_wrapped_code_span_is_still_checked():
     errs = _find({"a.md": "Lead `a\nb` then [l](dead.md).\n"})
     assert errs and "dead.md" in errs[0], errs
+
+
+# --- changelog heading grammar ------------------------------------------------
+
+
+def _changelog_check(tmp_path, monkeypatch, text, change=None):
+    manifest = copy.deepcopy(cs.config_loader.read(str(_ROOT)))
+    if change:
+        change(manifest)
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(json.dumps(manifest))
+    if text is not None:
+        (tmp_path / "CHANGELOG.md").write_text(text)
+    monkeypatch.setattr(cs, "ROOT", str(tmp_path))
+    monkeypatch.setattr(cs, "_CONFIG_READ", {})
+    monkeypatch.setattr(cs, "errors", [])
+    cs.check_Q()
+    return cs.errors
+
+
+def test_changelog_reports_each_unknown_category(tmp_path, monkeypatch):
+    errors = _changelog_check(
+        tmp_path, monkeypatch, "# History\n\n### Surprise\n\n### Other\n"
+    )
+    assert len(errors) == 2, errors
+    assert "CHANGELOG.md:3:" in errors[0]
+    assert "CHANGELOG.md:5:" in errors[1]
+
+
+@pytest.mark.parametrize(
+    "heading",
+    ["## Something", "#### Fixed", "##### Added", "###### Security", "   #### Fixed"],
+)
+def test_changelog_refuses_release_labels_and_deep_headings(
+    tmp_path, monkeypatch, heading
+):
+    errors = _changelog_check(tmp_path, monkeypatch, "# History\n\n" + heading)
+    assert len(errors) == 1 and "CHANGELOG.md:3:" in errors[0], errors
+
+
+@pytest.mark.parametrize("text", [None, "", "Plain text\n", "## [Unreleased]\n"])
+def test_changelog_requires_file_and_one_title(tmp_path, monkeypatch, text):
+    errors = _changelog_check(tmp_path, monkeypatch, text)
+    assert errors and all("CHANGELOG.md:" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "# History\n\n## [Unreleased]\n\n### Added\n\n"
+        "## [1.2.3] — 2030-01-02\n\n### Security\n",
+        "# History\n\n```md\n### Unknown\n#### Deep\n```\n",
+        "History\n=======\n\n[Unreleased]\n------------\n",
+        "# History ###\n\n## [Unreleased] ##\n\n### Added ###\n",
+        "   # History\n\n  ## [Unreleased]\n\n ### Added\n",
+    ],
+)
+def test_changelog_valid_controls(tmp_path, monkeypatch, text):
+    assert _changelog_check(tmp_path, monkeypatch, text) == []
+
+
+def test_changelog_rendered_template_passes(tmp_path, monkeypatch):
+    source = _ROOT / "CHANGELOG.md.jinja"
+    if not source.exists():
+        source = _ROOT / "CHANGELOG.md"
+    rendered = source.read_text().replace("{{ project_title }}", "Example")
+    assert _changelog_check(tmp_path, monkeypatch, rendered) == []
+
+
+@pytest.mark.parametrize("heading", ["# Second", "Second\n======", "Bad release\n---"])
+def test_changelog_judges_setext_depth_and_duplicate_title(
+    tmp_path, monkeypatch, heading
+):
+    errors = _changelog_check(tmp_path, monkeypatch, "# History\n\n" + heading)
+    assert len(errors) == 1 and "CHANGELOG.md:3:" in errors[0], errors
+
+
+def test_changelog_vocabulary_and_release_shape_come_from_config(tmp_path, monkeypatch):
+    def change(manifest):
+        manifest["changelog"] = {
+            "headings": {
+                "categories": ["Custom"],
+                "unreleased": "Next",
+                "release_pattern": r"Version ([0-9]+)",
+            }
+        }
+
+    assert (
+        _changelog_check(
+            tmp_path,
+            monkeypatch,
+            "# History\n\n## Next\n\n## Version 42\n\n### Custom\n",
+            change,
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize(
+    "block",
+    [None, {}, {"categories": []}, {"categories": "Added"}],
+)
+def test_changelog_malformed_grammar_names_key(tmp_path, monkeypatch, block):
+    def change(manifest):
+        manifest["changelog"] = {"headings": block}
+
+    errors = _changelog_check(tmp_path, monkeypatch, "# History\n", change)
+    assert errors and all("changelog.headings" in error for error in errors), errors
+
+
+@pytest.mark.parametrize(
+    "key, value",
+    [
+        ("categories", []),
+        ("categories", ["Added", "added"]),
+        ("categories", [" Added"]),
+        ("categories", ["Added\nFixed"]),
+        ("unreleased", "\n"),
+        ("release_pattern", "["),
+        ("release_pattern", "release without capture"),
+        ("release_pattern", "(two)(captures)"),
+    ],
+)
+def test_changelog_invalid_grammar_value_names_key(tmp_path, monkeypatch, key, value):
+    def change(manifest):
+        manifest["changelog"]["headings"][key] = value
+
+    errors = _changelog_check(tmp_path, monkeypatch, "# History\n", change)
+    assert errors and all("changelog.headings." + key in error for error in errors)
+
+
+def test_changelog_fragment_folders_belong_to_heading_vocabulary(tmp_path):
+    import assemble_fragments
+
+    manifest = copy.deepcopy(cs.config_loader.read(str(_ROOT)))
+    headings = manifest["changelog"]["headings"]["categories"]
+    assert all(
+        name.casefold() in {heading.casefold() for heading in headings}
+        for name in manifest["changelog_fragments"]["categories"]
+    )
+    manifest["changelog_fragments"]["categories"].append("stray")
+    manifest["changelog_fragments"]["folder"] = "changelog.d"
+    manifest["changelog_fragments"]["unsectioned"] = "general"
+    for name in ["general", *manifest["changelog_fragments"]["categories"]]:
+        (tmp_path / "changelog.d" / name).mkdir(parents=True)
+    (tmp_path / "CHANGELOG.md").write_text("# History\n\n## [Unreleased]\n")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(json.dumps(manifest))
+    with pytest.raises(
+        assemble_fragments.FragmentError, match="changelog_fragments.categories"
+    ):
+        assemble_fragments.changelog_plan(tmp_path, None, None)
+
+
+def test_assembler_reads_configured_release_pattern_for_replay(tmp_path):
+    import assemble_fragments
+
+    manifest = copy.deepcopy(cs.config_loader.read(str(_ROOT)))
+    manifest["changelog"]["headings"]["release_pattern"] = r"Version ([0-9]+)"
+    manifest["changelog_fragments"] = {
+        "folder": "changelog.d",
+        "categories": ["fixed"],
+        "unsectioned": "general",
+    }
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/project.json").write_text(json.dumps(manifest))
+    (tmp_path / "changelog.d/general").mkdir(parents=True)
+    folder = tmp_path / "changelog.d/fixed"
+    folder.mkdir()
+    (folder / ("000001-" + "a" * 32 + ".part")).write_text("- published\n")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# History\n\n## [Unreleased]\n\n## Version 42\n\n- published\n"
+    )
+    with pytest.raises(
+        assemble_fragments.FragmentError, match="already released in version 42"
+    ):
+        assemble_fragments.changelog_plan(tmp_path, None, None)

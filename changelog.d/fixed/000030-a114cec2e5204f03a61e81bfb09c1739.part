@@ -1,0 +1,1 @@
+- check_Q refuses missing changelogs and headings outside the configured title, release and category grammar.

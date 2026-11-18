@@ -65,7 +65,7 @@ everything and therefore expect the project interpreter.
 | Check | Script | Gate? | Interpreter | What it guarantees |
 |-------|--------|:-----:|-------------|--------------------|
 | Reference and changelog fragments | `scripts/assemble_fragments.py --check` | error | project | Unreleased equals its configured category entries. Dated history stays byte-identical. Every configured reference equals its head, sorted per-table entry files and fixed tail. Assembly retains the output's `updated:` stamp. Malformed, misnamed or duplicate entries and unregistered folders fail. Every mode refuses complete entry line runs already in the newest dated section, naming the files and version. Delete those already released entries before assembling again. Keel configures both sets. Generated projects list none and edit references by hand. |
-| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z), then the project's own checks (`structure.project_checks`) |
+| Structure & frontmatter | `scripts/check_structure.py` | error | 3.6-safe | Labels, taxonomy, package boundaries, tool/agent governance, project facts, agent-rules symlinks, owned-exception & frozen-config boundaries, naked-tensor domain warn, lint/type ruleset parity, template twin parity, Makefile help parity, cross-reference resolution, changelog heading grammar, check-catalogue parity, rosters, practice mechanisms, policy reachability, writer rerun declarations, make-target effect labels, child-process environment, ADR number spaces, work naming (checks A–Z), then the project's own checks (`structure.project_checks`) |
 | Interpreter floor | `scripts/check_python_version.py` | error | any | `$(PY)` satisfies `pyproject.toml`'s `requires-python`, said plainly before a newer-syntax check fails with a traceback — runs first in every target whose recipe needs the project interpreter, as a prerequisite or, in `audit-project`, as the recipe line after its usage checks; `tests/integration/test_gate_scope.py` derives which targets need it from the recipes and fails one that does not reach it. `PY` defaults to `.venv/bin/python` when it exists, else `python3` |
 | Venv holds the declared packages | `scripts/check_venv.py` | error | >=3.8 | every requirement of `pyproject.toml`'s core dependencies, of config/project.json `venv.extras` and of the extra each enabled transport names in `transports.extras` is installed at a version its specifier allows, judged from installed metadata with no network — the first prerequisite of `make check-all`, which is `make verify`'s first goal, so a venv older than `pyproject.toml` fails with the pip command before a gate fails late or a test skips; `tests/unit/scripts/test_check_venv.py` |
 | Corpus integrity | `scripts/jobs/check_corpus.py` | error | ≥3.7 | the fresh build is a valid, acyclic, reproducible graph whose edge kinds are from the closed set (`keyword`, `link`, `citation`, `mention`, `semantic`) **and** the local `wiki/corpus.json` (what agents query) is current when present — absent is a loud pass, stale is an error naming `make site-data` (ADR-K-0008) |
@@ -265,7 +265,7 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   regex, which Python cannot run), `-F`, a second selecting grep, a variable or
   wildcard include, a pattern variable it cannot expand — is a WARN that says
   *unverified*, never a pass. Silent without a `help` target.
-- **Q. Cross-references resolve** — every relative Markdown link in prose
+- **Q. Cross-references and changelog headings** — every relative Markdown link in prose
   (`[text](path)`, `![alt](path)`, a directory, a `#anchor`) names something
   that exists, and every `§N` citation names a numbered `## N.` heading. The
   citation grammar is closed on purpose: a bare `§N` **always** cites
@@ -294,6 +294,17 @@ Warnings (e.g. a missing `owner`) print but never fail the build.
   leaving the knowledge graph pointing at the wrong sections at exit 0. It is
   an error, not the ADR-K-0008 release-long WARN: keel's tree carries no dead
   reference, so there is nothing to give anyone time for.
+  check_Q requires `CHANGELOG.md` and exactly one depth-one title.
+  Depth-two headings match `changelog.headings.unreleased` or the full
+  `changelog.headings.release_pattern` from `config/project.json`.
+  The shipped release texts are `[Unreleased]` and `[x.y.z] — YYYY-MM-DD`.
+  Depth-three headings belong to `changelog.headings.categories`: `Added`,
+  `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`.
+  check_Q refuses every deeper heading with its file and line.
+  The shared anchor scanner gives setext headings their depth and ignores
+  headings inside fenced code and HTML blocks.
+  `scripts/assemble_fragments.py` reads the same release pattern for its
+  newest-release replay check.
 - **R. Check catalogue parity** — this file's checks table and the triggers
   that run the checks agree on one membership: every catalogued script exists;
   a row at the `error`/`error*` tier is reachable from `make check-all` (a gate

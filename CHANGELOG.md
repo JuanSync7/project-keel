@@ -1165,6 +1165,7 @@ version rather than a bare commit:
   now compares a file's time and the sorted listing.
 
 - Changelog assembly refuses entries already published in the newest dated section and names the files to delete after an interrupted release.
+- check_Q refuses missing changelogs and headings outside the configured title, release and category grammar.
 ### Security
 
 - **The config loader's refusals never echo a URL's user part.** When
@@ -3133,17 +3134,17 @@ upgrade channel into a hard error.
   except the three per-answer fields. (General twin parity for all five twins is
   still pass 5 of the hardening plan.)
 
-### Known limitation
+**Known limitation.**
 - A project made with `make new` records the template's machine-local absolute
   path, so `copier update` works on that machine only. Generate from
   `gh:JuanSync7/project-keel` for a project you intend to share.
 
-### Earlier in this release — the upgrade channel (pass 1, `d0a25c4`)
+**Earlier in this release — the upgrade channel (pass 1, `d0a25c4`).**
 
 This work carried the `[0.1.0] — 2026-08-04` heading while it waited for a tag
 that was never cut. It ships here, in the one release it was ever part of.
 
-#### Fixed
+**Fixed.**
 - Generated projects now **track** their own `.copier-answers.yml`. Keel's
   `.gitignore` shipped verbatim and ignored it, so while `copier update` worked
   in the directory copier created, any `git clone`, teammate checkout or CI run
@@ -3155,12 +3156,12 @@ that was never cut. It ships here, in the one release it was ever part of.
   `"9.1.0"` for `multiselect:` and to `"9.3.0"` for the new-format `_migrations`
   later in the same release, so `9.3.0` is what actually ships.
 
-#### Added
+**Added.**
 - ADR-0005 (proposed): declare the external environment in
   `config/environment.json` — the parts a container cannot reach.
 - `docs/internals/keel-hardening-plan.md` — the bounded convergence plan.
 
-## Template foundations (pre-0.1.0)
+**Template foundations (pre-0.1.0).**
 - Initial template.
 - Deterministic-check suite: `jobs/check_corpus.py` (corpus integrity + build
   reproducibility), `check_structure.py` checks A–M (incl. CLAUDE.md↔AGENT.md

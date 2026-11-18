@@ -37,6 +37,9 @@ def _entry(folder, order, identity, text):
 def _changelog(root):
     manifest_path = root / "config/project.json"
     manifest = json.loads(manifest_path.read_text())
+    manifest["changelog"] = json.loads((_ROOT / "config/project.json").read_text())[
+        "changelog"
+    ]
     manifest["reference_fragments"] = {
         "root": "docs/reference",
         "folder_suffix": ".d",
@@ -71,6 +74,9 @@ def test_independent_entries_render_without_leaking_template_history(toy, side):
     shutil.copytree(_MIGRATION / "changelog.d", root / "changelog.d")
     manifest_path = root / "config/project.json"
     manifest = json.loads(manifest_path.read_text())
+    manifest["changelog"] = json.loads((_ROOT / "config/project.json").read_text())[
+        "changelog"
+    ]
     manifest["reference_fragments"] = {
         "root": "docs/reference",
         "folder_suffix": ".d",
@@ -267,6 +273,8 @@ def test_name_limits_and_case_collisions(toy):
 
 def test_generated_project_owns_its_changelog_before_any_write(tmp_path, generate):
     """The normal render cache excludes sources and keeps the Jinja changelog."""
+    import check_structure
+
     dest = tmp_path / "generated"
     generate(dest, project_name="demo_proj")
     assert not (dest / "changelog.d").exists()
@@ -278,6 +286,8 @@ def test_generated_project_owns_its_changelog_before_any_write(tmp_path, generat
     )
     # The project's normal generation test also judges this exact template.
     assert (dest / "CHANGELOG.md").read_text() == expected
+    findings = check_structure.run_checks(str(dest))
+    assert [finding for finding in findings if finding[:2] == ("Q", "error")] == []
     before = _tree(dest)
     assert _assemble(dest, "--check").returncode == 0
     assert _tree(dest) == before

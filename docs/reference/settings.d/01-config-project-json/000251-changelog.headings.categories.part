@@ -1,0 +1,1 @@
+| `changelog.headings.categories` | list of strings | the six Keep a Changelog categories; required, no default | closed depth-three heading vocabulary | `scripts/check_structure.py` and `scripts/assemble_fragments.py` via `scripts/config_loader.py` | Names are non-blank single lines and distinct after case-folding. | changelog headings: `changelog.headings` | always |

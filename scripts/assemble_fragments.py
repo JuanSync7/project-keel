@@ -315,8 +315,9 @@ def changelog_plan(
     root: Path, version: str | None, date: str | None
 ) -> tuple[list[tuple[Path, str]], list[Path]]:
     """Return a lossless changelog publication and, for a release, consumed files."""
+    manifest = config_loader.read(str(root))
     config = config_loader.resolve(
-        config_loader.read(str(root)),
+        manifest,
         config_loader.rows(_KEY, *_CHANGELOG_KEYS),
         config_loader.CONFIG_FILE,
     )
@@ -327,6 +328,16 @@ def changelog_plan(
                 "changelog fragments disabled: categories must be empty and unsectioned null; release is unavailable"
             )
         return [], []
+    heading_categories, _unreleased, release_pattern = config_loader.changelog_headings(
+        manifest
+    )
+    if any(
+        name.casefold() not in {heading.casefold() for heading in heading_categories}
+        for name in categories
+    ):
+        raise FragmentError(
+            "changelog_fragments.categories: every folder must belong to changelog.headings.categories (case-folded)"
+        )
     base = _path(root, folder)
     names = [unsectioned, *categories]
     if (
@@ -364,10 +375,7 @@ def changelog_plan(
             "CHANGELOG.md: expected exactly one ## [Unreleased] heading"
         )
     for i, match in enumerate(headings):
-        dated = re.fullmatch(
-            r"## \[([0-9]+\.[0-9]+\.[0-9]+)\] — [0-9]{4}-[0-9]{2}-[0-9]{2}\n",
-            match.group(),
-        )
+        dated = release_pattern.fullmatch(match.group()[3:-1])
         if dated is None:
             continue
         end = headings[i + 1].start() if i + 1 < len(headings) else len(current)

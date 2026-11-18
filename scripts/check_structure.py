@@ -79,11 +79,13 @@ Checks:
      `help` recipe's own grep pattern lists. The pattern is read out of the
      recipe, not restated here, so the check cannot agree with a wrong one;
      a recipe it cannot read is a stated WARN ('unverified'), never a pass
-  Q. Cross-references resolve (ERR): every relative Markdown link (file,
+  Q. Cross-references and changelog headings (ERR): every relative Markdown link (file,
      directory, #anchor) in prose names a real target, and every `§N`
      citation names a numbered section — of CONVENTIONS.md unless a document
      is named in front of it (`docs/guides/python-style.md §3`). Links inside
-     fenced or inline code are illustrations and are not checked
+     fenced or inline code are illustrations and are not checked.
+     CHANGELOG.md has one title, configured release and category headings,
+     and no deeper headings; missing or headingless history is an error
   R. Check catalogue parity (ERR): docs/guides/deterministic-checks.md and
      the triggers agree on one membership — every catalogued script exists,
      an error-tier row is reachable from `make check-all`, a report row is
@@ -3817,7 +3819,7 @@ _MD_LINK = re.compile(
     r"!?\[[^\]]*\]\(\s*(?:<([^>]*)>|([^)\s]+))(?:\s+(?:\"[^\"]*\"|'[^']*'))?\s*\)"
 )
 _URL_SCHEME = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
-_ATX_HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$")
+_ATX_HEADING = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+(.*?))?[ \t]*$")
 _SETEXT_UNDERLINE = re.compile(r"^ {0,3}(=+|-+)\s*$")
 _HTML_ANCHOR = re.compile(r"""<a\s+(?:id|name)=["']([^"']+)["']""")
 _NUMBERED_HEADING = re.compile(r"^#{1,6}\s+(\d+)\.")
@@ -4408,29 +4410,37 @@ def _heading_slug(heading):
     return t.replace(" ", "-")
 
 
-def _anchors(text):
-    """Every anchor a renderer would emit for `text`: ATX and setext headings
-    (repeats numbered -1, -2) plus explicit `<a id=...>` / `<a name=...>`."""
-    counts, anchors = {}, set()
-    lines = _unfenced_lines(text)
-    body = lines[_frontmatter_end(lines) :]
+def _markdown_headings(lines):
+    """Yield (line, depth, text) from the shared scanner's visible Markdown lines."""
+    start = _frontmatter_end(lines)
+    body = lines[start:]
     for i, line in enumerate(body):
-        heading = None
         m = _ATX_HEADING.fullmatch(line)
         if m:
-            heading = m.group(1)
+            heading = re.sub(r"(?:^|[ \t]+)#+[ \t]*$", "", m.group(1) or "")
+            marker = line.lstrip(" ")
+            yield start + i + 1, len(marker) - len(marker.lstrip("#")), heading
         elif (
             line.strip()
             and not line.lstrip().startswith(("|", "#", "-", "=", ">", "*", "+"))
             and i + 1 < len(body)
             and _SETEXT_UNDERLINE.fullmatch(body[i + 1])
         ):
-            heading = line.strip()
-        if heading is not None:
-            slug = _heading_slug(heading)
-            n = counts.get(slug, 0)
-            counts[slug] = n + 1
-            anchors.add(slug if n == 0 else "%s-%d" % (slug, n))
+            depth = 1 if body[i + 1].lstrip().startswith("=") else 2
+            yield start + i + 1, depth, line.strip()
+
+
+def _anchors(text):
+    """Every anchor a renderer would emit for `text`: ATX and setext headings
+    (repeats numbered -1, -2) plus explicit `<a id=...>` / `<a name=...>`."""
+    counts, anchors = {}, set()
+    lines = _unfenced_lines(text)
+    for _line, _depth, heading in _markdown_headings(lines):
+        slug = _heading_slug(heading)
+        n = counts.get(slug, 0)
+        counts[slug] = n + 1
+        anchors.add(slug if n == 0 else "%s-%d" % (slug, n))
+    for line in lines[_frontmatter_end(lines) :]:
         anchors.update(_HTML_ANCHOR.findall(line))
     return anchors
 
@@ -4605,8 +4615,50 @@ def _crossref_findings(files, tree, scan=None):
     return errs
 
 
+def _changelog_heading_findings(files, manifest):
+    """Refuse absent history and headings outside the configured depth grammar."""
+    findings = []
+    if "CHANGELOG.md" not in files:
+        findings.append(
+            "CHANGELOG.md:1: missing changelog -- restore its title and history"
+        )
+    if manifest is _REFUSED:
+        return findings
+    try:
+        categories, unreleased, release = config_loader.changelog_headings(
+            manifest, stream=io.StringIO()
+        )
+    except config_loader.ConfigError as exc:
+        return findings + list(exc.lines)
+    if "CHANGELOG.md" not in files:
+        return findings
+    headings = list(_markdown_headings(_unfenced_lines(files["CHANGELOG.md"])))
+    titles = 0
+    for line, depth, heading in headings:
+        if depth == 1:
+            titles += 1
+            valid = titles == 1 and bool(heading)
+        elif depth == 2:
+            valid = heading == unreleased or release.fullmatch(heading) is not None
+        elif depth == 3:
+            valid = heading in categories
+        else:
+            valid = False
+        if not valid:
+            findings.append(
+                "CHANGELOG.md:%d: invalid depth-%d heading %s -- use one title, "
+                "configured releases and categories, and no deeper headings "
+                "(changelog.headings)" % (line, depth, _quoted(heading))
+            )
+    if not titles:
+        findings.append(
+            "CHANGELOG.md:1: expected one depth-one title -- add the changelog title"
+        )
+    return findings
+
+
 def check_Q():
-    """ERROR when a relative Markdown link or a `§N` citation names nothing.
+    """ERROR on dead references or a changelog outside its configured heading grammar.
     Walks every citing file, registers its text under every name it has
     (CLAUDE.md and the AGENT.md it links to both resolve), reads references
     from each real file once (under its alphabetically first name), and
@@ -4632,6 +4684,11 @@ def check_Q():
                 first_name[real] = relp
     for m in _crossref_findings(files, tree, scan=set(first_name.values())):
         err(m)
+    manifest = _read_json_config(os.path.join("config", "project.json"))
+    if manifest is _NO_DATA:
+        manifest = {}
+    for finding in _changelog_heading_findings(files, manifest):
+        err(finding)
 
 
 # --- check_R: check catalogue parity ------------------------------------------

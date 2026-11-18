@@ -61,12 +61,13 @@ def _label(root, name):
 
 def _tree(root, manifest=None):
     """The smallest tree every check passes: the required top-level rows,
-    labelled, and a config/project.json (default `{}`)."""
+    labelled, a changelog and its required grammar, and optional manifest overrides."""
     for name in ("src", "tests", "docs", "config"):
         _label(root, name)
-    (root / "config" / "project.json").write_text(
-        json.dumps({} if manifest is None else manifest), encoding="utf-8"
-    )
+    data = {} if manifest is None else dict(manifest)
+    data["changelog"] = cs.config_loader.read(str(_ROOT))["changelog"]
+    (root / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n")
+    (root / "config" / "project.json").write_text(json.dumps(data), encoding="utf-8")
     return root
 
 

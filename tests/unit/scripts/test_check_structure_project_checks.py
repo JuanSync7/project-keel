@@ -44,14 +44,15 @@ def _label(root, name):
 
 
 def _tree(root, manifest=None, checks=None):
-    """The smallest tree every lettered check passes, a config/project.json
-    (default `{}`), and, when *checks* is given, a labelled `checks/` holding
+    """The smallest tree every lettered check passes, with the changelog grammar,
+    optional manifest overrides, and, when *checks* is given, a labelled `checks/` holding
     those modules ({filename: source text or bytes})."""
     for name in ("src", "tests", "docs", "config"):
         _label(root, name)
-    (root / "config" / "project.json").write_text(
-        json.dumps({} if manifest is None else manifest), encoding="utf-8"
-    )
+    data = {} if manifest is None else dict(manifest)
+    data["changelog"] = cs.config_loader.read(str(_ROOT))["changelog"]
+    (root / "CHANGELOG.md").write_text("# Changelog\n\n## [Unreleased]\n")
+    (root / "config" / "project.json").write_text(json.dumps(data), encoding="utf-8")
     if checks is not None:
         d = _label(root, "checks")
         for name, body in checks.items():
