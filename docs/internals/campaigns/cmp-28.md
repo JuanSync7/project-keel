@@ -24,7 +24,7 @@ Will not do in CMP-28: change `scripts/jobs/restamp_docs.py` or `scripts/resourc
 
 | Slice | Gap | Status |
 |-------|-----|--------|
-| CMP-28.S1 | The update fixtures date their commits by the clock while the stamper runs on a pinned day, so three `copier update` cases fail on the calendar alone (queue row 205); `tests/doc_stamps.py` `pinned_day` dates both by one epoch, the three fixtures and `tests/integration/test_copier_project_checks.py` `cycle` use it, and a case holds the cycle's commits to the pinned days. | planned |
+| CMP-28.S1 | The update fixtures date their commits by the clock while the stamper runs on a pinned day, so three `copier update` cases fail on the calendar alone (queue row 205); `tests/doc_stamps.py` `pinned_day` dates both by one epoch, the three fixtures and `tests/integration/test_copier_project_checks.py` `cycle` use it, and a case holds the cycle's commits to the pinned days. | implemented — at 7fd1d61c on 2026-11-22, four days past the newest stamp, the date-pinned copier cases went from 3 failed and 65 passed to 69 passed; the new case failed on the old fixtures with the commits dated 2026-11-22 against a pinned 2026-11-19 |
 | CMP-28.S2 | The shell-style sample is linted in a tree without the helper it sources (queue row 206); the sample's tree carries `scripts/exit_codes.sh`. | planned |
 | CMP-28.S3 | The SIGKILL case can kill the runner before its watcher has started (queue row 207); the case waits for the watcher. | planned |
 | CMP-28.S4 | The planted-red collection cases need a user namespace the `ubuntu-24.04` runner refuses (queue row 208); the fix waits for the owner's choice among the row's three options. | planned — waits for the owner |

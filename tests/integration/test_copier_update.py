@@ -5,6 +5,7 @@ layer: n/a
 summary: The upgrade channel ADR-K-0004 chose copier for, exercised end to end against the REAL template — clone keel into a scratch dir, generate a project, commit it, evolve the clone, then `copier update`. Proves new template files arrive, a re-answered `ci_pipeline` retires the keel adapter it declines and delivers the one it chooses, a repeated answer changes nothing, and a CI file the project wrote without keel's marker survives a declining answer byte-identical, and when no answer ever chose it the update names it nowhere, a declined adapter (github or gitlab) is removed when unedited and kept with one stderr line naming `git rm` when edited, and a ci.yml from before the marker line is kept when edited, its line saying it predates the marker, and silently removed when not, while a no-op update leaves the tree clean under every `ci_pipeline` answer; template edits land, the project's own edits survive, the `.gitignore` divergence twin holds, `_commit` advances and `_src_path` stays resolvable. Skipped on a bare local clone without the optional `template` extra; CI installs `.[dev,template]` and declares the surface required (KEEL_REQUIRED_EXTRAS), so there a missing copier is a hard failure instead of a silent skip.
 """
 
+import datetime
 import os
 import shutil
 import subprocess
@@ -30,7 +31,7 @@ optional_deps.importorskip("copier.errors", extra="template")
 yaml = optional_deps.importorskip("yaml", extra="template")
 # copier runs `_tasks` and `_migrations` through plumbum, whose `local.env` is a
 # snapshot taken at import: `monkeypatch.setenv` never reaches a task, so the
-# generation date is pinned with `plumbum.local.env` instead.
+# generation date is pinned through `doc_stamps.pinned_day`, which sets both.
 plumbum = optional_deps.importorskip("plumbum", extra="template")
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "jobs"))
 
@@ -126,7 +127,7 @@ def upgraded(tmp_path_factory):
 
         # 1. a project generated from it, exactly as `make new` does
         project = work / "proj"
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+        with doc_stamps.pinned_day(generated_epoch):
             copier.run_copy(
                 str(template),
                 str(project),
@@ -136,36 +137,38 @@ def upgraded(tmp_path_factory):
                 unsafe=True,
                 quiet=True,
             )
-        _git("init", "--quiet", "-b", "main", cwd=project)
-        _git("add", "-A", cwd=project)
-        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+            _git("init", "--quiet", "-b", "main", cwd=project)
+            _git("add", "-A", cwd=project)
+            _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
         commit_before = _answers(project)["_commit"]
 
-        # 2. the project evolves on its own (files the template never touches)
-        (project / _LOCAL_FILE).write_text("mine\n")
-        readme = project / "README.md"
-        readme.write_text(readme.read_text() + _LOCAL_EDIT)
-        _git("add", "-A", cwd=project)
-        _git("commit", "--quiet", "-m", "downstream work", cwd=project)
+        with doc_stamps.pinned_day(generated_epoch):
+            # 2. the project evolves on its own (files the template never touches)
+            (project / _LOCAL_FILE).write_text("mine\n")
+            readme = project / "README.md"
+            readme.write_text(readme.read_text() + _LOCAL_EDIT)
+            _git("add", "-A", cwd=project)
+            _git("commit", "--quiet", "-m", "downstream work", cwd=project)
 
-        # 3. the template evolves: a new file, an edit to a verbatim-copied file, and a
-        #    new ignore rule in BOTH .gitignore twins (as a real keel change would make
-        #    it — the twins diverge only over .copier-answers.yml).
-        (template / _NEW_FILE).write_text(_NEW_FILE_TEXT)
-        for name in (".editorconfig", ".gitignore", ".gitignore.jinja"):
-            p = template / name
-            extra = (
-                _UPSTREAM_EDIT
-                if name == ".editorconfig"
-                else ("\n# upstream new ignore rule\n%s\n" % _UPSTREAM_IGNORE)
+        with doc_stamps.pinned_day(update_epoch):
+            # 3. the template evolves: a new file, an edit to a verbatim-copied file, and a
+            #    new ignore rule in BOTH .gitignore twins (as a real keel change would make
+            #    it — the twins diverge only over .copier-answers.yml).
+            (template / _NEW_FILE).write_text(_NEW_FILE_TEXT)
+            for name in (".editorconfig", ".gitignore", ".gitignore.jinja"):
+                p = template / name
+                extra = (
+                    _UPSTREAM_EDIT
+                    if name == ".editorconfig"
+                    else ("\n# upstream new ignore rule\n%s\n" % _UPSTREAM_IGNORE)
+                )
+                p.write_text(p.read_text() + extra)
+            doc = template / _UPSTREAM_DOC
+            doc.write_text(
+                doc.read_text(encoding="utf-8") + _UPSTREAM_DOC_EDIT, encoding="utf-8"
             )
-            p.write_text(p.read_text() + extra)
-        doc = template / _UPSTREAM_DOC
-        doc.write_text(
-            doc.read_text(encoding="utf-8") + _UPSTREAM_DOC_EDIT, encoding="utf-8"
-        )
-        _git("add", "-A", cwd=template)
-        _git("commit", "--quiet", "-m", "template improves", cwd=template)
+            _git("add", "-A", cwd=template)
+            _git("commit", "--quiet", "-m", "template improves", cwd=template)
 
         # 4. the upgrade. vcs_ref="HEAD" is LOAD-BEARING: with no argument copier
         #    updates to the newest *tag*, so the moment keel carries one this whole
@@ -176,7 +179,7 @@ def upgraded(tmp_path_factory):
         #    unsafe=True is what `copier update --trust` passes, and keel's `_migrations`
         #    make it mandatory: copier classes a template carrying them as unsafe and
         #    refuses to update without trust (pinned by the restack tests below).
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+        with doc_stamps.pinned_day(update_epoch):
             copier.run_update(
                 str(project),
                 defaults=True,
@@ -353,6 +356,26 @@ def test_an_update_restamps_exactly_the_docs_it_changed(upgraded):
     assert records and review_docs.stale_findings(records, update_day) == []
 
 
+def test_the_cycle_commits_are_dated_by_its_pinned_days(upgraded):
+    """The fixture's own guard: every commit the cycle makes carries the day
+    its documents were stamped on, whatever the clock says. A commit dated by
+    the clock is later than the pinned days once the clock passes them, and
+    restamp_docs then raises every stamp to it: the three update cases above
+    and below went red on the calendar alone (measured: all 138 governed
+    documents restamped, two days after the template's newest stamp)."""
+    template, project, _, update_day = upgraded
+    generated_day = (
+        datetime.date.fromisoformat(update_day) - datetime.timedelta(days=1)
+    ).isoformat()
+
+    def days(repo, *revs):
+        log = _git("log", "--format=%ad %cd", "--date=format:%Y-%m-%d", *revs, cwd=repo)
+        return set(log.split())
+
+    assert days(project) == {generated_day}
+    assert days(template, "-1") == {update_day}
+
+
 @pytest.fixture(scope="module")
 def no_op_update(tmp_path_factory):
     """generate -> commit -> `copier update` to the SAME template commit, a day
@@ -367,7 +390,7 @@ def no_op_update(tmp_path_factory):
         generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
         update_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=2)
         project = work / "proj"
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+        with doc_stamps.pinned_day(generated_epoch):
             copier.run_copy(
                 str(template),
                 str(project),
@@ -377,10 +400,10 @@ def no_op_update(tmp_path_factory):
                 unsafe=True,
                 quiet=True,
             )
-        _git("init", "--quiet", "-b", "main", cwd=project)
-        _git("add", "-A", cwd=project)
-        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+            _git("init", "--quiet", "-b", "main", cwd=project)
+            _git("add", "-A", cwd=project)
+            _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+        with doc_stamps.pinned_day(update_epoch):
             copier.run_update(
                 str(project),
                 defaults=True,
@@ -424,7 +447,7 @@ def rej_update(tmp_path_factory):
         generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
         update_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=2)
         project = work / "proj"
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+        with doc_stamps.pinned_day(generated_epoch):
             copier.run_copy(
                 str(template),
                 str(project),
@@ -434,14 +457,14 @@ def rej_update(tmp_path_factory):
                 unsafe=True,
                 quiet=True,
             )
-        _git("init", "--quiet", "-b", "main", cwd=project)
-        _git("add", "-A", cwd=project)
-        _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
+            _git("init", "--quiet", "-b", "main", cwd=project)
+            _git("add", "-A", cwd=project)
+            _git("commit", "--quiet", "-m", "generated from keel", cwd=project)
         editorconfig = template / ".editorconfig"
         editorconfig.write_text(editorconfig.read_text() + _UPSTREAM_EDIT)
-        _git("add", "-A", cwd=template)
-        _git("commit", "--quiet", "-m", "template improves", cwd=template)
-        with plumbum.local.env(SOURCE_DATE_EPOCH=str(update_epoch)):
+        with doc_stamps.pinned_day(update_epoch):
+            _git("add", "-A", cwd=template)
+            _git("commit", "--quiet", "-m", "template improves", cwd=template)
             copier.run_update(
                 str(project),
                 defaults=True,

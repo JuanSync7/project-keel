@@ -125,7 +125,7 @@ def cycle(tmp_path, monkeypatch):
     generated_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=1)
     update_epoch, _ = doc_stamps.epoch_after_newest_stamp(template, days=2)
     project = work / "toy"
-    with plumbum.local.env(SOURCE_DATE_EPOCH=str(generated_epoch)):
+    with doc_stamps.pinned_day(generated_epoch):
         copier.run_copy(
             str(template),
             str(project),
@@ -135,9 +135,9 @@ def cycle(tmp_path, monkeypatch):
             unsafe=True,
             quiet=True,
         )
-    _git(project, "init", "--quiet", "-b", "main")
-    _git(project, "add", "-A")
-    _git(project, "commit", "--quiet", "-m", "generated")
+        _git(project, "init", "--quiet", "-b", "main")
+        _git(project, "add", "-A")
+        _git(project, "commit", "--quiet", "-m", "generated")
 
     def update():
         # The CLI, not run_update: what a project owner sees is its output.
@@ -147,7 +147,7 @@ def cycle(tmp_path, monkeypatch):
             cwd=str(project),
             capture_output=True,
             text=True,
-            env=dict(os.environ, SOURCE_DATE_EPOCH=str(update_epoch)),
+            env=dict(os.environ, **doc_stamps.day_env(update_epoch)),
         )
 
     return template, project, update
