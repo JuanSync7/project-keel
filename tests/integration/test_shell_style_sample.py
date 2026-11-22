@@ -25,10 +25,15 @@ from exit_codes import ExitCode  # noqa: E402
 from test_config_reads_gate import shell_reads  # noqa: E402
 from test_exit_gate import _sh_tree, shell_findings  # noqa: E402
 
+import script_copy  # noqa: E402
+
 pytestmark = pytest.mark.integration
 
 _GUIDE = _ROOT / "docs" / "guides" / "shell-style.md"
 _AS = "scripts/pad_report.sh"
+# A name of this module's own: the copy gate (tests/integration/test_script_copy.py)
+# evaluates a roster built from names and literals only.
+_HELPER_SH = shell_gate.HELPER_SH
 _BLOCK = re.compile(r"^```sh\n(.*?)^```$", re.MULTILINE | re.DOTALL)
 
 
@@ -48,7 +53,7 @@ def tree(tmp_path, monkeypatch):
     # The sample sources the generated shell helper, and the linter follows the
     # source (scripts/shell_gate.py passes it `-x`): a tree without the file is
     # a finding about the tree, not about the sample.
-    shutil.copy(str(_ROOT / shell_gate.HELPER_SH), str(root / shell_gate.HELPER_SH))
+    script_copy.copy_with_imports(root, _ROOT, [_HELPER_SH])
     # The tools run under the allowlist, which the tree's manifest must declare.
     manifest = root / "config" / "project.json"
     loaded = json.loads(manifest.read_text(encoding="utf-8"))
