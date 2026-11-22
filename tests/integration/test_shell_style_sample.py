@@ -45,6 +45,10 @@ def _sample():
 def tree(tmp_path, monkeypatch):
     root = _sh_tree(tmp_path, monkeypatch, {_AS: _sample()})
     shutil.copy(str(_ROOT / ".editorconfig"), str(root / ".editorconfig"))
+    # The sample sources the generated shell helper, and the linter follows the
+    # source (scripts/shell_gate.py passes it `-x`): a tree without the file is
+    # a finding about the tree, not about the sample.
+    shutil.copy(str(_ROOT / shell_gate.HELPER_SH), str(root / shell_gate.HELPER_SH))
     # The tools run under the allowlist, which the tree's manifest must declare.
     manifest = root / "config" / "project.json"
     loaded = json.loads(manifest.read_text(encoding="utf-8"))
