@@ -17,7 +17,7 @@ canonical: true
 
 The `ci` workflow run on 7fd1d61c ended with 12 failed and 12912 passed, while the local landing verify of the same commit was green.
 The last green `ci` run was on 7ecb5f83.
-The 12 failures have four causes, one queue row each (rows 205 to 208), and none is a fault in what keel ships: each is a test that depends on something the local gate host does not vary.
+The 12 failures have four causes, one queue row each (rows 205 to 208). Each is a test that depends on something the local gate host does not vary. Two of the tests ship: the shell-sample case (row 206) and the SIGKILL case (row 207) also failed in the nested suites of generated projects, so a project generated before these fixes carries both until it runs `copier update`. Row 207 also names a window in shipped code: `scripts/resource_limits.py` `start_child` starts the child before its watcher, and CMP-28.S3 makes the test wait past that window and leaves the window open.
 The cap is four slices, one pass each and three review fix rounds each under CONVENTIONS §17.
 Stop at a green `ci` run on the pushed main, or at the cap.
 Will not do in CMP-28: change `scripts/jobs/restamp_docs.py` or `scripts/resource_limits.py`, pin a linter version in CI, diagnose the weekly `canary` workflow, or add a linter to the local gate host.
