@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The convergence record, slices and decisions for CMP-27.
 id: docs-internals-campaigns-cmp-27
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-22
 visibility: internal
 canonical: true
 ---
@@ -24,7 +24,7 @@ Will not do in CMP-27: change `tests.workers`, drop or merge a nested-suite vari
 | Slice | Gap | Status |
 |-------|-----|--------|
 | CMP-27.S1 | `make test` runs the suite on `tests.workers` workers under pytest-xdist's default `load` scheduling, which hands each worker a run of consecutive tests and never takes queued tests back, so one worker runs every heavy copier module while the other three sit idle; the recipe schedules with `--dist worksteal`, and the tests and docs that state the recipe say so. | implemented — the `make test` recipe passes `--dist worksteal`, the Makefile judge and both manifests' `tests.full_gate_options` accept only that value, the pytest-xdist floor is 3.2 in both pyproject files, and the recipe test fails without the flag; the Sonnet review approved with notes, and its two doc findings are fixed; done — landing verify at 3caf9d76: `make verify` 3398 s against 11103 s, junit `<testsuite time>` 3306 s against 10992 s and the model's 66 min, summed test time 11444 s against 13752 s over 12933 cases, workers 87% busy against 31%. The summed drop is all in the ship set (175.9 to 137.5 min; the rest stays at 53.3 and 53.2 min), mostly the four nested-suite cases (about 20 to about 9.6 min each); inferred cause: a generated project's shipped `make test` now steals work too. The baseline ran beside another project's full verify; this run had the heavy slot alone, with a 1-minute load median of 12.1. The same chain's `make test-ship`, still one process, took 7888 s against 10614 s |
-| CMP-27.S2 | `make test-ship` runs the ship set in one process although the ship set is the heaviest part of the suite; the recipe runs it on `tests.workers` workers with `--dist worksteal`, as `make test` does after S1, and `tests.workers` set to 0 still runs it in one process. | implemented — the `make test-ship` recipe passes `-n auto --dist worksteal`, the ship-set recipe test fails without either flag and runs the target under real make on 0 and 2 workers, and the Makefile and docs say both targets ask for workers; Codex stopped at its time limit before its report, and the Sonnet review approved with notes after checking the brief step by step; the done-condition waits on the landing `make test-ship` |
+| CMP-27.S2 | `make test-ship` runs the ship set in one process although the ship set is the heaviest part of the suite; the recipe runs it on `tests.workers` workers with `--dist worksteal`, as `make test` does after S1, and `tests.workers` set to 0 still runs it in one process. | implemented — the `make test-ship` recipe passes `-n auto --dist worksteal`, the ship-set recipe test fails without either flag and runs the target under real make on 0 and 2 workers, and the Makefile and docs say both targets ask for workers; Codex stopped at its time limit before its report, and the Sonnet review approved with notes after checking the brief step by step; done — landing chain at 17f0d93b: `make test-ship` on the workers took 2653 s over 393 cases, against 7888 s in one process at 3caf9d76 and 10614 s at ccc299db; the full `make verify` after it took 3338 s. Both runs at 3caf9d76 and 17f0d93b had the host's heavy slot alone |
 
 ### Baseline
 
