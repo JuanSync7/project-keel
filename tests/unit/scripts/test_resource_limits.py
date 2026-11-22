@@ -407,6 +407,20 @@ _PROBE_HEAD = (
 # Leaves the termination handler as the only teardown a probe has, so a case
 # that proves the handler is not passed by the watcher instead.
 _NO_WATCHER = "resource_limits._watch = lambda pid: None\n"
+# Says when the watcher runs. start_child starts the child first and the
+# watcher after it, so a runner killed as soon as the child's pid file appears
+# can die with no watcher started, and the child then lives out its sleep
+# (measured: with the watcher's start held back one second the child was still
+# running ten seconds after the kill).
+_WATCHER_FILE = "watcher.started"
+_ANNOUNCED_WATCHER = (
+    "_watch = resource_limits._watch\n"
+    "def _announced(pid):\n"
+    "    watcher = _watch(pid)\n"
+    "    open(%r, 'w').close()\n"
+    "    return watcher\n"
+    "resource_limits._watch = _announced\n"
+) % _WATCHER_FILE
 
 
 def _sleeper(pid_file):
@@ -478,12 +492,14 @@ def test_a_sigkilled_runner_leaves_no_bounded_child_running(tmp_path):
     pid_file = tmp_path / "child.pid"
     probe = _start_probe(
         tmp_path,
-        "resource_limits.run_bounded(%s, timeout=60, max_output_bytes=1000)\n"
+        _ANNOUNCED_WATCHER
+        + "resource_limits.run_bounded(%s, timeout=60, max_output_bytes=1000)\n"
         % _sleeper(pid_file),
     )
     child = None
     try:
         child = _started_child(pid_file)
+        _wait_for((tmp_path / _WATCHER_FILE).exists, 10, "the watcher never started")
         os.kill(probe.pid, signal.SIGKILL)
         assert probe.wait(10) == -signal.SIGKILL
         _wait_for(
