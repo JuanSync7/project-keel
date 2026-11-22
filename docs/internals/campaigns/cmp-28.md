@@ -26,7 +26,7 @@ Will not do in CMP-28: change `scripts/jobs/restamp_docs.py` or `scripts/resourc
 |-------|-----|--------|
 | CMP-28.S1 | The update fixtures date their commits by the clock while the stamper runs on a pinned day, so three `copier update` cases fail on the calendar alone (queue row 205); `tests/doc_stamps.py` `pinned_day` dates both by one epoch, the three fixtures and `tests/integration/test_copier_project_checks.py` `cycle` use it, and a case holds the cycle's commits to the pinned days. | implemented — at 7fd1d61c on 2026-11-22, four days past the newest stamp, the date-pinned copier cases went from 3 failed and 65 passed to 69 passed; the new case failed on the old fixtures with the commits dated 2026-11-22 against a pinned 2026-11-19 |
 | CMP-28.S2 | The shell-style sample is linted in a tree without the helper it sources (queue row 206); the sample's tree carries `scripts/exit_codes.sh`. | implemented — with ShellCheck 0.10.0 on `PATH` the lint case failed with SC1091 before and passed after; the local gate skips it |
-| CMP-28.S3 | The SIGKILL case can kill the runner before its watcher has started (queue row 207); the case waits for the watcher. | implemented — with the watcher's start held back one second in a private PID namespace, the child outlived the old sequence and was ended under the new one; the cause in CI is inferred until a `ci` run passes |
+| CMP-28.S3 | The SIGKILL case can kill the runner before its watcher has started (queue row 207); the case waits for the watcher. | implemented — with the watcher's start held back one second in a private PID namespace, the child outlived the old sequence and was ended under the new one; the cause in CI stays inferred, and a green `ci` run shows only that the case passes there |
 | CMP-28.S4 | The planted-red collection cases need a user namespace the `ubuntu-24.04` runner refuses (queue row 208); the fix waits for the owner's choice among the row's three options. | planned — waits for the owner |
 
 ### What failed, and why only in CI
@@ -43,7 +43,7 @@ The four nested-suite cases in `tests/integration/test_copier_generation.py` fai
 ### Done-condition
 
 A slice is done when its landing verify is green.
-The campaign is done when a `ci` run on the pushed main is green; a push needs the owner's yes, and S3's cause and S4's fix can only be confirmed by that run.
+The campaign is done when a `ci` run on the pushed main is green; a push needs the owner's yes, and only that run can show S3's case and S4's fix passing on the runner.
 
 ### Decisions
 
