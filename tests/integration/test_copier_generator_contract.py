@@ -2,7 +2,7 @@
 title: Integration — the generator's own entry points stay wired up
 kind: tests
 layer: n/a
-summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. (5) A planted red collection case runs only inside a private user namespace: it skips where the host refuses that namespace, and fails on any other failure of the isolation probe. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
+summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. (5) A planted red collection case runs only inside a private user namespace: it skips where the host has no `unshare` or refuses that namespace, and fails on any other failure of the isolation probe. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
 """
 
 import ast
@@ -927,16 +927,18 @@ def _child_timeout():
 
 
 # The errors with which a host refuses an unprivileged user namespace or the mount
-# inside one. EACCES is what the ubuntu-24.04 runner answered in ci; EPERM and
-# ENOSPC (a namespace limit of zero) are read from unshare(2) and
-# user_namespaces(7) and were not seen on a host.
-_NAMESPACE_REFUSALS = (errno.EACCES, errno.EPERM, errno.ENOSPC)
+# inside one. EACCES is what the ubuntu-24.04 runner answered in ci, and EPERM is
+# what util-linux 2.32 prints here for a refused `unshare -m`. ENOSPC (a namespace
+# limit of zero) and EINVAL (a kernel built without the namespace) are read from
+# unshare(2) and user_namespaces(7) and were not seen on a host.
+_NAMESPACE_REFUSALS = (errno.EACCES, errno.EPERM, errno.ENOSPC, errno.EINVAL)
 
 
 def _is_namespace_refusal(probe):
     """Whether *probe* is `unshare` itself reporting one of `_NAMESPACE_REFUSALS`."""
     # unshare(1) ends with status 1 on its own error and 126 or 127 when it cannot
     # start the command, so status 1 keeps a missing `setsid` out of the refusals.
+    # It reports a bad option before any system call, so EINVAL here is the kernel's.
     said = probe.stderr.strip().splitlines()[-1:]
     refused = tuple(": " + os.strerror(code) for code in _NAMESPACE_REFUSALS)
     return (
@@ -948,22 +950,23 @@ def _is_namespace_refusal(probe):
 
 
 def _require_private_namespace():
-    """Skip the calling case on a host that refuses the namespace of `_ISOLATION`,
-    and fail it where the isolation chain is broken for any other reason."""
+    """Skip the calling case on a host that has no `unshare` or refuses the namespace
+    of `_ISOLATION`, and fail it where the isolation chain is broken any other way."""
     # Skip, never run unisolated: a planted fault is a real fault for the length of
     # the run, and nothing here can tell a disposable runner from a shared host.
-    try:
-        probe = subprocess.run(
-            [*_ISOLATION, "true"],
-            # The refusal is recognised by its error text, which `unshare` would
-            # otherwise print in the host's language.
-            env=build_child_env(extra={"LC_ALL": "C"}),
-            capture_output=True,
-            text=True,
-            timeout=_child_timeout(),
-        )
-    except FileNotFoundError:
+    # Looked up first, because starting an installed `unshare` whose interpreter is
+    # missing raises the same FileNotFoundError as starting none.
+    if shutil.which(_ISOLATION[0]) is None:
         pytest.skip("unshare is not installed, so no planted red case runs")
+    probe = subprocess.run(
+        [*_ISOLATION, "true"],
+        # The refusal is recognised by its error text, which `unshare` would
+        # otherwise print in the host's language.
+        env=build_child_env(extra={"LC_ALL": "C"}),
+        capture_output=True,
+        text=True,
+        timeout=_child_timeout(),
+    )
     if probe.returncode == 0:
         return
     said = probe.stderr.strip()
@@ -1162,14 +1165,14 @@ def test_runtime_collection_preserves_body_only_modules_other_tests(tmp_path):
     }, output
 
 
-def _fake_unshare(tmp_path, monkeypatch, body):
+def _fake_unshare(tmp_path, monkeypatch, body, interpreter="/bin/sh"):
     """Put an `unshare` that runs *body* first on PATH; return the file it logs its arguments to."""
     calls = tmp_path / "unshare.calls"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "unshare"
     fake.write_text(
-        '#!/bin/sh\necho "$*" >> %s\n%s\n' % (shlex.quote(str(calls)), body),
+        '#!%s\necho "$*" >> %s\n%s\n' % (interpreter, shlex.quote(str(calls)), body),
         encoding="utf-8",
     )
     fake.chmod(0o755)
@@ -1214,6 +1217,7 @@ def _probe_outcome():
         _REFUSAL,
         "unshare: unshare failed: Operation not permitted",
         "unshare: unshare failed: No space left on device",
+        "unshare: unshare failed: Invalid argument",
     ],
 )
 def test_each_refusal_of_the_namespace_skips(tmp_path, monkeypatch, refusal):
@@ -1247,6 +1251,19 @@ def test_a_broken_isolation_chain_fails_and_does_not_skip(
     assert outcome == "fail", (outcome, message)
     assert "exit %d" % status in message and said in message, message
     assert len(calls.read_text("utf-8").splitlines()) == 1
+
+
+def test_an_unshare_that_cannot_start_is_an_error_and_not_a_skip(tmp_path, monkeypatch):
+    """An installed `unshare` whose interpreter is missing raises the same error as
+    a missing one; only the missing one is the host having no tool."""
+    _fake_unshare(
+        tmp_path, monkeypatch, "exit 0", interpreter=str(tmp_path / "no-such-sh")
+    )
+    # Alone on PATH: a start that fails this way goes on to the next `unshare`
+    # the path holds, and the host's own would answer.
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    with pytest.raises(FileNotFoundError):
+        _probe_outcome()
 
 
 def test_a_host_that_makes_the_namespace_does_not_skip(tmp_path, monkeypatch):
