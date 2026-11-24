@@ -2,11 +2,12 @@
 title: Integration — the generator's own entry points stay wired up
 kind: tests
 layer: n/a
-summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
+summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. (5) A planted red collection case runs only inside a private user namespace, and skips on a host that makes none. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
 """
 
 import ast
 import json
+import os
 import re
 import shlex
 import shutil
@@ -902,6 +903,49 @@ def test_every_documented_copier_command_carries_trust():
     assert not missing, "copier commands without --trust:\n  " + "\n  ".join(missing)
 
 
+# A private PID namespace under its own session: a planted red case can signal
+# and outlive nothing of the host's, and bash stays PID 1 to reap what it leaves.
+_ISOLATION = (
+    "unshare",
+    "-Upf",
+    "--mount-proc",
+    "setsid",
+    "bash",
+    "-c",
+    '"$@"; exit $?',
+    "reaper",
+)
+
+
+def _child_timeout():
+    """The seconds a child process of a test may run, from the configuration."""
+    key = ("tests", "child_timeout_seconds")
+    return config_loader.resolve(
+        config_loader.read(_ROOT), config_loader.rows(key), config_loader.CONFIG_FILE
+    )[key]
+
+
+def _require_private_namespace():
+    """Skip the calling case on a host that cannot make the namespace of `_ISOLATION`."""
+    # Skip, never run unisolated: a planted fault is a real fault for the length of
+    # the run, and nothing here can tell a disposable runner from a shared host.
+    try:
+        probe = subprocess.run(
+            [*_ISOLATION, "true"],
+            env=build_child_env(),
+            capture_output=True,
+            text=True,
+            timeout=_child_timeout(),
+        )
+    except FileNotFoundError:
+        pytest.skip("unshare is not installed, so no planted red case runs")
+    if probe.returncode != 0:
+        pytest.skip(
+            "this host makes no private user namespace, so no planted red case runs: %s"
+            % (probe.stderr.strip() or "unshare exit %d" % probe.returncode)
+        )
+
+
 def _collect_without_copier(root, paths, *, isolated=False, run_tests=False):
     """Observe collection in a fresh interpreter; isolate planted red cases."""
     command = [
@@ -916,23 +960,8 @@ def _collect_without_copier(root, paths, *, isolated=False, run_tests=False):
         *paths,
     ]
     if isolated:
-        command = [
-            "unshare",
-            "-Upf",
-            "--mount-proc",
-            "setsid",
-            "bash",
-            "-c",
-            '"$@"; exit $?',
-            "reaper",
-            *command,
-        ]
-    timeout_key = ("tests", "child_timeout_seconds")
-    timeout = config_loader.resolve(
-        config_loader.read(_ROOT),
-        config_loader.rows(timeout_key),
-        config_loader.CONFIG_FILE,
-    )[timeout_key]
+        _require_private_namespace()
+        command = [*_ISOLATION, *command]
     run = subprocess.run(
         command,
         cwd=root,
@@ -948,7 +977,7 @@ def _collect_without_copier(root, paths, *, isolated=False, run_tests=False):
         ),
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=_child_timeout(),
     )
     output = (
         "\n".join(
@@ -1097,6 +1126,51 @@ def test_runtime_collection_preserves_body_only_modules_other_tests(tmp_path):
         body_only + "::test_needs_copier": "skipped",
         body_only + "::test_independent": "passed",
     }, output
+
+
+def _fake_unshare(tmp_path, monkeypatch, body):
+    """Put an `unshare` that runs *body* first on PATH; return the file it logs its arguments to."""
+    calls = tmp_path / "unshare.calls"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "unshare"
+    fake.write_text(
+        '#!/bin/sh\necho "$*" >> %s\n%s\n' % (shlex.quote(str(calls)), body),
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", "%s%s%s" % (bin_dir, os.pathsep, os.environ["PATH"]))
+    return calls
+
+
+_REFUSAL = "unshare: cannot change root filesystem propagation: Permission denied"
+
+
+def test_a_planted_red_case_skips_where_no_namespace_can_be_made(tmp_path, monkeypatch):
+    """A host that refuses the namespace skips the case, naming the refusal, and
+    the planted module is never collected outside one."""
+    calls = _fake_unshare(tmp_path, monkeypatch, "echo %r >&2\nexit 1" % _REFUSAL)
+    module = "test_bare_importorskip.py"
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / module).write_text(
+        _RUNTIME_RED_CASES["bare_importorskip"], encoding="utf-8"
+    )
+    with pytest.raises(pytest.skip.Exception, match=re.escape(_REFUSAL)):
+        _collect_without_copier(tmp_path, [module], isolated=True)
+    asked = calls.read_text("utf-8").splitlines()
+    assert len(asked) == 1 and asked[0].endswith(" reaper true"), asked
+
+
+def test_a_host_that_makes_the_namespace_does_not_skip(tmp_path, monkeypatch):
+    calls = _fake_unshare(tmp_path, monkeypatch, "exit 0")
+    _require_private_namespace()
+    assert len(calls.read_text("utf-8").splitlines()) == 1
+
+
+def test_a_host_without_unshare_skips_the_planted_red_case(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(pytest.skip.Exception, match="unshare is not installed"):
+        _require_private_namespace()
 
 
 def test_runtime_collection_refuses_an_empty_inventory():
