@@ -8,7 +8,7 @@ tags: [plan, template, downstream, freshness, taxonomy, effects, credentials, au
 summary: The convergence record, slices and decisions for CMP-27.
 id: docs-internals-campaigns-cmp-27
 created: 2026-11-18
-updated: 2026-11-22
+updated: 2026-11-24
 visibility: internal
 canonical: true
 ---
@@ -65,5 +65,5 @@ Neither slice states a target time: the record says what the change bought, and 
 - The slice's class search covers every test and doc that states the `make test` recipe, including tests/integration/test_copier_test_recipe.py, tests/integration/test_isolation_gate.py, tests/integration/test_isolation_docs.py, `docs/guides/dev-loops.md` and the `make test` and `tests.workers` reference entries.
 - `tests.workers` set to 0 with `--dist worksteal` runs the session in one process: pytest-xdist 3.8.0 ignores the scheduling mode when it starts no workers (98 tests passed under `-n 0 --dist worksteal` on 2026-11-18).
 - `make test-ship` gets workers in its own slice. Before this campaign only `make test` asked for workers, and the Makefile states that rule without a reason; the recorder that refuses `-n` (tests/conftest.py) guards a separate option that `make test-ship` does not pass.
-- L2 and L4 are not built here. After S1 the wall time is expected to be bound by the four ~20-minute cases, and L2 saves time only by dropping the full nested suite on two variants, which is a coverage cut. Whether that trade is worth taking goes to the owner with S1's measurement; row 91 keeps L2 and L4 open until then.
+- L2 and L4 are not built here. After S1 the wall time is expected to be bound by the four ~20-minute cases, and L2 saves time only by dropping the full nested suite on two variants, which is a coverage cut. Whether that trade is worth taking went to the owner with the measurements of S1 and S2: the owner dropped L2 on 2026-11-24, and row 91 keeps L4 open at low priority.
 - Each slice's landing verify is its "after" record, so no separate profiling run is planned. A heavy run waits for a handshake with the session that shares the disk.
