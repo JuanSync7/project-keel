@@ -2,10 +2,11 @@
 title: Integration — the generator's own entry points stay wired up
 kind: tests
 layer: n/a
-summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. (5) A planted red collection case runs only inside a private user namespace, and skips on a host that makes none. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
+summary: Pins on the ways keel's generator rots silently, read off the real `make -n new` recipe and the real CI workflow. (1) `make new` must hand copier a RESOLVABLE template path — copier records the CLI argument verbatim as `_src_path`, so a literal `.` resolves to the generated project itself and `copier update` dies there on an unhandled traceback. (2) It must refuse a dirty template, whose `_commit` would exist only in copier's throwaway clone. (3) CI must install the optional `template` extra AND declare it required, or every copier test importorskips and the template's own generation/update gates never run. (4) A test module that imports copier routes the import through `optional_deps`; one that only names copier in a string imports nothing that could skip. (5) A planted red collection case runs only inside a private user namespace: it skips where the host refuses that namespace, and fails on any other failure of the isolation probe. Imports nothing optional on purpose — this pin must never itself skip, or the fix it guards is circular.
 """
 
 import ast
+import errno
 import json
 import os
 import re
@@ -925,25 +926,58 @@ def _child_timeout():
     )[key]
 
 
+# The errors with which a host refuses an unprivileged user namespace or the mount
+# inside one. EACCES is what the ubuntu-24.04 runner answered in ci; EPERM and
+# ENOSPC (a namespace limit of zero) are read from unshare(2) and
+# user_namespaces(7) and were not seen on a host.
+_NAMESPACE_REFUSALS = (errno.EACCES, errno.EPERM, errno.ENOSPC)
+
+
+def _is_namespace_refusal(probe):
+    """Whether *probe* is `unshare` itself reporting one of `_NAMESPACE_REFUSALS`."""
+    # unshare(1) ends with status 1 on its own error and 126 or 127 when it cannot
+    # start the command, so status 1 keeps a missing `setsid` out of the refusals.
+    said = probe.stderr.strip().splitlines()[-1:]
+    refused = tuple(": " + os.strerror(code) for code in _NAMESPACE_REFUSALS)
+    return (
+        probe.returncode == 1
+        and bool(said)
+        and said[0].startswith("unshare: ")
+        and said[0].endswith(refused)
+    )
+
+
 def _require_private_namespace():
-    """Skip the calling case on a host that cannot make the namespace of `_ISOLATION`."""
+    """Skip the calling case on a host that refuses the namespace of `_ISOLATION`,
+    and fail it where the isolation chain is broken for any other reason."""
     # Skip, never run unisolated: a planted fault is a real fault for the length of
     # the run, and nothing here can tell a disposable runner from a shared host.
     try:
         probe = subprocess.run(
             [*_ISOLATION, "true"],
-            env=build_child_env(),
+            # The refusal is recognised by its error text, which `unshare` would
+            # otherwise print in the host's language.
+            env=build_child_env(extra={"LC_ALL": "C"}),
             capture_output=True,
             text=True,
             timeout=_child_timeout(),
         )
     except FileNotFoundError:
         pytest.skip("unshare is not installed, so no planted red case runs")
-    if probe.returncode != 0:
+    if probe.returncode == 0:
+        return
+    said = probe.stderr.strip()
+    if _is_namespace_refusal(probe):
         pytest.skip(
-            "this host makes no private user namespace, so no planted red case runs: %s"
-            % (probe.stderr.strip() or "unshare exit %d" % probe.returncode)
+            "this host refuses a private user namespace, so no planted red case runs: %s"
+            % said
         )
+    # Absent and broken differ: a skip here would hide a missing tool on a host
+    # that could have run the planted red cases.
+    pytest.fail(
+        "the isolation probe `%s` ended with exit %d and no namespace refusal: %s"
+        % (shlex.join([*_ISOLATION, "true"]), probe.returncode, said or "no error text")
+    )
 
 
 def _collect_without_copier(root, paths, *, isolated=False, run_tests=False):
@@ -1161,16 +1195,70 @@ def test_a_planted_red_case_skips_where_no_namespace_can_be_made(tmp_path, monke
     assert len(asked) == 1 and asked[0].endswith(" reaper true"), asked
 
 
+def _probe_outcome():
+    """How `_require_private_namespace` ends: "ran", or "skip" or "fail" with its message."""
+    # Caught here, because a skip raised inside a test body would mark that test
+    # skipped, and a test of the probe would then pass over nothing.
+    try:
+        _require_private_namespace()
+    except pytest.skip.Exception as skipped:
+        return "skip", str(skipped)
+    except pytest.fail.Exception as failed:
+        return "fail", str(failed)
+    return "ran", ""
+
+
+@pytest.mark.parametrize(
+    "refusal",
+    [
+        _REFUSAL,
+        "unshare: unshare failed: Operation not permitted",
+        "unshare: unshare failed: No space left on device",
+    ],
+)
+def test_each_refusal_of_the_namespace_skips(tmp_path, monkeypatch, refusal):
+    _fake_unshare(tmp_path, monkeypatch, "echo %r >&2\nexit 1" % refusal)
+    outcome, message = _probe_outcome()
+    assert outcome == "skip" and refusal in message, (outcome, message)
+
+
+@pytest.mark.parametrize(
+    "status, said",
+    [
+        # A tool of the isolation chain is missing or not executable.
+        (127, "unshare: failed to execute setsid: No such file or directory"),
+        (126, "unshare: failed to execute setsid: Permission denied"),
+        # `unshare` is too old for an option, or the chain's own shell failed.
+        (1, "unshare: unrecognized option '--mount-proc'"),
+        (1, "bash: line 1: reaper: command not found"),
+        (1, ""),
+        (2, "unshare: unshare failed: Operation not permitted"),
+    ],
+)
+def test_a_broken_isolation_chain_fails_and_does_not_skip(
+    tmp_path, monkeypatch, status, said
+):
+    """Only a refused namespace skips: any other probe failure is a fault to fix,
+    and a skip would hide it on a host that could run the planted red cases."""
+    calls = _fake_unshare(
+        tmp_path, monkeypatch, "echo %s >&2\nexit %d" % (shlex.quote(said), status)
+    )
+    outcome, message = _probe_outcome()
+    assert outcome == "fail", (outcome, message)
+    assert "exit %d" % status in message and said in message, message
+    assert len(calls.read_text("utf-8").splitlines()) == 1
+
+
 def test_a_host_that_makes_the_namespace_does_not_skip(tmp_path, monkeypatch):
     calls = _fake_unshare(tmp_path, monkeypatch, "exit 0")
-    _require_private_namespace()
+    assert _probe_outcome() == ("ran", "")
     assert len(calls.read_text("utf-8").splitlines()) == 1
 
 
 def test_a_host_without_unshare_skips_the_planted_red_case(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path))
-    with pytest.raises(pytest.skip.Exception, match="unshare is not installed"):
-        _require_private_namespace()
+    outcome, message = _probe_outcome()
+    assert outcome == "skip" and "unshare is not installed" in message, message
 
 
 def test_runtime_collection_refuses_an_empty_inventory():
